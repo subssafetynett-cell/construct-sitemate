@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useTheme } from "../context/ThemeContext";
 import {
     Box,
     Typography,
@@ -11,6 +12,7 @@ import {
     TableContainer,
     TableHead,
     TableRow,
+    TablePagination,
     Chip,
     Dialog,
     DialogTitle,
@@ -21,10 +23,8 @@ import {
     MenuItem,
     ListItemIcon,
     ListItemText,
-    TextField,
-    TablePagination
+    TextField
 } from "@mui/material";
-import { useTheme } from "../context/ThemeContext";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -47,17 +47,20 @@ const computeLogoUrl = (logo) => {
 
 export default function GenericReportPage({ pageTitle }) {
     const { isDarkMode } = useTheme();
-    const [searchParams] = useSearchParams();
-    const search = searchParams.get("search") || "";
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [searchParams] = useSearchParams();
+    const search = searchParams.get("search") || "";
+    const [dialogOpen, setDialogOpen] = useState(false);
 
-    const handleChangePage = (event, newPage) => setPage(newPage);
+    const handleChangePage = (event, newPage) => {
+        setPage(newPage);
+    };
+
     const handleChangeRowsPerPage = (event) => {
         setRowsPerPage(parseInt(event.target.value, 10));
         setPage(0);
     };
-    const [dialogOpen, setDialogOpen] = useState(false);
     const [selectedForm, setSelectedForm] = useState(null);
     const [formValues, setFormValues] = useState({});
     const [logoUrl, setLogoUrl] = useState(null);
@@ -354,7 +357,7 @@ export default function GenericReportPage({ pageTitle }) {
             <Box sx={{ flex: 1, px: 4, py: 4, height: "100%", overflowY: "auto" }}>
                 <Box sx={{ maxWidth: 1000, mx: "auto" }}>
                     <Box sx={{ display: "flex", justifyContent: "space-between", mb: 4 }}>
-                        <Typography variant="h4" fontWeight={700} sx={{ color: isDarkMode ? "#F9FAFB" : "#111827" }}>{pageTitle}</Typography>
+                        <Typography variant="h4" fontWeight={700} sx={{ color: isDarkMode ? "#F9FAFB" : "inherit" }}>{pageTitle}</Typography>
                         {(viewMode !== "initial") && (
                             <Box sx={{ display: 'flex', gap: 2 }}>
                                 {viewMode === "viewed" && (
@@ -388,77 +391,75 @@ export default function GenericReportPage({ pageTitle }) {
                         )}
                     </Box>
 
-                    {viewMode === "initial" && (() => {
-                        const filteredSubmissions = submissions.filter((row) => {
-                            const title = row.form?.title || row.formId?.title || "Untitled";
-                            return title.toLowerCase().includes(search.toLowerCase());
-                        });
-                        const paginatedSubmissions = filteredSubmissions.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-
-                        return (
-                        <Paper sx={{ width: '100%', mb: 2, borderRadius: 3, bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF", boxShadow: isDarkMode ? "0 4px 20px rgba(0,0,0,0.5)" : "0 1px 3px 0 rgba(0, 0, 0, 0.1)", border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>
+                    {viewMode === "initial" && (
+                        <Paper sx={{ width: '100%', mb: 2, borderRadius: 3, boxShadow: isDarkMode ? "0 4px 20px rgba(0,0,0,0.5)" : "0 1px 3px 0 rgba(0, 0, 0, 0.1)", border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB", bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF" }}>
                             <TableContainer>
                                 <Table>
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Sl No</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Form Name</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Date</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Status</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Actions</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Sl No</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Form Name</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Date</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Status</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Actions</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {paginatedSubmissions.map((row, idx) => {
-                                            const slNo = page * rowsPerPage + idx + 1;
-                                            return (
-                                            <TableRow key={row.id || row._id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                                                <TableCell sx={{ color: isDarkMode ? "#F9FAFB" : "#111827", fontWeight: 500, borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>{slNo}</TableCell>
-                                                <TableCell sx={{ color: isDarkMode ? "#F9FAFB" : "#111827", fontWeight: 500, borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>{row.form?.title || row.formId?.title || "Untitled"}</TableCell>
-                                                <TableCell sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>{new Date(row.createdAt).toLocaleDateString()}</TableCell>
-                                                <TableCell sx={{ borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}><Chip label="Submitted" color="success" size="small" sx={{ bgcolor: 'rgba(34, 197, 94, 0.15)', color: '#22C55E', fontWeight: 500, border: 'none' }} /></TableCell>
-                                                <TableCell align="right" sx={{ borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>
-                                                    <IconButton onClick={(e) => handleMenuClick(e, row)}>
-                                                        <MoreVertIcon sx={{ color: isDarkMode ? "#9CA3AF" : "inherit" }} />
-                                                    </IconButton>
-                                                </TableCell>
-                                            </TableRow>
-                                        )})}
-                                        {filteredSubmissions.length === 0 && (
-                                            <TableRow><TableCell colSpan={5} align="center" sx={{ color: isDarkMode ? "#9CA3AF" : "inherit", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)", py: 4 }}>No submissions.</TableCell></TableRow>
-                                        )}
+                                        {(() => {
+                                            const filtered = submissions.filter((row) => {
+                                                const title = row.form?.title || row.formId?.title || "Untitled";
+                                                return title.toLowerCase().includes(search.toLowerCase());
+                                            });
+                                            const paginated = filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+                                            
+                                            if (filtered.length === 0) {
+                                                return <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4, color: isDarkMode ? "#9CA3AF" : "inherit", borderBottom: "none" }}>No submissions found.</TableCell></TableRow>;
+                                            }
+
+                                            return paginated.map((row, idx) => {
+                                                const slNo = page * rowsPerPage + idx + 1;
+                                                return (
+                                                <TableRow key={row.id || row._id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                                                    <TableCell sx={{ color: isDarkMode ? "#F9FAFB" : "#111827", fontWeight: 500, borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>{slNo}</TableCell>
+                                                    <TableCell sx={{ color: isDarkMode ? "#F9FAFB" : "#111827", fontWeight: 500, borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>{row.form?.title || row.formId?.title || "Untitled"}</TableCell>
+                                                    <TableCell sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>{new Date(row.createdAt).toLocaleDateString()}</TableCell>
+                                                    <TableCell sx={{ borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}><Chip label="Submitted" color="success" size="small" sx={{ bgcolor: 'rgba(34, 197, 94, 0.15)', color: '#22C55E', fontWeight: 500, border: 'none' }} /></TableCell>
+                                                    <TableCell align="right" sx={{ borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>
+                                                        <IconButton onClick={(e) => handleMenuClick(e, row)} sx={{ color: isDarkMode ? "#9CA3AF" : "inherit" }}>
+                                                            <MoreVertIcon />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                                );
+                                            });
+                                        })()}
                                     </TableBody>
                                 </Table>
                             </TableContainer>
-                            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2, pb: 2 }}>
-                                <Typography variant="body2" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280" }}>
-                                    Showing {filteredSubmissions.length === 0 ? 0 : page * rowsPerPage + 1} to {Math.min(page * rowsPerPage + rowsPerPage, filteredSubmissions.length)} of {filteredSubmissions.length} entries
-                                </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', p: 1 }}>
                                 <TablePagination
                                     component="div"
-                                    count={filteredSubmissions.length}
+                                    count={submissions.filter((row) => (row.form?.title || row.formId?.title || "Untitled").toLowerCase().includes(search.toLowerCase())).length}
                                     page={page}
                                     onPageChange={handleChangePage}
                                     rowsPerPage={rowsPerPage}
-                                    rowsPerPageOptions={[10, 25, 50]}
                                     onRowsPerPageChange={handleChangeRowsPerPage}
-                                    labelRowsPerPage=""
+                                    rowsPerPageOptions={[5, 10, 25]}
                                     sx={{
                                         border: 'none',
                                         color: isDarkMode ? "#F9FAFB" : "inherit",
-                                        '& .MuiTablePagination-toolbar': { p: 0 },
-                                        '& .MuiTablePagination-actions': { ml: 1, color: isDarkMode ? "#F9FAFB" : "inherit" },
+                                        '& .MuiTablePagination-actions': { color: isDarkMode ? "#F9FAFB" : "inherit" },
                                         '& .MuiTablePagination-select': { color: isDarkMode ? "#F9FAFB" : "inherit" },
                                         '& .MuiTablePagination-selectIcon': { color: isDarkMode ? "#9CA3AF" : "inherit" },
                                     }}
                                 />
                             </Box>
                         </Paper>
-                    )})}
+                    )}
 
                     {(viewMode === "filling" || viewMode === "editing") && selectedForm && (
-                        <Paper sx={{ p: 4, bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF", borderColor: isDarkMode ? "#374151" : "#E5E7EB", color: isDarkMode ? "#F9FAFB" : "inherit" }}>
-                            <Typography variant="h6" gutterBottom>{viewMode === "editing" ? "Edit Report" : "New Report"}</Typography>
+                        <Paper sx={{ p: 4, borderRadius: 3, boxShadow: isDarkMode ? "0 4px 20px rgba(0,0,0,0.5)" : "0 1px 3px 0 rgba(0, 0, 0, 0.1)", border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB", bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF" }}>
+                            <Typography variant="h6" gutterBottom sx={{ color: isDarkMode ? "#F9FAFB" : "inherit" }}>{viewMode === "editing" ? "Edit Report" : "New Report"}</Typography>
                             <FormRenderer
                                 form={selectedForm}
                                 values={formValues}
