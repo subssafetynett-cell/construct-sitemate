@@ -349,11 +349,12 @@ export default function GenericReportPage({ pageTitle }) {
                 // Use CORS to ensure external images (like logo) are captured
                 const canvas = await html2canvas(printRef.current, {
                     useCORS: true,
-                    scale: 2, // Improve quality
+                    scale: 1.5, // Reduced from 2 to keep file size low
                     allowTaint: true,
                 });
                 
-                const imgData = canvas.toDataURL("image/png");
+                // Export as compressed JPEG instead of massive PNG
+                const imgData = canvas.toDataURL("image/jpeg", 0.75);
                 
                 const pdf = new jsPDF("p", "mm", "a4");
                 const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -374,7 +375,7 @@ export default function GenericReportPage({ pageTitle }) {
                 let pageNum = 1;
 
                 // First page
-                pdf.addImage(imgData, "PNG", margin, position, contentWidth, totalImgHeightInMm);
+                pdf.addImage(imgData, "JPEG", margin, position, contentWidth, totalImgHeightInMm, undefined, "FAST");
                 
                 // Add page number to first page
                 pdf.setFontSize(10);
@@ -389,7 +390,7 @@ export default function GenericReportPage({ pageTitle }) {
                     pdf.addPage();
                     pageNum++;
                     
-                    pdf.addImage(imgData, "PNG", margin, position, contentWidth, totalImgHeightInMm);
+                    pdf.addImage(imgData, "JPEG", margin, position, contentWidth, totalImgHeightInMm, undefined, "FAST");
                     
                     // White out the top margin to prevent clipping
                     pdf.setFillColor(255, 255, 255);
@@ -601,8 +602,6 @@ export default function GenericReportPage({ pageTitle }) {
                                     display: 'flex',
                                     flexDirection: 'column',
                                     boxSizing: 'border-box',
-                                    borderRadius: 4,
-                                    border: "1px solid #E5E7EB",
                                     bgcolor: "#FFFFFF",
                                     color: "#000000",
                                     boxShadow: isDarkMode ? "0 4px 20px rgba(0,0,0,0.5)" : "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
