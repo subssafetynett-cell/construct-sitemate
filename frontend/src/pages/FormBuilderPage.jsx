@@ -1277,7 +1277,17 @@ export default function FormBuilderPage() {
 
 
         {/* ✅ SUCCESS DIALOG (ROOT LEVEL) */}
-        <Dialog open={successOpen} maxWidth="xs" fullWidth>
+        <Dialog 
+          open={successOpen} 
+          maxWidth="xs" 
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 4,
+              p: 1
+            }
+          }}
+        >
           <DialogTitle sx={{ fontWeight: 700 }}>
             Form Saved Successfully 🎉
           </DialogTitle>
@@ -1291,7 +1301,17 @@ export default function FormBuilderPage() {
           <DialogActions sx={{ px: 3, pb: 2 }}>
             <Button
               variant="contained"
-              sx={{ textTransform: "none" }}
+              sx={{ 
+                textTransform: "none",
+                borderRadius: 4,
+                px: 3,
+                py: 1,
+                bgcolor: "hsl(38, 70%, 55%)",
+                color: "white",
+                fontWeight: 600,
+                boxShadow: "none",
+                "&:hover": { bgcolor: "hsl(38, 70%, 45%)", boxShadow: "none" }
+              }}
               onClick={() => {
                 // Close dialog
                 setSuccessOpen(false);
