@@ -271,7 +271,20 @@ export default function FormRenderer({
                 <Button
                     variant="contained"
                     fullWidth
-                    sx={{ mt: 2, textTransform: "none" }}
+                    sx={{
+                        mt: 4,
+                        mb: 2,
+                        textTransform: "none",
+                        borderRadius: 4,
+                        py: 1.5,
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                        bgcolor: "#EAB308",
+                        color: "#111827",
+                        boxShadow: "none",
+                        "&:hover": { bgcolor: "#CA8A04", boxShadow: "none" },
+                        "&.Mui-disabled": { bgcolor: "rgba(234, 179, 8, 0.5)", color: "rgba(17, 24, 39, 0.5)" }
+                    }}
                     onClick={onSubmit}
                     disabled={isSubmitting}
                 >

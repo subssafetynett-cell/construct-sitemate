@@ -392,7 +392,10 @@ export default function GenericReportPage({ pageTitle }) {
                 <Box sx={{ maxWidth: 1000, mx: "auto" }}>
                     <Box sx={{ display: "flex", justifyContent: "space-between", mb: 4, alignItems: "center" }}>
                         <Box>
-                            <Typography variant="subtitle1" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280" }}>
+                            <Typography variant="h5" sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827", }}>
+                                All Reports - {pageTitle}
+                            </Typography>
+                            <Typography variant="subtitle1" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", mt: 0.5 }}>
                                 {getSubheading(pageTitle)}
                             </Typography>
                         </Box>
@@ -654,12 +657,6 @@ export default function GenericReportPage({ pageTitle }) {
                 </MenuItem>
                 <MenuItem onClick={() => handleAction("edit")} sx={{ borderRadius: 2, mb: 0.5, py: 1, fontSize: "0.95rem", color: isDarkMode ? "#F9FAFB" : "#1F2937", "&:hover": { bgcolor: isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)" } }}>
                     <Pencil size={18} style={{ marginRight: 12, color: isDarkMode ? "#9CA3AF" : "#374151" }} /> Edit
-                </MenuItem>
-                <MenuItem onClick={() => handleAction("download")} sx={{ borderRadius: 2, mb: 0.5, py: 1, fontSize: "0.95rem", color: isDarkMode ? "#F9FAFB" : "#1F2937", "&:hover": { bgcolor: isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)" } }}>
-                    <Download size={18} style={{ marginRight: 12, color: isDarkMode ? "#9CA3AF" : "#374151" }} /> Download PDF
-                </MenuItem>
-                <MenuItem onClick={() => handleAction("email")} sx={{ borderRadius: 2, mb: 0.5, py: 1, fontSize: "0.95rem", color: isDarkMode ? "#F9FAFB" : "#1F2937", "&:hover": { bgcolor: isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)" } }}>
-                    <Mail size={18} style={{ marginRight: 12, color: isDarkMode ? "#9CA3AF" : "#374151" }} /> Sent to Mail
                 </MenuItem>
                 <MenuItem onClick={() => handleAction("delete")} sx={{ borderRadius: 2, py: 1, fontSize: "0.95rem", color: "#EF4444", "&:hover": { bgcolor: isDarkMode ? "rgba(239, 68, 68, 0.1)" : "rgba(239, 68, 68, 0.05)" } }}>
                     <Trash2 size={18} style={{ marginRight: 12, color: "#EF4444" }} /> Delete
