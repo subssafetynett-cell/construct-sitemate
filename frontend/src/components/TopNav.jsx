@@ -88,8 +88,8 @@ export default function TopNav({ pageTitle, onMobileMenuClick }) {
   return (
     <Box
       sx={{
-        px: 2.5,
-        py: 1.5,
+        px: { xs: 1.5, md: 2.5 },
+        py: { xs: 1, md: 1.5 },
         bgcolor: isDarkMode ? "#111827" : "#FFFFFF",
         display: "flex",
         alignItems: "center",
@@ -111,9 +111,13 @@ export default function TopNav({ pageTitle, onMobileMenuClick }) {
         </IconButton>
         <Typography
           sx={{
-            fontSize: "1.5rem",
+            fontSize: { xs: "1.1rem", md: "1.5rem" },
             fontWeight: 600,
             color: isDarkMode ? "#F9FAFB" : "#111827",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            maxWidth: { xs: "180px", sm: "none" }
           }}
         >
           {title}
@@ -121,12 +125,12 @@ export default function TopNav({ pageTitle, onMobileMenuClick }) {
       </Box>
 
       {/* RIGHT: SEARCH + AVATAR */}
-      <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 1.5, md: 3 } }}>
         {/* SEARCH */}
         {!hideSearch && (
           <Box
             sx={{
-              display: "flex",
+              display: { xs: "none", md: "flex" },
               alignItems: "center",
               gap: 1.5,
               px: 2,
