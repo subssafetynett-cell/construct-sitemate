@@ -154,16 +154,20 @@ export default function CreateSitesPage() {
             return;
         }
 
-        if (!newSite.name || !newSite.address || !newSite.managerId) {
-            alert("Please fill all fields");
+        if (!newSite.name || !newSite.address) {
+            alert("Please fill out the Site Name and Address fields.");
             return;
         }
         setCreating(true);
         try {
+            const payload = { ...newSite };
+            if (!payload.managerId) {
+                delete payload.managerId;
+            }
             if (dialogMode === "create") {
-                await createSite(newSite);
+                await createSite(payload);
             } else if (dialogMode === "edit") {
-                await updateSite(selectedSiteId, newSite);
+                await updateSite(selectedSiteId, payload);
             }
             handleCloseDialog();
             loadSites();
@@ -479,7 +483,6 @@ export default function CreateSitesPage() {
                             <TextField
                                 select
                                 fullWidth
-                                required
                                 disabled={dialogMode === "view"}
                                 value={newSite.managerId}
                                 onChange={(e) => setNewSite({ ...newSite, managerId: e.target.value })}
