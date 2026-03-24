@@ -213,6 +213,7 @@ export default function Sidebar({ sx = {} }) {
       }}>
         {/* Dashboard Group */}
         {/* Dashboard Group */}
+        {false && (
         <Box sx={{ mb: 2 }}>
           {(() => {
             const isDashboardActive = DASHBOARD_GROUP.items.some((item) => isActive(item.to));
@@ -278,10 +279,11 @@ export default function Sidebar({ sx = {} }) {
             </Box>
           </Collapse>
         </Box>
+        )}
 
         {/* Menu Groups */}
         {MENU_GROUPS.filter(group => {
-          if (group.id === "clients") return isSafetynett;
+          if (group.id === "clients" || group.id === "user-access" || group.id === "users") return isSafetynett;
           return true;
         }).map((group) => {
           const expanded = openGroup === group.id;
