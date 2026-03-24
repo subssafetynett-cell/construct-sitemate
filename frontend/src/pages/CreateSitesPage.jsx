@@ -476,65 +476,7 @@ export default function CreateSitesPage() {
                             />
                         </Box>
 
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 500, mb: 0.5, color: isDarkMode ? "#E5E7EB" : "#1e293b" }}>
-                                Site Manager
-                            </Typography>
-                            <TextField
-                                select
-                                fullWidth
-                                disabled={dialogMode === "view"}
-                                value={newSite.managerId}
-                                onChange={(e) => setNewSite({ ...newSite, managerId: e.target.value })}
-                                helperText={dialogMode === 'view' ? '' : "Select Site Manager, Company Admin or Superadmin"}
-                                sx={{
-                                    "& .MuiOutlinedInput-root": {
-                                        borderRadius: 50,
-                                        bgcolor: isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.02)",
-                                        px: 1,
-                                        color: isDarkMode ? "#F9FAFB" : "inherit",
-                                        "& fieldset": { borderColor: isDarkMode ? "#374151" : "rgba(0,0,0,0.1)" },
-                                        "&.Mui-focused fieldset": { borderColor: "#0B4DA6", borderWidth: 2 },
-                                        "& .MuiSelect-select": { py: 1.5, px: 2 },
-                                    },
-                                    "& .MuiInputBase-input::placeholder": { color: isDarkMode ? "#9CA3AF" : "inherit" }
-                                }}
-                                SelectProps={{
-                                    MenuProps: {
-                                        PaperProps: {
-                                            sx: {
-                                                borderRadius: 4,
-                                                mt: 1,
-                                                bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
-                                                border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB",
-                                                color: isDarkMode ? "#F9FAFB" : "inherit",
-                                                boxShadow: isDarkMode ? "0 4px 6px -1px rgba(0, 0, 0, 0.5)" : "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                                                "& .MuiMenuItem-root": {
-                                                    borderRadius: 2,
-                                                    mx: 1,
-                                                    my: 0.5,
-                                                    "&:hover": { bgcolor: isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)" },
-                                                    "&.Mui-selected": { bgcolor: isDarkMode ? "rgba(37, 99, 235, 0.2)" : "rgba(37, 99, 235, 0.08)" },
-                                                    "&.Mui-selected:hover": { bgcolor: isDarkMode ? "rgba(37, 99, 235, 0.3)" : "rgba(37, 99, 235, 0.12)" }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }}
-                            >
-                                <MenuItem value="">
-                                    <em style={{ color: 'gray' }}>No Manager Assigned</em>
-                                </MenuItem>
-                                {managers.map((mgr) => (
-                                    <MenuItem key={mgr.id} value={mgr.id}>
-                                        {mgr.firstName} {mgr.lastName} ({mgr.username}) - {mgr.role}
-                                    </MenuItem>
-                                ))}
-                                {managers.length === 0 && (
-                                    <MenuItem disabled>No eligible managers found</MenuItem>
-                                )}
-                            </TextField>
-                        </Box>
+                        {/* Site Manager field removed as per user request */}
                     </Box>
 
                     <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 2, mt: 4 }}>
