@@ -28,43 +28,42 @@ app.use(
 
 const allowedOrigin = process.env.CLIENT_URL || "http://site-mateai.co.uk";
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      "https://site-mateai.co.uk",
+      "http://site-mateai.co.uk",
+      "https://www.site-mateai.co.uk",
+      "http://www.site-mateai.co.uk",
+      "https://api.site-mateai.co.uk",
+      "http://api.site-mateai.co.uk",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ];
 
-      const allowedOrigins = [
-        "http://site-mateai.co.uk",         // Main frontend (HTTP)
-        "https://site-mateai.co.uk",        // Main frontend (HTTPS)
-        "http://www.site-mateai.co.uk",     // Main frontend (WWW HTTP)
-        "https://www.site-mateai.co.uk",    // Main frontend (WWW HTTPS)
-        "http://api.site-mateai.co.uk",     // Backend itself (HTTP)
-        "https://api.site-mateai.co.uk",    // Backend itself (HTTPS)
-        "http://localhost:5173",             // Local dev
-        "http://localhost:3000",             // Alternative local dev
-      ];
+    const cleanOrigin = origin.replace(/\/$/, "");
 
-      // Also allow Vercel preview deployments and local development
-      if (
-        allowedOrigins.indexOf(origin) !== -1 || 
-        origin.endsWith(".vercel.app") ||
-        origin.startsWith("http://localhost:") ||
-        origin.startsWith("http://127.0.0.1:")
-      ) {
-        callback(null, true);
-      } else {
-        console.log("Blocked by CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-  })
-);
+    if (
+      allowedOrigins.includes(cleanOrigin) ||
+      cleanOrigin.endsWith(".vercel.app") ||
+      cleanOrigin.startsWith("http://localhost:") ||
+      cleanOrigin.startsWith("http://127.0.0.1:")
+    ) {
+      callback(null, true);
+    } else {
+      console.log("Blocked by CORS:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+};
 
-app.options(/.*/, cors()); // Enable pre-flight for all routes
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Enable pre-flight for all routes using same options
 
 app.use((req, res, next) => {
   next();
