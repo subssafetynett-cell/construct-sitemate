@@ -63,7 +63,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // Enable pre-flight for all routes using same options
+app.options("(.*)", cors(corsOptions)); // Enable pre-flight for all routes using same options
 
 app.use((req, res, next) => {
   next();
