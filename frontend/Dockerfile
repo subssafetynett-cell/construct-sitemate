@@ -8,10 +8,11 @@ RUN npm install
 
 COPY . .
 
-# Build the application
 # We pass the backend URL as a build argument
 ARG VITE_BACKEND_URL
 ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
+ARG VITE_MAINTENANCE_MODE
+ENV VITE_MAINTENANCE_MODE=$VITE_MAINTENANCE_MODE
 
 RUN npm run build
 

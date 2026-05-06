@@ -43,6 +43,7 @@ import AdstoneSiteInductionForm from './pages/AdstoneSiteInductionForm';
 import SheqInstallationForm from './pages/SheqInstallationForm';
 import SheqInspectionSelectionPage from './pages/SheqInspectionSelectionPage';
 import ShqInstallationSelectionPage from './pages/ShqInstallationSelectionPage';
+import Maintenance from './pages/Maintenance';
 
 
 import { ThemeProvider } from './context/ThemeContext';
@@ -54,6 +55,11 @@ const SUPERVISOR_PLUS = ["superadmin", "company_admin", "site_manager", "supervi
 const ALL_ROLES     = ["superadmin", "company_admin", "site_manager", "supervisor", "worker"];
 
 function App() {
+  const isMaintenanceMode = import.meta.env.VITE_MAINTENANCE_MODE === 'true';
+
+  if (isMaintenanceMode) {
+    return <Maintenance />;
+  }
 
   return (
     <ThemeProvider>
