@@ -1,143 +1,121 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Hammer, Settings, Clock, Mail } from 'lucide-react';
+import { Clock, Mail, ShieldCheck } from 'lucide-react';
 
 const Maintenance = () => {
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden font-sans">
-      {/* Background Glows */}
-      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center relative overflow-hidden font-sans selection:bg-blue-500/30">
+      {/* Dynamic Background Elements */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(30,58,138,0.15),transparent_70%)]" />
+        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-indigo-600/10 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '2s' }} />
+      </div>
 
-      <div className="relative z-10 max-w-2xl w-full px-6 text-center">
-        {/* Animated Icon Container */}
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
+      {/* Main Content Container */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="relative z-10 w-full max-w-4xl px-6 flex flex-col items-center text-center"
+      >
+        {/* Hero Image Container */}
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="mb-8 flex justify-center"
+          transition={{ delay: 0.2, duration: 1, ease: "backOut" }}
+          className="relative mb-12 group"
         >
-          <div className="relative">
-            <div className="absolute inset-0 bg-blue-500/20 rounded-3xl blur-2xl animate-pulse" />
-            <div className="relative bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-2xl">
-              <motion.div
-                animate={{ 
-                  rotate: [0, 10, -10, 0],
-                }}
-                transition={{ 
-                  duration: 4, 
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                <Settings className="w-16 h-16 text-blue-500" />
-              </motion.div>
-              <motion.div
-                className="absolute -top-2 -right-2"
-                animate={{ 
-                  y: [0, -5, 0],
-                }}
-                transition={{ 
-                  duration: 2, 
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                <Hammer className="w-8 h-8 text-indigo-400" />
-              </motion.div>
-            </div>
-          </div>
+          <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full scale-75 group-hover:scale-90 transition-transform duration-700" />
+          <img 
+            src="/maintenance-hero.png" 
+            alt="Maintenance Illustration" 
+            className="w-64 h-64 md:w-80 md:h-80 object-contain relative z-10 drop-shadow-[0_0_30px_rgba(59,130,246,0.3)]"
+          />
         </motion.div>
 
-        {/* Title */}
-        <motion.h1 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.6 }}
-          className="text-4xl md:text-5xl font-bold text-white mb-6 tracking-tight"
-        >
-          Scheduled <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Maintenance</span>
-        </motion.h1>
-
-        {/* Description */}
-        <motion.p 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.6 }}
-          className="text-slate-400 text-lg md:text-xl mb-12 leading-relaxed"
-        >
-          We're currently performing some scheduled maintenance to improve your experience. 
-          We'll be back online shortly. Thank you for your patience.
-        </motion.p>
-
-        {/* Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
-          <motion.div 
-            initial={{ x: -20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.6 }}
-            className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 p-4 rounded-2xl flex items-center gap-4 text-left"
+        {/* Content Box */}
+        <div className="max-w-2xl">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.4, duration: 0.5 }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-6 backdrop-blur-md"
           >
-            <div className="bg-blue-500/10 p-2 rounded-lg">
-              <Clock className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold">Status</p>
-              <p className="text-white font-medium">Coming Back Soon</p>
-            </div>
+            <ShieldCheck className="w-4 h-4" />
+            <span>Systems Upgrade in Progress</span>
           </motion.div>
 
-          <motion.div 
-            initial={{ x: 20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
+          <motion.h1 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.6 }}
-            className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 p-4 rounded-2xl flex items-center gap-4 text-left"
+            className="text-5xl md:text-7xl font-extrabold text-white mb-8 tracking-tight leading-[1.1]"
           >
-            <div className="bg-indigo-500/10 p-2 rounded-lg">
-              <Mail className="w-5 h-5 text-indigo-400" />
-            </div>
-            <div>
-              <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold">Support</p>
-              <p className="text-white font-medium text-sm truncate">support@safety-net.co.uk</p>
-            </div>
-          </motion.div>
+            We're Polishing <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-cyan-400">Something New</span>
+          </motion.h1>
+
+          <motion.p 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6, duration: 0.6 }}
+            className="text-slate-400 text-lg md:text-xl mb-12 leading-relaxed max-w-xl mx-auto"
+          >
+            SafetyNet is currently undergoing scheduled maintenance to enhance our platform's safety and performance. We'll be back online in no time.
+          </motion.p>
+
+          {/* Centered Action/Info Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg mx-auto mb-16">
+            <motion.div 
+              whileHover={{ y: -5 }}
+              className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2 group transition-colors hover:border-blue-500/30"
+            >
+              <div className="bg-blue-500/10 p-3 rounded-xl group-hover:bg-blue-500/20 transition-colors">
+                <Clock className="w-6 h-6 text-blue-400" />
+              </div>
+              <div>
+                <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] font-bold mb-1">Estimated Time</p>
+                <p className="text-white font-semibold">Back shortly</p>
+              </div>
+            </motion.div>
+
+            <motion.div 
+              whileHover={{ y: -5 }}
+              className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2 group transition-colors hover:border-indigo-500/30"
+            >
+              <div className="bg-indigo-500/10 p-3 rounded-xl group-hover:bg-indigo-500/20 transition-colors">
+                <Mail className="w-6 h-6 text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] font-bold mb-1">Get Support</p>
+                <p className="text-white font-semibold">Contact Team</p>
+              </div>
+            </motion.div>
+          </div>
         </div>
 
         {/* Footer */}
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.7, duration: 0.8 }}
-          className="pt-8 border-t border-slate-900"
+          transition={{ delay: 1, duration: 1 }}
+          className="pt-8 w-full max-w-sm border-t border-slate-900/50"
         >
-          <p className="text-slate-600 text-sm">
-            &copy; {new Date().getFullYear()} SafetyNet. All rights reserved.
-          </p>
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex items-center gap-2 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-white text-xs">SN</div>
+              <span className="text-white font-bold tracking-tighter text-xl">SafetyNet</span>
+            </div>
+            <p className="text-slate-600 text-xs tracking-widest uppercase">
+              &copy; {new Date().getFullYear()} Secure Infrastructure
+            </p>
+          </div>
         </motion.div>
-      </div>
+      </motion.div>
 
-      {/* Floating particles (simplified) */}
-      <div className="absolute inset-0 pointer-events-none opacity-20">
-        {[...Array(6)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute w-1 h-1 bg-white rounded-full"
-            initial={{ 
-              x: Math.random() * 100 + "%", 
-              y: Math.random() * 100 + "%" 
-            }}
-            animate={{ 
-              y: [null, "-20px", "20px", null],
-              opacity: [0.2, 0.5, 0.2]
-            }}
-            transition={{ 
-              duration: 5 + Math.random() * 5, 
-              repeat: Infinity,
-              ease: "linear"
-            }}
-          />
-        ))}
-      </div>
+      {/* Background Grid Effect */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20 pointer-events-none" />
     </div>
   );
 };
