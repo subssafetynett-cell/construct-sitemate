@@ -6,6 +6,9 @@
 # Or merge with the default stack file:
 #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build
 #
+# No fixed host ports — safe on Coolify and shared Docker hosts. Route with your proxy
+# to `frontend:80` and optionally `backend:4000`, or same-origin via nginx in the SPA image.
+#
 # HTTPS: terminate TLS in front of this stack; set ALLOWED_ORIGINS to your public SPA
 # origin (https://...) and TRUST_PROXY=1 (default in production). See `.env.docker.example`.
 #
@@ -17,8 +20,8 @@ services:
     build: ./backend
     container_name: safetyapp_backend
     restart: always
-    ports:
-      - "4000:4000"
+    expose:
+      - "4000"
     env_file:
       - .env
     environment:
@@ -48,8 +51,8 @@ services:
         VITE_BASE_PATH: "${VITE_BASE_PATH:-/}"
     container_name: safetyapp_frontend
     restart: always
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     depends_on:
       backend:
         condition: service_healthy

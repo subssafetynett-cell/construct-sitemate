@@ -10,12 +10,17 @@
 # Example (Neon):
 #   DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx.us-east-1.aws.neon.tech/neondb?sslmode=require
 #
-# Then run as usual:
+# Then run as usual (no host ports — fine for Coolify):
 #   docker compose up -d --build
+# With localhost ports (8080 / 4000 / 5432), use `scripts/docker-up.sh` or:
+#   docker compose -f docker-compose.yaml -f docker-compose.local.yaml up -d --build
 #
-# HTTPS: terminate TLS at your load balancer or host nginx, forward HTTP to :8080 / :4000.
-# Set ALLOWED_ORIGINS and TRUST_PROXY in `.env` (see `.env.docker.example`). The SPA
-# build uses VITE_USE_RELATIVE_API=true by default so the browser calls https://your-host/api.
+# Host ports: this file does not publish 8080/4000/5432 to the host so PaaS deploys
+# (e.g. Coolify) do not hit "port already allocated". Services talk on the Docker network.
+# For localhost ports, merge `docker-compose.local.yaml` (see `scripts/docker-up.sh`).
+#
+# HTTPS: terminate TLS at your edge; set ALLOWED_ORIGINS and TRUST_PROXY in `.env`
+# (see `.env.docker.example`). Use VITE_USE_RELATIVE_API=true so the browser calls /api.
 #
 # The local `db` container still runs unless you remove it; it is optional if you
 # only use Neon — to save resources, use a deploy-specific compose or stop db:
@@ -30,8 +35,8 @@ services:
       POSTGRES_USER: safetyuser
       POSTGRES_PASSWORD: safetypassword
       POSTGRES_DB: safetyapp_db
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -44,8 +49,8 @@ services:
     build: ./backend
     container_name: safetyapp_backend
     restart: always
-    ports:
-      - "4000:4000"
+    expose:
+      - "4000"
     env_file:
       - .env
     environment:
@@ -80,8 +85,8 @@ services:
         VITE_BASE_PATH: "${VITE_BASE_PATH:-/}"
     container_name: safetyapp_frontend
     restart: always
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     depends_on:
       backend:
         condition: service_healthy
