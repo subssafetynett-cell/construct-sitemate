@@ -18,7 +18,7 @@ import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
 import DomainIcon from "@mui/icons-material/Domain";
 import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
-import EcoIcon from "@mui/icons-material/Eco";
+import EnergySavingsLeafIcon from "@mui/icons-material/EnergySavingsLeaf";
 import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import { useAuth } from "../context/AuthContext";
@@ -257,7 +257,7 @@ export default function ConcernReportDashboard() {
         {
             key: "env",
             show: true,
-            icon: EcoIcon,
+            icon: EnergySavingsLeafIcon,
             color: "green",
             label: "Sustainability",
             value: data.stats.envConcerns ?? 0,

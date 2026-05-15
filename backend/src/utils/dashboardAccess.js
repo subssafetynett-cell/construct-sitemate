@@ -1,9 +1,29 @@
 const { isGlobalSiteAccess, buildSiteListWhere } = require("./siteAccess");
 
 /**
- * Prisma `where` for form responses visible on the dashboard.
+ * Site IDs assigned to this site manager (managerId = user id).
+ * @param {import('@prisma/client').PrismaClient} prisma
+ * @param {string} managerUserId
+ * @returns {Promise<string[]>}
  */
-function buildDashboardResponseWhere(actor) {
+async function getManagedSiteIds(prisma, managerUserId) {
+  if (!managerUserId) return [];
+  const sites = await prisma.site.findMany({
+    where: { managerId: managerUserId },
+    select: { id: true },
+  });
+  return sites.map((s) => s.id);
+}
+
+/**
+ * Prisma `where` for form responses visible on the dashboard.
+ * Site managers: only submissions tied to their assigned sites (answers.siteId),
+ * plus their own submissions without a site context.
+ *
+ * @param {import('@prisma/client').PrismaClient} prisma
+ * @param {{ id: string, role?: string, clientId?: string | null }} actor
+ */
+async function buildDashboardResponseWhere(prisma, actor) {
   if (!actor?.id) return { id: { in: [] } };
 
   if (isGlobalSiteAccess(actor)) {
@@ -16,7 +36,28 @@ function buildDashboardResponseWhere(actor) {
     return { submittedBy: { clientId: actor.clientId } };
   }
 
-  if (["site_manager", "supervisor"].includes(role) && actor.clientId) {
+  if (role === "site_manager") {
+    const siteIds = await getManagedSiteIds(prisma, actor.id);
+    const orClauses = [{ submittedById: actor.id }];
+
+    for (const siteId of siteIds) {
+      orClauses.push({
+        answers: {
+          path: ["siteId"],
+          equals: siteId,
+        },
+      });
+    }
+
+    if (orClauses.length === 1 && siteIds.length === 0) {
+      // No sites assigned — only own submissions
+      return { submittedById: actor.id };
+    }
+
+    return { OR: orClauses };
+  }
+
+  if (role === "supervisor" && actor.clientId) {
     return { submittedBy: { clientId: actor.clientId } };
   }
 
@@ -92,4 +133,5 @@ module.exports = {
   buildDashboardUserCountWhere,
   buildSiteListWhere,
   getDashboardScopeMeta,
+  getManagedSiteIds,
 };

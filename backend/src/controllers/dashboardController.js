@@ -38,9 +38,9 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
   }
 
   const scope = getDashboardScopeMeta(actor);
-  const responseWhere = buildDashboardResponseWhere(actor);
   const siteWhere = buildSiteListWhere(actor);
   const userCountWhere = buildDashboardUserCountWhere(actor);
+  const responseWhere = await buildDashboardResponseWhere(prisma, actor);
 
   try {
     const [totalSites, totalUsers, allResponses] = await Promise.all([
