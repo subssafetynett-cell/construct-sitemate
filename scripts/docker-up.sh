@@ -32,7 +32,7 @@ while ! docker info >/dev/null 2>&1; do
   if (( elapsed >= MAX_WAIT )); then
     echo "Timed out after ${MAX_WAIT}s waiting for Docker."
     echo "Ensure Docker Desktop is running, then:"
-    echo "  cd \"${ROOT}\" && docker compose up -d --build"
+    echo "  cd \"${ROOT}\" && docker compose -f docker-compose.yaml up -d --build"
     exit 1
   fi
   sleep 2
@@ -48,6 +48,6 @@ if [[ ! -f .env ]]; then
 fi
 
 echo "Starting containers..."
-docker compose up -d --build "$@"
+docker compose -f docker-compose.yaml up -d --build "$@"
 echo ""
-docker compose ps
+docker compose -f docker-compose.yaml ps

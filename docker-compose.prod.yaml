@@ -1,7 +1,10 @@
 # Production-style stack: backend + frontend only (external Postgres, e.g. Neon).
 # No local `db` service — set DATABASE_URL in `.env` or the host environment.
 #
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yaml up -d --build
+#
+# Or merge with the default stack file:
+#   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build
 #
 # HTTPS: terminate TLS in front of this stack; set ALLOWED_ORIGINS to your public SPA
 # origin (https://...) and TRUST_PROXY=1 (default in production). See `.env.docker.example`.
