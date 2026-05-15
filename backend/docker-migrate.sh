@@ -1,6 +1,21 @@
 #!/bin/sh
 set -e
 
+# Always run from the backend directory (works in Docker /app and local npm scripts).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Load DATABASE_URL from repo-root .env for local runs (npm run db:init, etc.).
+# We only read DATABASE_URL — do not `source` the whole file (values like SMTP_FROM break sh).
+if [ -z "$DATABASE_URL" ]; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  ENV_FILE="$REPO_ROOT/.env"
+  if [ -f "$ENV_FILE" ]; then
+    DATABASE_URL="$(grep -E '^[[:space:]]*DATABASE_URL=' "$ENV_FILE" | tail -1 | cut -d= -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+    export DATABASE_URL
+  fi
+fi
+
 if [ -z "$DATABASE_URL" ]; then
   echo "ERROR: DATABASE_URL is not set. Set it in Coolify / .env (PostgreSQL connection string)."
   exit 1
@@ -10,7 +25,14 @@ echo "Running Prisma migrations..."
 
 # Neon / Coolify often reuse a DB that already has tables but no _prisma_migrations rows.
 # Baselining first avoids Prisma P3005 ("database schema is not empty").
-STATE="$(node prisma-baseline.js 2>/dev/null || echo "client=0 lastLogin=0")"
+STATE="$(node "$SCRIPT_DIR/prisma-baseline.js")"
+case "$STATE" in
+  client=0*|client=1*) ;;
+  *)
+    echo "Warning: prisma-baseline returned unexpected output; using safe default."
+    STATE="client=0 lastLogin=0"
+    ;;
+esac
 echo "Database state: $STATE"
 
 baseline_migration() {

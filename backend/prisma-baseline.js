@@ -4,6 +4,10 @@
  */
 const { PrismaClient } = require("@prisma/client");
 
+function printFallback() {
+  console.log("client=0 lastLogin=0");
+}
+
 async function main() {
   const prisma = new PrismaClient();
   try {
@@ -28,11 +32,22 @@ async function main() {
       loginRow?.ok === true || loginRow?.ok === "t" || loginRow?.ok === 1;
 
     console.log(`client=${client ? "1" : "0"} lastLogin=${lastLogin ? "1" : "0"}`);
-  } catch {
-    console.log("client=0 lastLogin=0");
+  } catch (err) {
+    console.error("prisma-baseline:", err?.message || err);
+    printFallback();
   } finally {
-    await prisma.$disconnect();
+    try {
+      await prisma.$disconnect();
+    } catch {
+      // Ignore disconnect errors so we still exit cleanly after printing state.
+    }
   }
 }
 
-main();
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("prisma-baseline:", err?.message || err);
+    printFallback();
+    process.exit(0);
+  });
