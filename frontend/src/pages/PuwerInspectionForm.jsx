@@ -18,6 +18,7 @@ import api from "../services/api";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
+import { GENERAL_FORM_TEMPLATE_READONLY_MESSAGE } from "../utils/generalFormTemplateAccess";
 import FormDocumentHeader from "../components/FormDocumentHeader";
 
 export default function PuwerInspectionForm() {
@@ -213,7 +214,7 @@ export default function PuwerInspectionForm() {
         <Layout pageTitle="PUWER Inspection Register">
             {!canEdit && (
                 <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-                    You can view this template but only a Super Admin, Company Admin, or Supervisor can edit or save it. Use a site pack link to fill this form for a site.
+                    {GENERAL_FORM_TEMPLATE_READONLY_MESSAGE}
                 </Alert>
             )}
             <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>

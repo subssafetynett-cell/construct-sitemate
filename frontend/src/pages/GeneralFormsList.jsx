@@ -10,7 +10,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import { canEditGeneralFormTemplatesList } from "../utils/generalFormTemplateAccess";
+import {
+    canEditGeneralFormTemplatesList,
+    GENERAL_FORM_TEMPLATE_EDITOR_ROLES_TEXT,
+} from "../utils/generalFormTemplateAccess";
 import {
     isGeneralFormsPageSubmission,
     submissionHasSiteContext,
@@ -189,8 +192,8 @@ export default function GeneralFormsList() {
                 }}
             >
                 {canManageTemplates
-                    ? "From this page you can edit template fields, name the template when you save, then use it for the site pack. Only Super Admin, Company Admin, and Supervisor can change templates."
-                    : "You can open submissions that belong to a site pack (they include site context). Only Super Admin, Company Admin, and Supervisor can create or edit general form templates from the cards below."}
+                    ? `From this page you can edit template fields, name the template when you save, then use it for the site pack. Only ${GENERAL_FORM_TEMPLATE_EDITOR_ROLES_TEXT} can change templates.`
+                    : `You can open submissions that belong to a site pack (they include site context). Only ${GENERAL_FORM_TEMPLATE_EDITOR_ROLES_TEXT} can create or edit general form templates from the cards below.`}
             </Alert>
 
             <Typography variant="h6" sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827", mb: 2 }}>

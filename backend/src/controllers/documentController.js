@@ -9,10 +9,19 @@ const {
   sanitizePublicIdBase,
 } = require('../utils/documentFileTypes');
 const { destroyCloudinaryAsset } = require('../utils/cloudinaryDocument');
+const { userCanAccessSite } = require('../utils/siteAccess');
 
 // Upload a document
 exports.uploadDocument = asyncHandler(async (req, res) => {
     const { title, version, validFrom, validUntil, tags, siteId, category } = req.body;
+
+    if (!siteId) {
+        return res.status(400).json({ success: false, message: "Site ID is required" });
+    }
+
+    if (!(await userCanAccessSite(prisma, req.user, siteId))) {
+        return res.status(403).json({ success: false, message: "You do not have access to this site." });
+    }
 
     if (!req.file) {
         return res.status(400).json({ success: false, message: "No file uploaded" });
@@ -79,15 +88,17 @@ exports.uploadDocument = asyncHandler(async (req, res) => {
 // Get documents for a specific site and module (category)
 exports.getDocuments = asyncHandler(async (req, res) => {
     const { siteId, category } = req.query;
-    const userId = req.user.id;
 
     if (!siteId) {
         return res.status(400).json({ success: false, message: "Site ID is required" });
     }
 
+    if (!(await userCanAccessSite(prisma, req.user, siteId))) {
+        return res.status(403).json({ success: false, message: "You do not have access to this site." });
+    }
+
     const where = {
         siteId,
-        uploadedById: userId,
     };
 
     if (category) {
@@ -110,17 +121,19 @@ exports.getDocuments = asyncHandler(async (req, res) => {
 // Get counts per module for a site (User specific)
 exports.getModuleCounts = asyncHandler(async (req, res) => {
     const { siteId } = req.query;
-    const userId = req.user.id;
 
     if (!siteId) {
         return res.status(400).json({ success: false, message: "Site ID is required" });
+    }
+
+    if (!(await userCanAccessSite(prisma, req.user, siteId))) {
+        return res.status(403).json({ success: false, message: "You do not have access to this site." });
     }
 
     const counts = await prisma.siteDocument.groupBy({
         by: ['category'],
         where: {
             siteId,
-            uploadedById: userId,
         },
         _count: {
             category: true,
@@ -142,6 +155,10 @@ exports.deleteDocument = asyncHandler(async (req, res) => {
 
     if (!doc) {
         return res.status(404).json({ success: false, message: "Document not found" });
+    }
+
+    if (!(await userCanAccessSite(prisma, req.user, doc.siteId))) {
+        return res.status(403).json({ success: false, message: "You do not have access to this site." });
     }
 
     if (doc.url) {

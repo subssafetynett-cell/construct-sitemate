@@ -18,6 +18,7 @@ const AccountSettings = () => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [passwords, setPasswords] = useState({
+        currentPassword: "",
         newPassword: "",
         confirmPassword: "",
     });
@@ -61,7 +62,7 @@ const AccountSettings = () => {
     };
 
     const handleUpdatePassword = async () => {
-        if (!passwords.newPassword || !passwords.confirmPassword) {
+        if (!passwords.currentPassword || !passwords.newPassword || !passwords.confirmPassword) {
             setSnack({ open: true, message: "Please fill in all fields", severity: "warning" });
             return;
         }
@@ -77,19 +78,13 @@ const AccountSettings = () => {
         }
 
         try {
-
-            const userId = user._id || user.id;
-            if (!userId) {
-                setSnack({ open: true, message: "User ID missing", severity: "error" });
-                return;
-            }
-
-            await api.put(`/users/${userId}`, {
-                password: passwords.newPassword,
+            await api.post("/auth/change-password", {
+                currentPassword: passwords.currentPassword,
+                newPassword: passwords.newPassword,
             });
 
             setSnack({ open: true, message: "Password updated successfully", severity: "success" });
-            setPasswords({ newPassword: "", confirmPassword: "" });
+            setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
         } catch (err) {
             console.error("Update failed", err);
             setSnack({
@@ -135,12 +130,25 @@ const AccountSettings = () => {
                             <Box component="form" noValidate autoComplete="off">
                                 <Grid container spacing={4}>
                                     <Grid item xs={12}>
+                                        <TextField
+                                            fullWidth
+                                            label="Current Password"
+                                            name="currentPassword"
+                                            type="password"
+                                            autoComplete="current-password"
+                                            value={passwords.currentPassword}
+                                            onChange={handleChange}
+                                            variant="outlined"
+                                            sx={{ mb: 3 }}
+                                            InputProps={{ sx: { borderRadius: 2 } }}
+                                        />
                                         <Box sx={{ display: "flex", flexDirection: "row", gap: 3 }}>
                                             <TextField
                                                 fullWidth
                                                 label="New Password"
                                                 name="newPassword"
                                                 type="password"
+                                                autoComplete="new-password"
                                                 value={passwords.newPassword}
                                                 onChange={handleChange}
                                                 variant="outlined"
@@ -151,6 +159,7 @@ const AccountSettings = () => {
                                                 label="Confirm New Password"
                                                 name="confirmPassword"
                                                 type="password"
+                                                autoComplete="new-password"
                                                 value={passwords.confirmPassword}
                                                 onChange={handleChange}
                                                 variant="outlined"

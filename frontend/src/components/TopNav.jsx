@@ -16,6 +16,8 @@ import { LogOut, User, Settings, Menu } from "lucide-react";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
+import { clearExpiryTimer } from "../utils/authSession";
 
 export default function TopNav({ pageTitle, onMobileMenuClick }) {
   const { isDarkMode } = useTheme();
@@ -24,6 +26,7 @@ export default function TopNav({ pageTitle, onMobileMenuClick }) {
   // State for offcanvas
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const navigate = useNavigate();
+  const { clearUser, currentUser } = useAuth();
 
   // Get user from local storage
   const getUser = () => {
@@ -34,14 +37,12 @@ export default function TopNav({ pageTitle, onMobileMenuClick }) {
       return null;
     }
   };
-  const user = getUser();
+  const user = currentUser || getUser();
 
-  // Handle Logout
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    sessionStorage.removeItem("token");
-    navigate("/login");
+    clearExpiryTimer();
+    clearUser();
+    navigate("/login", { replace: true });
   };
 
   // User initials

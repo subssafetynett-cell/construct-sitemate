@@ -18,6 +18,7 @@ import {
     DialogContent,
     DialogActions,
     Stack,
+    Divider,
     InputLabel,
     Menu,
     MenuItem,
@@ -71,6 +72,7 @@ import {
     triggerBrowserDownload,
 } from "../utils/documentFiles";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -133,6 +135,110 @@ const TEMPLATES = [
         path: "/general-forms/puwer-inspection-form",
     }
 ];
+
+const FRIDAY_PACK_ACCENT = "#E89F17";
+
+/** Template card for the Friday Pack “Create form” picker modal. */
+function FormPickerCard({ title, description, meta, onSelect, onPreview, isDarkMode }) {
+    return (
+        <Card
+            onClick={onSelect}
+            elevation={0}
+            sx={{
+                cursor: "pointer",
+                borderRadius: 2.5,
+                height: "100%",
+                minHeight: 108,
+                display: "flex",
+                flexDirection: "column",
+                bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+                border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB",
+                transition: "border-color 0.2s, box-shadow 0.2s, transform 0.2s",
+                "&:hover": {
+                    borderColor: FRIDAY_PACK_ACCENT,
+                    transform: "translateY(-2px)",
+                    boxShadow: isDarkMode
+                        ? "0 8px 24px rgba(0,0,0,0.35)"
+                        : "0 8px 24px rgba(232, 159, 23, 0.12)",
+                },
+            }}
+        >
+            <CardContent
+                sx={{
+                    p: 2.5,
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 0.75,
+                    "&:last-child": { pb: 2.5 },
+                }}
+            >
+                <Box
+                    sx={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                        gap: 1,
+                    }}
+                >
+                    <Typography
+                        variant="subtitle2"
+                        fontWeight={700}
+                        sx={{
+                            flex: 1,
+                            lineHeight: 1.35,
+                            color: isDarkMode ? "#F9FAFB" : "#111827",
+                        }}
+                    >
+                        {title}
+                    </Typography>
+                    <IconButton
+                        size="small"
+                        aria-label={`Preview ${title}`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onPreview();
+                        }}
+                        sx={{
+                            flexShrink: 0,
+                            mt: -0.25,
+                            color: isDarkMode ? "#60A5FA" : "#0B4DA6",
+                            bgcolor: isDarkMode ? "rgba(55, 65, 81, 0.6)" : "#F3F4F6",
+                            "&:hover": {
+                                bgcolor: isDarkMode ? "#374151" : "#E5E7EB",
+                            },
+                        }}
+                    >
+                        <VisibilityOutlinedIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                </Box>
+                {description ? (
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            color: isDarkMode ? "#9CA3AF" : "#6B7280",
+                            lineHeight: 1.45,
+                            flexGrow: 1,
+                        }}
+                    >
+                        {description}
+                    </Typography>
+                ) : null}
+                {meta ? (
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            color: isDarkMode ? "#6B7280" : "#9CA3AF",
+                            mt: description ? 0 : "auto",
+                        }}
+                    >
+                        {meta}
+                    </Typography>
+                ) : null}
+            </CardContent>
+        </Card>
+    );
+}
 
 const MODULES_CONFIG_DEFAULT = [
     { title: "Friday Pack Forms", icon: <ClipboardList size={32} /> },
@@ -198,6 +304,7 @@ function pathWithSearchParams(path, params) {
 
 export default function SitepackManagement() {
     const { isDarkMode } = useTheme();
+    const { role } = useAuth();
     // Get user and determine modules config
     const userString = localStorage.getItem("user");
     const user = userString ? JSON.parse(userString) : null;
@@ -1075,7 +1182,9 @@ export default function SitepackManagement() {
                             {sites.length === 0 ? (
                                 <Grid item xs={12}>
                                     <Typography color="text.secondary" align="center">
-                                        No sites found.
+                                        {role === "site_manager"
+                                            ? "No sites assigned to you yet. Ask your company admin to create a site and select you as site manager."
+                                            : "No sites found."}
                                     </Typography>
                                 </Grid>
                             ) : (
@@ -1555,284 +1664,293 @@ export default function SitepackManagement() {
                 onClose={() => setCreateFormModalOpen(false)}
                 maxWidth="md"
                 fullWidth
+                scroll="paper"
                 PaperProps={{
                     sx: {
                         borderRadius: 3,
-                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF"
-                    }
+                        overflow: "hidden",
+                        maxHeight: "min(90vh, 880px)",
+                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+                        boxShadow: isDarkMode
+                            ? "0 25px 50px -12px rgba(0,0,0,0.6)"
+                            : "0 25px 50px -12px rgba(0,0,0,0.18)",
+                    },
                 }}
             >
-                <DialogTitle sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    bgcolor: "hsl(38, 70%, 55%)",
-                    color: "#FFFFFF",
-                    p: 2,
-                    px: 3
-                }}>
-                    <Typography variant="h6" fontWeight={600}>Select a Form Template</Typography>
-                    <IconButton size="small" onClick={() => setCreateFormModalOpen(false)}>
-                        <X size={20} color="#FFFFFF" />
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{ p: 4, bgcolor: isDarkMode ? "#111827" : "#F9FAFB" }}>
-                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
-                        Saved general forms
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Forms you edited and saved from General Forms appear here. Pick one to start from that version for this site’s Friday pack.
-                    </Typography>
-                    {createFormModalLoading ? (
-                        <Box sx={{ display: "flex", justifyContent: "center", py: 3, mb: 4 }}>
-                            <CircularProgress size={32} sx={{ color: "hsl(38, 70%, 55%)" }} />
+                <DialogTitle
+                    sx={{
+                        m: 0,
+                        p: 0,
+                        bgcolor: FRIDAY_PACK_ACCENT,
+                    }}
+                >
+                    <Box
+                        sx={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            justifyContent: "space-between",
+                            gap: 2,
+                            px: 3,
+                            py: 2.5,
+                        }}
+                    >
+                        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5, minWidth: 0 }}>
+                            <Box
+                                sx={{
+                                    mt: 0.25,
+                                    p: 1,
+                                    borderRadius: 2,
+                                    bgcolor: "rgba(255,255,255,0.2)",
+                                    display: "flex",
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <ClipboardList size={22} color="#FFFFFF" strokeWidth={2} />
+                            </Box>
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography
+                                    variant="h6"
+                                    fontWeight={700}
+                                    sx={{ color: "#FFFFFF", lineHeight: 1.3, fontSize: "1.125rem" }}
+                                >
+                                    Select a Form Template
+                                </Typography>
+                                <Typography
+                                    variant="body2"
+                                    sx={{ color: "rgba(255,255,255,0.88)", mt: 0.5, lineHeight: 1.45 }}
+                                >
+                                    Start from a saved version or pick a blank template for this site&apos;s Friday pack.
+                                </Typography>
+                            </Box>
                         </Box>
-                    ) : savedGeneralSubmissions.length === 0 ? (
-                        <Paper
-                            elevation={0}
+                        <IconButton
+                            size="small"
+                            onClick={() => setCreateFormModalOpen(false)}
                             sx={{
-                                p: 3,
-                                mb: 4,
-                                borderRadius: 2,
-                                bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
-                                border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB",
+                                flexShrink: 0,
+                                color: "#FFFFFF",
+                                bgcolor: "rgba(255,255,255,0.15)",
+                                "&:hover": { bgcolor: "rgba(255,255,255,0.28)" },
                             }}
                         >
-                            <Typography variant="body2" color="text.secondary">
-                                No saved general forms yet. Open General Forms, edit a template, save it with a name, then it will show here.
-                            </Typography>
-                        </Paper>
-                    ) : (
-                        <Grid container spacing={2} sx={{ mb: 4 }}>
-                            {savedGeneralSubmissions.map((sub) => {
-                                const primary =
-                                    sub.name ||
-                                    sub.answers?.name ||
-                                    sub.form?.title ||
-                                    "Untitled";
-                                const secondary =
-                                    sub.form?.title &&
-                                    primary !== sub.form.title
-                                        ? sub.form.title
-                                        : null;
-                                const rid = sub.id || sub._id;
-                                return (
-                                    <Grid item xs={12} sm={6} md={4} key={rid}>
-                                        <Card
-                                            onClick={() => handleSelectSavedGeneralSubmission(sub)}
-                                            elevation={0}
-                                            sx={{
-                                                position: "relative",
-                                                cursor: "pointer",
-                                                borderRadius: 3,
-                                                width: "100%",
-                                                minHeight: 120,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
-                                                border: isDarkMode
-                                                    ? "1px solid #374151"
-                                                    : "1px solid #E5E7EB",
-                                                transition: "all 0.2s",
-                                                "&:hover": {
-                                                    borderColor: "#E89F17",
-                                                    transform: "translateY(-3px)",
-                                                    boxShadow: isDarkMode
-                                                        ? "0 4px 12px rgba(0,0,0,0.5)"
-                                                        : "0 4px 12px rgba(0,0,0,0.05)",
-                                                },
-                                            }}
-                                        >
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handlePreviewSavedGeneralSubmission(sub);
-                                                }}
-                                                sx={{
-                                                    position: "absolute",
-                                                    top: 8,
-                                                    right: 8,
-                                                    color: isDarkMode ? "#60A5FA" : "#0B4DA6",
-                                                    bgcolor: isDarkMode
-                                                        ? "rgba(55, 65, 81, 0.5)"
-                                                        : "rgba(243, 244, 246, 0.5)",
-                                                    "&:hover": {
-                                                        bgcolor: isDarkMode ? "#374151" : "#E5E7EB",
-                                                    },
-                                                }}
-                                            >
-                                                <VisibilityOutlinedIcon fontSize="small" />
-                                            </IconButton>
-                                            <CardContent
-                                                sx={{
-                                                    p: 2,
-                                                    pr: 4,
-                                                    display: "flex",
-                                                    flexDirection: "column",
-                                                    flexGrow: 1,
-                                                }}
-                                            >
-                                                <Typography
-                                                    variant="subtitle1"
-                                                    fontWeight={700}
-                                                    sx={{
-                                                        lineHeight: 1.2,
-                                                        mb: 0.5,
-                                                        color: isDarkMode ? "#F9FAFB" : "#111827",
-                                                    }}
-                                                >
-                                                    {primary}
-                                                </Typography>
-                                                {secondary && (
-                                                    <Typography
-                                                        variant="caption"
-                                                        sx={{
-                                                            display: "block",
-                                                            color: isDarkMode ? "#9CA3AF" : "#6B7280",
-                                                            mb: 1,
-                                                        }}
-                                                    >
-                                                        {secondary}
-                                                    </Typography>
-                                                )}
-                                                <Typography
-                                                    variant="body2"
-                                                    sx={{
-                                                        color: isDarkMode ? "#9CA3AF" : "#6B7280",
-                                                        mt: "auto",
-                                                    }}
-                                                >
-                                                    Saved{" "}
-                                                    {new Date(sub.createdAt).toLocaleDateString("en-GB", {
-                                                        day: "2-digit",
-                                                        month: "short",
-                                                        year: "numeric",
-                                                    })}
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                );
-                            })}
-                        </Grid>
-                    )}
+                            <X size={18} />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
 
-                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
-                        Blank templates
-                    </Typography>
-                    <Grid container spacing={2} sx={{ mb: 4 }}>
-                        {TEMPLATES.map(template => (
-                            <Grid item xs={12} sm={6} md={4} key={template.id}>
-                                <Card
-                                    onClick={() => handleSelectForm(template.path, false)}
-                                    elevation={0}
+                <DialogContent
+                    sx={{
+                        p: 0,
+                        bgcolor: isDarkMode ? "#111827" : "#F9FAFB",
+                        overflowY: "auto",
+                    }}
+                >
+                    <Box sx={{ px: { xs: 2, sm: 3 }, py: 3 }}>
+                        {/* Saved general forms */}
+                        <Box sx={{ mb: 3 }}>
+                            <Box
+                                sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: 1,
+                                    mb: 1,
+                                }}
+                            >
+                                <Typography
+                                    variant="overline"
                                     sx={{
-                                        position: 'relative',
-                                        cursor: 'pointer',
-                                        borderRadius: 3,
-                                        width: '100%',
-                                        height: 120,
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
-                                        border: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
-                                        transition: 'all 0.2s',
-                                        '&:hover': {
-                                            borderColor: '#E89F17',
-                                            transform: 'translateY(-3px)',
-                                            boxShadow: isDarkMode ? "0 4px 12px rgba(0,0,0,0.5)" : "0 4px 12px rgba(0,0,0,0.05)"
-                                        }
+                                        fontWeight: 700,
+                                        letterSpacing: "0.08em",
+                                        color: FRIDAY_PACK_ACCENT,
+                                        lineHeight: 1.2,
                                     }}
                                 >
-                                    <IconButton 
+                                    Saved general forms
+                                </Typography>
+                                {!createFormModalLoading && (
+                                    <Chip
                                         size="small"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePreviewForm(template.path, false);
+                                        label={savedGeneralSubmissions.length}
+                                        sx={{
+                                            height: 22,
+                                            fontWeight: 600,
+                                            bgcolor: isDarkMode ? "rgba(232,159,23,0.15)" : "rgba(232,159,23,0.12)",
+                                            color: FRIDAY_PACK_ACCENT,
                                         }}
-                                        sx={{ 
-                                            position: 'absolute', 
-                                            top: 8, 
-                                            right: 8, 
-                                            color: isDarkMode ? "#60A5FA" : "#0B4DA6",
-                                            bgcolor: isDarkMode ? "rgba(55, 65, 81, 0.5)" : "rgba(243, 244, 246, 0.5)",
-                                            '&:hover': { bgcolor: isDarkMode ? "#374151" : "#E5E7EB" }
-                                        }}
-                                    >
-                                        <VisibilityOutlinedIcon fontSize="small"/>
-                                    </IconButton>
-                                    <CardContent sx={{ height: '100%', p: 2, pr: 4, display: 'flex', flexDirection: 'column' }}>
-                                        <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2, mb: 1, color: isDarkMode ? "#F9FAFB" : "#111827" }}>
-                                            {template.title}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", flexGrow: 1 }}>
-                                            {template.description}
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        ))}
-                    </Grid>
+                                    />
+                                )}
+                            </Box>
+                            <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ mb: 2, maxWidth: 520, lineHeight: 1.5 }}
+                            >
+                                Forms saved from General Forms. Select one to pre-fill this Friday pack submission.
+                            </Typography>
 
-                    {formBuilderForms.length > 0 && (
-                        <>
-                            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>Custom Forms</Typography>
+                            {createFormModalLoading ? (
+                                <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                                    <CircularProgress size={32} sx={{ color: FRIDAY_PACK_ACCENT }} />
+                                </Box>
+                            ) : savedGeneralSubmissions.length === 0 ? (
+                                <Paper
+                                    elevation={0}
+                                    sx={{
+                                        py: 2.5,
+                                        px: 2.5,
+                                        borderRadius: 2,
+                                        textAlign: "center",
+                                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+                                        border: "1px dashed",
+                                        borderColor: isDarkMode ? "#4B5563" : "#D1D5DB",
+                                    }}
+                                >
+                                    <Typography variant="body2" color="text.secondary">
+                                        No saved forms yet. Edit a template in General Forms and save it to see it here.
+                                    </Typography>
+                                </Paper>
+                            ) : (
+                                <Grid container spacing={2}>
+                                    {savedGeneralSubmissions.map((sub) => {
+                                        const primary =
+                                            sub.name ||
+                                            sub.answers?.name ||
+                                            sub.form?.title ||
+                                            "Untitled";
+                                        const secondary =
+                                            sub.form?.title && primary !== sub.form.title
+                                                ? sub.form.title
+                                                : null;
+                                        const rid = sub.id || sub._id;
+                                        const savedLabel = `Saved ${new Date(sub.createdAt).toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                        })}`;
+                                        return (
+                                            <Grid item xs={12} sm={6} key={rid}>
+                                                <FormPickerCard
+                                                    isDarkMode={isDarkMode}
+                                                    title={primary}
+                                                    description={secondary}
+                                                    meta={savedLabel}
+                                                    onSelect={() => handleSelectSavedGeneralSubmission(sub)}
+                                                    onPreview={() => handlePreviewSavedGeneralSubmission(sub)}
+                                                />
+                                            </Grid>
+                                        );
+                                    })}
+                                </Grid>
+                            )}
+                        </Box>
+
+                        <Divider sx={{ mb: 3, borderColor: isDarkMode ? "#374151" : "#E5E7EB" }} />
+
+                        {/* Blank templates */}
+                        <Box sx={{ mb: formBuilderForms.length > 0 ? 3 : 0 }}>
+                            <Box
+                                sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: 1,
+                                    mb: 1,
+                                }}
+                            >
+                                <Typography
+                                    variant="overline"
+                                    sx={{
+                                        fontWeight: 700,
+                                        letterSpacing: "0.08em",
+                                        color: isDarkMode ? "#9CA3AF" : "#6B7280",
+                                        lineHeight: 1.2,
+                                    }}
+                                >
+                                    Blank templates
+                                </Typography>
+                                <Chip
+                                    size="small"
+                                    label={TEMPLATES.length}
+                                    sx={{
+                                        height: 22,
+                                        fontWeight: 600,
+                                        bgcolor: isDarkMode ? "#374151" : "#E5E7EB",
+                                        color: isDarkMode ? "#D1D5DB" : "#4B5563",
+                                    }}
+                                />
+                            </Box>
                             <Grid container spacing={2}>
-                                {formBuilderForms.map(form => (
-                                    <Grid item xs={12} sm={6} md={4} key={form.id || form._id}>
-                                        <Card
-                                            onClick={() => handleSelectForm(null, true, form.id || form._id)}
-                                            elevation={0}
-                                            sx={{
-                                                position: 'relative',
-                                                cursor: 'pointer',
-                                                borderRadius: 3,
-                                                width: '100%',
-                                                height: 120,
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
-                                                border: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
-                                                transition: 'all 0.2s',
-                                                '&:hover': {
-                                                    borderColor: '#E89F17',
-                                                    transform: 'translateY(-3px)',
-                                                    boxShadow: isDarkMode ? "0 4px 12px rgba(0,0,0,0.5)" : "0 4px 12px rgba(0,0,0,0.05)"
-                                                }
-                                            }}
-                                        >
-                                            <IconButton 
-                                                size="small"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handlePreviewForm(null, true, form.id || form._id);
-                                                }}
-                                                sx={{ 
-                                                    position: 'absolute', 
-                                                    top: 8, 
-                                                    right: 8, 
-                                                    color: isDarkMode ? "#60A5FA" : "#0B4DA6",
-                                                    bgcolor: isDarkMode ? "rgba(55, 65, 81, 0.5)" : "rgba(243, 244, 246, 0.5)",
-                                                    '&:hover': { bgcolor: isDarkMode ? "#374151" : "#E5E7EB" }
-                                                }}
-                                            >
-                                                <VisibilityOutlinedIcon fontSize="small"/>
-                                            </IconButton>
-                                            <CardContent sx={{ height: '100%', p: 2, pr: 4, display: 'flex', flexDirection: 'column' }}>
-                                                <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2, mb: 1, color: isDarkMode ? "#F9FAFB" : "#111827" }}>
-                                                    {form.title}
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", flexGrow: 1 }}>
-                                                    Custom Dynamic Form
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
+                                {TEMPLATES.map((template) => (
+                                    <Grid item xs={12} sm={6} key={template.id}>
+                                        <FormPickerCard
+                                            isDarkMode={isDarkMode}
+                                            title={template.title}
+                                            description={template.description}
+                                            onSelect={() => handleSelectForm(template.path, false)}
+                                            onPreview={() => handlePreviewForm(template.path, false)}
+                                        />
                                     </Grid>
                                 ))}
                             </Grid>
-                        </>
-                    )}
+                        </Box>
+
+                        {formBuilderForms.length > 0 && (
+                            <>
+                                <Divider sx={{ mb: 3, borderColor: isDarkMode ? "#374151" : "#E5E7EB" }} />
+                                <Box>
+                                    <Box
+                                        sx={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            gap: 1,
+                                            mb: 2,
+                                        }}
+                                    >
+                                        <Typography
+                                            variant="overline"
+                                            sx={{
+                                                fontWeight: 700,
+                                                letterSpacing: "0.08em",
+                                                color: isDarkMode ? "#9CA3AF" : "#6B7280",
+                                                lineHeight: 1.2,
+                                            }}
+                                        >
+                                            Custom forms
+                                        </Typography>
+                                        <Chip
+                                            size="small"
+                                            label={formBuilderForms.length}
+                                            sx={{
+                                                height: 22,
+                                                fontWeight: 600,
+                                                bgcolor: isDarkMode ? "#374151" : "#E5E7EB",
+                                                color: isDarkMode ? "#D1D5DB" : "#4B5563",
+                                            }}
+                                        />
+                                    </Box>
+                                    <Grid container spacing={2}>
+                                        {formBuilderForms.map((form) => (
+                                            <Grid item xs={12} sm={6} key={form.id || form._id}>
+                                                <FormPickerCard
+                                                    isDarkMode={isDarkMode}
+                                                    title={form.title}
+                                                    description="Custom dynamic form"
+                                                    onSelect={() =>
+                                                        handleSelectForm(null, true, form.id || form._id)
+                                                    }
+                                                    onPreview={() =>
+                                                        handlePreviewForm(null, true, form.id || form._id)
+                                                    }
+                                                />
+                                            </Grid>
+                                        ))}
+                                    </Grid>
+                                </Box>
+                            </>
+                        )}
+                    </Box>
                 </DialogContent>
             </Dialog>
 

@@ -18,6 +18,7 @@ import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { validateSignupForm } from "../utils/signupFormValidation";
 import { shouldLandOnClientsHub } from "../utils/postAuthRedirect";
+import { setStoredToken, scheduleTokenExpiryLogout } from "../utils/authSession";
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -91,17 +92,16 @@ export default function SignupPage() {
         setForm((s) => ({ ...s, password: "", passwordConfirm: "" }));
 
         if (res.data.token) {
-          localStorage.setItem("token", res.data.token);
+          setStoredToken(res.data.token, { remember: true });
+          scheduleTokenExpiryLogout(res.data.token);
         }
 
-        // show snackbar then redirect
         setSnack({ open: true, text: message });
 
-        // store user info for later checks
         const user = res?.data?.user;
         if (user) {
           localStorage.setItem("user", JSON.stringify(user));
-          refreshUser(); // sync AuthContext
+          refreshUser();
         }
 
         // redirect after short delay so user sees success toast
@@ -195,9 +195,6 @@ export default function SignupPage() {
         }}
       >
         <Box sx={{ width: "100%", maxWidth: 500, py: 3 }}>
-          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-            <Box component="img" src="/sitemate-logo.svg" alt="Site-mate logo" sx={{ height: 36, width: "auto" }} />
-          </Box>
           <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
             Create your account
           </Typography>

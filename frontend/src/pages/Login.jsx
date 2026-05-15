@@ -15,14 +15,17 @@ import {
   Alert,
 } from "@mui/material";
 import { Visibility, VisibilityOff } from "@mui/icons-material";
-import { useNavigate, Link as RouterLink } from "react-router-dom";
+import { useNavigate, Link as RouterLink, useLocation } from "react-router-dom";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { shouldLandOnClientsHub } from "../utils/postAuthRedirect";
+import { setStoredToken, scheduleTokenExpiryLogout } from "../utils/authSession";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { refreshUser } = useAuth();
+  const sessionExpired = Boolean(location.state?.sessionExpired);
   const [values, setValues] = useState({
     email: "",
     password: "",
@@ -68,14 +71,10 @@ export default function LoginPage() {
 
       if (res?.data?.success) {
         if (res.data.token) {
-          // store token and user
           const user = res.data.user;
-          if (values.remember) localStorage.setItem('token', res.data.token);
-          else sessionStorage.setItem('token', res.data.token);
-
-          if (user) localStorage.setItem('user', JSON.stringify(user));
-
-          // Sync AuthContext immediately
+          setStoredToken(res.data.token, { remember: values.remember });
+          if (user) localStorage.setItem("user", JSON.stringify(user));
+          scheduleTokenExpiryLogout(res.data.token);
           refreshUser();
 
           if (shouldLandOnClientsHub(user)) {
@@ -120,6 +119,12 @@ export default function LoginPage() {
             <Typography color="text.secondary" sx={{ mb: 4 }}>
               Hey, welcome back to Safetynett
             </Typography>
+
+            {sessionExpired && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Your session has expired. Please sign in again.
+              </Alert>
+            )}
 
             <Box component="form" onSubmit={handleSubmit} noValidate>
               <TextField label="Email address" type="email" value={values.email} onChange={handleChange("email")} fullWidth margin="normal" required InputProps={{ sx: { borderRadius: 2 } }} />

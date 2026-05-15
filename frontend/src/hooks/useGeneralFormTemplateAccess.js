@@ -9,7 +9,7 @@ function normalizeSiteId(value) {
 }
 
 /**
- * General forms under /general-forms: without ?siteId=… only company_admin, supervisor, superadmin may edit.
+ * General forms under /general-forms: without ?siteId=… only superadmin, company_admin, site_manager may edit.
  * With siteId (site pack), existing site workflows keep full edit for whoever can open the link.
  *
  * Pass `action` and `downloading` from the page to get `pdfLayout` / `contentReadOnly` helpers.

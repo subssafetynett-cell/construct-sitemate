@@ -1,108 +1,150 @@
 const asyncHandler = require("express-async-handler");
 const prisma = require("../prismaClient");
+const { reqUserDbId } = require("../utils/userAuthorization");
+const {
+  buildDashboardResponseWhere,
+  buildDashboardUserCountWhere,
+  buildSiteListWhere,
+  getDashboardScopeMeta,
+} = require("../utils/dashboardAccess");
+
+function countCategory(categories, matchers) {
+  return Object.entries(categories).reduce((sum, [name, count]) => {
+    const key = String(name).toLowerCase();
+    if (matchers.some((m) => key.includes(m))) return sum + count;
+    return sum;
+  }, 0);
+}
 
 exports.getDashboardStats = asyncHandler(async (req, res) => {
-    const user = req.user;
-    const isSuper = user.role === "superadmin";
+  const actorId = reqUserDbId(req);
+  if (!actorId) {
+    return res.status(401).json({ success: false, message: "Not authenticated" });
+  }
 
-    // Build filter based on role/clientId if needed (assuming multi-tenant)
-    const filter = isSuper ? {} : { submittedBy: { clientId: user.clientId } };
+  const actor = await prisma.user.findUnique({
+    where: { id: actorId },
+    select: {
+      id: true,
+      role: true,
+      clientId: true,
+      companyname: true,
+      firstName: true,
+    },
+  });
 
-    try {
-        const [
-            totalSites,
-            totalUsers,
-            allResponses
-        ] = await Promise.all([
-            prisma.site.count(isSuper ? {} : { where: { manager: { clientId: user.clientId } } }),
-            prisma.user.count(isSuper ? {} : { where: { clientId: user.clientId } }),
-            prisma.formResponse.findMany({
-                where: filter,
-                include: { form: true },
-                orderBy: { createdAt: 'desc' }
-            })
-        ]);
+  if (!actor) {
+    return res.status(401).json({ success: false, message: "Not authenticated" });
+  }
 
-        // Process Responses
-        const categories = {};
-        const inspectionScores = [];
-        const monthlyTrends = {}; // key: YYYY-MM
-        const recentActions = [];
+  const scope = getDashboardScopeMeta(actor);
+  const responseWhere = buildDashboardResponseWhere(actor);
+  const siteWhere = buildSiteListWhere(actor);
+  const userCountWhere = buildDashboardUserCountWhere(actor);
 
-        allResponses.forEach(resp => {
-            const cat = resp.category || resp.form?.title || "Other";
-            categories[cat] = (categories[cat] || 0) + 1;
+  try {
+    const [totalSites, totalUsers, allResponses] = await Promise.all([
+      prisma.site.count({ where: siteWhere }),
+      userCountWhere != null
+        ? prisma.user.count({ where: userCountWhere })
+        : Promise.resolve(null),
+      prisma.formResponse.findMany({
+        where: responseWhere,
+        include: { form: { select: { title: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      }),
+    ]);
 
-            const d = new Date(resp.createdAt);
-            const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-            monthlyTrends[monthKey] = (monthlyTrends[monthKey] || 0) + 1;
+    const categories = {};
+    const inspectionScores = [];
+    const monthlyTrends = {};
+    const recentActions = [];
 
-            // Extract Inspection Data
-            if (cat.includes("Weekly supervisor")) {
-                const answers = resp.answers || {};
-                // The WeeklySupervisorInspectionForm calculates Site Rating
-                // We'll try to find it in the stored answers
-                const siteRating = answers.siteRating || 0;
-                inspectionScores.push(parseFloat(siteRating));
-            }
+    allResponses.forEach((resp) => {
+      const cat = resp.category || resp.form?.title || "Other";
+      categories[cat] = (categories[cat] || 0) + 1;
 
-            // Recent Actions (extracting from answers if they have remedial actions)
-            // This is a bit complex as answers are dynamic, but we can sample
-            if (recentActions.length < 6) {
-                const answers = resp.answers && typeof resp.answers === "object" ? resp.answers : {};
-                const heading = (answers.report_heading && String(answers.report_heading).trim()) || cat;
-                recentActions.push({
-                    title: heading,
-                    subtitle: new Date(resp.createdAt).toLocaleDateString(),
-                    status: "Submitted",
-                    id: resp.id
-                });
-            }
-        });
+      const d = new Date(resp.createdAt);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      monthlyTrends[monthKey] = (monthlyTrends[monthKey] || 0) + 1;
 
-        // Calculate Average Compliance
-        const avgCompliance = inspectionScores.length > 0 
-            ? (inspectionScores.reduce((a, b) => a + b, 0) / inspectionScores.length).toFixed(1)
-            : "0";
+      const answers = resp.answers && typeof resp.answers === "object" ? resp.answers : {};
+      const catLower = String(cat).toLowerCase();
 
-        // Format for Charts
-        const barChartData = Object.keys(categories).map(cat => ({
-            name: cat.length > 22 ? `${cat.substring(0, 22)}…` : cat,
-            fullName: cat,
-            value: categories[cat]
-        }));
-
-        const now = new Date();
-        const areaChartData = [];
-        for (let i = 5; i >= 0; i--) {
-            const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const monthKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
-            areaChartData.push({
-                name: dt.toLocaleString("en-GB", { month: "short" }),
-                completed: monthlyTrends[monthKey] || 0
-            });
+      if (catLower.includes("weekly supervisor") || catLower.includes("inspection")) {
+        const siteRating = parseFloat(answers.siteRating);
+        if (!Number.isNaN(siteRating) && siteRating > 0) {
+          inspectionScores.push(siteRating);
         }
+      }
 
-        res.json({
-            success: true,
-            stats: {
-                totalSites,
-                totalUsers,
-                totalReports: allResponses.length,
-                hsConcerns: categories["Health & Safety concern"] || 0,
-                envConcerns: categories["Sustainability concern"] || 0,
-                complianceRate: `${avgCompliance}%`
-            },
-            charts: {
-                areaChartData,
-                barChartData: barChartData.sort((a, b) => b.value - a.value).slice(0, 8),
-                pieChartData: []
-            },
-            recentActions
+      if (recentActions.length < 8) {
+        const heading =
+          (answers.report_heading && String(answers.report_heading).trim()) ||
+          (answers.reportHeading && String(answers.reportHeading).trim()) ||
+          cat;
+        recentActions.push({
+          title: heading,
+          subtitle: d.toLocaleDateString("en-GB"),
+          status: "Submitted",
+          id: resp.id,
         });
+      }
+    });
 
-    } catch (err) {
-        console.error("Dashboard Stats Error:", err);
-        res.status(500).json({ success: false, message: "Internal server error" });
+    const avgCompliance =
+      inspectionScores.length > 0
+        ? (inspectionScores.reduce((a, b) => a + b, 0) / inspectionScores.length).toFixed(1)
+        : "0";
+
+    const barChartData = Object.keys(categories)
+      .map((cat) => ({
+        name: cat.length > 22 ? `${cat.substring(0, 22)}…` : cat,
+        fullName: cat,
+        value: categories[cat],
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+
+    const now = new Date();
+    const areaChartData = [];
+    for (let i = 5; i >= 0; i--) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      areaChartData.push({
+        name: dt.toLocaleString("en-GB", { month: "short" }),
+        completed: monthlyTrends[monthKey] || 0,
+      });
     }
+
+    const hsConcerns = countCategory(categories, ["health", "safety"]);
+    const envConcerns = countCategory(categories, ["sustainability", "environment"]);
+    const qualityConcerns = countCategory(categories, ["quality"]);
+    const positiveObs = countCategory(categories, ["positive"]);
+
+    res.json({
+      success: true,
+      scope,
+      stats: {
+        totalSites,
+        totalUsers: totalUsers ?? undefined,
+        totalReports: allResponses.length,
+        hsConcerns,
+        envConcerns,
+        qualityConcerns,
+        positiveObs,
+        complianceRate: `${avgCompliance}%`,
+      },
+      charts: {
+        areaChartData,
+        barChartData,
+        pieChartData: [],
+      },
+      recentActions,
+    });
+  } catch (err) {
+    console.error("Dashboard Stats Error:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 });

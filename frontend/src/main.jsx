@@ -6,6 +6,7 @@ import { ThemeProvider, CssBaseline } from "@mui/material";
 import { BrowserRouter } from "react-router-dom";
 import theme from './Theme.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
+import SessionManager from './components/SessionManager.jsx';
 
 const routerBasename =
   import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
@@ -17,6 +18,7 @@ createRoot(document.getElementById('root')).render(
     <ThemeProvider theme={theme}>
       <BrowserRouter basename={routerBasename}>
         <AuthProvider>
+          <SessionManager />
           <CssBaseline /> {/* resets default browser styles */}
           <App />
         </AuthProvider>

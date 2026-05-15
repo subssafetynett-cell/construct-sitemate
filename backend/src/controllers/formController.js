@@ -270,14 +270,18 @@ exports.getResponseById = async (req, res) => {
 exports.updateResponse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { answers } = req.body;
+    const { answers, category } = req.body;
     const gate = assertGeneralFormTemplateWrite(req, answers || {}, req.body);
     if (!gate.ok) {
       return res.status(gate.status).json({ success: false, message: gate.message });
     }
+    const data = { answers };
+    if (category != null && String(category).trim() !== "") {
+      data.category = String(category).trim();
+    }
     const updated = await prisma.formResponse.update({
       where: { id },
-      data: { answers },
+      data,
     });
     res.json({ success: true, data: updated });
   } catch (err) {

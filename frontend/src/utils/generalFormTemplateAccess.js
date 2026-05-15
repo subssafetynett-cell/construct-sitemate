@@ -2,8 +2,14 @@
 export const GENERAL_FORM_TEMPLATE_EDITOR_ROLES = [
   "superadmin",
   "company_admin",
-  "supervisor",
+  "site_manager",
 ];
+
+export const GENERAL_FORM_TEMPLATE_EDITOR_ROLES_TEXT =
+  "Super Admin, Company Admin, and Site Manager";
+
+export const GENERAL_FORM_TEMPLATE_READONLY_MESSAGE =
+  "You can view this template but only a Super Admin, Company Admin, or Site Manager can edit or save it. Use a site pack link to fill this form for a site.";
 
 /**
  * @param {string} role — effective role from AuthContext (Safetynett → superadmin already applied).

@@ -1,5 +1,27 @@
 const { PrismaClient } = require("@prisma/client");
+const { isSafetynettCompanyName } = require("../utils/company");
+const {
+    buildSiteListWhere,
+    mergeSiteSearchWhere,
+    resolveSiteClientId,
+    userCanAccessSite,
+} = require("../utils/siteAccess");
 const prisma = new PrismaClient();
+
+const SITE_CREATE_ROLES = ["superadmin", "company_admin"];
+
+function assertCanCreateSite(req) {
+    if (isSafetynettCompanyName(req.user?.companyname || req.user?.company)) {
+        return null;
+    }
+    if (SITE_CREATE_ROLES.includes(req.user?.role)) {
+        return null;
+    }
+    return {
+        status: 403,
+        error: "Only Super Admin or Company Admin can create sites.",
+    };
+}
 
 function companyUserWhere(req) {
     const { role, clientId } = req.user;
@@ -24,23 +46,39 @@ async function assertManagerInCompany(req, managerId) {
 // Create a new site
 exports.createSite = async (req, res) => {
     try {
+        const denied = assertCanCreateSite(req);
+        if (denied) {
+            return res.status(denied.status).json({ error: denied.error });
+        }
+
         const { name, address, managerId } = req.body;
 
         if (!name || !address) {
             return res.status(400).json({ error: "Name and Address are required." });
         }
 
-        if (managerId && !(await assertManagerInCompany(req, managerId))) {
-            return res.status(400).json({
-                error: "Selected site manager is not valid for your company.",
+        let managerClientId = null;
+        if (managerId) {
+            if (!(await assertManagerInCompany(req, managerId))) {
+                return res.status(400).json({
+                    error: "Selected site manager is not valid for your company.",
+                });
+            }
+            const mgr = await prisma.user.findUnique({
+                where: { id: managerId },
+                select: { clientId: true },
             });
+            managerClientId = mgr?.clientId || null;
         }
+
+        const clientId = resolveSiteClientId(req, managerClientId);
 
         const newSite = await prisma.site.create({
             data: {
                 name,
                 address,
-                managerId,
+                managerId: managerId || null,
+                clientId,
             },
             include: {
                 manager: {
@@ -64,15 +102,8 @@ exports.createSite = async (req, res) => {
 exports.getAllSites = async (req, res) => {
     try {
         const { search } = req.query;
-
-        const where = search
-            ? {
-                OR: [
-                    { name: { contains: search, mode: "insensitive" } },
-                    { address: { contains: search, mode: "insensitive" } },
-                ],
-            }
-            : {};
+        const accessWhere = buildSiteListWhere(req.user);
+        const where = mergeSiteSearchWhere(accessWhere, search);
 
         const sites = await prisma.site.findMany({
             where,
@@ -102,6 +133,10 @@ exports.updateSite = async (req, res) => {
         const { id } = req.params;
         const { name, address, managerId, isActive } = req.body;
 
+        if (!(await userCanAccessSite(prisma, req.user, id))) {
+            return res.status(403).json({ error: "You do not have access to this site." });
+        }
+
         if (managerId && !(await assertManagerInCompany(req, managerId))) {
             return res.status(400).json({
                 error: "Selected site manager is not valid for your company.",
@@ -111,8 +146,18 @@ exports.updateSite = async (req, res) => {
         const data = {};
         if (name !== undefined) data.name = name;
         if (address !== undefined) data.address = address;
-        if (managerId !== undefined) data.managerId = managerId;
+        if (managerId !== undefined) data.managerId = managerId || null;
         if (isActive !== undefined) data.isActive = isActive;
+
+        if (managerId !== undefined) {
+            if (managerId) {
+                const mgr = await prisma.user.findUnique({
+                    where: { id: managerId },
+                    select: { clientId: true },
+                });
+                data.clientId = resolveSiteClientId(req, mgr?.clientId || null);
+            }
+        }
 
         const updatedSite = await prisma.site.update({
             where: { id },
@@ -140,6 +185,11 @@ exports.updateSite = async (req, res) => {
 exports.deleteSite = async (req, res) => {
     try {
         const { id } = req.params;
+
+        if (!(await userCanAccessSite(prisma, req.user, id))) {
+            return res.status(403).json({ error: "You do not have access to this site." });
+        }
+
         await prisma.site.delete({
             where: { id },
         });

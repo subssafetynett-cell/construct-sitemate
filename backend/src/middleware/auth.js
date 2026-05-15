@@ -1,7 +1,6 @@
 // src/middleware/auth.js
 const jwt = require('jsonwebtoken');
 const prisma = require('../prismaClient');
-const { isSafetynettCompanyName } = require('../utils/company');
 
 /** Throttled DB write so listing "online" users does not update on every request. */
 const LAST_SEEN_THROTTLE_MS = 60 * 1000;
@@ -40,13 +39,6 @@ exports.requireAuth = (req, res, next) => {
 exports.requireRole = (roles) => (req, res, next) => {
   if (!req.user)
     return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-  // Safetynett org (global admins) bypass role check — same rule as authService / frontend
-  const isSafetynett = isSafetynettCompanyName(req.user.companyname || req.user.company);
-
-  if (isSafetynett) { 
-    return next();
-  }
 
   const allowedRoles = Array.isArray(roles) ? roles : [roles];
 

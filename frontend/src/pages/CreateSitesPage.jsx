@@ -32,6 +32,8 @@ import { Eye, Pencil, Trash2, UserX, UserCheck, X } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
+import { canCreateSites } from "../utils/siteAccess";
 import {
     fetchSites,
     createSite,
@@ -42,6 +44,8 @@ import {
 
 export default function CreateSitesPage() {
     const { isDarkMode } = useTheme();
+    const { role } = useAuth();
+    const allowCreateSites = canCreateSites(role);
     const [sites, setSites] = useState([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState("");
@@ -114,6 +118,7 @@ export default function CreateSitesPage() {
     };
 
     const handleOpenCreate = async () => {
+        if (!allowCreateSites) return;
         setDialogMode("create");
         setNewSite({ name: "", address: "", managerId: "" });
         setOpenDialog(true);
@@ -166,6 +171,10 @@ export default function CreateSitesPage() {
                 delete payload.managerId;
             }
             if (dialogMode === "create") {
+                if (!allowCreateSites) {
+                    alert("Only Super Admin or Company Admin can create sites.");
+                    return;
+                }
                 await createSite(payload);
             } else if (dialogMode === "edit") {
                 await updateSite(selectedSiteId, payload);
@@ -223,20 +232,22 @@ export default function CreateSitesPage() {
                         manage and create your sites
                     </Typography>
                 </Box>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleOpenCreate}
-                    sx={{
-                        textTransform: "none",
-                        borderRadius: 3,
-                        boxShadow: "none",
-                        bgcolor: "hsl(38, 70%, 55%)",
-                        "&:hover": { bgcolor: "hsl(38, 70%, 45%)", boxShadow: "none" },
-                    }}
-                >
-                    Create New Site
-                </Button>
+                {allowCreateSites && (
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleOpenCreate}
+                        sx={{
+                            textTransform: "none",
+                            borderRadius: 3,
+                            boxShadow: "none",
+                            bgcolor: "hsl(38, 70%, 55%)",
+                            "&:hover": { bgcolor: "hsl(38, 70%, 45%)", boxShadow: "none" },
+                        }}
+                    >
+                        Create New Site
+                    </Button>
+                )}
             </Box>
 
             {/* Removed search bar from here as requested */}

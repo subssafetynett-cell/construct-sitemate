@@ -289,6 +289,47 @@ const INSTALLATION_STANDARDS = [
     }
 ];
 
+const SHEQ_INSPECTION_CATEGORY = "SHEQ Inspection";
+const SHEQ_INSTALLATION_CATEGORY = "SHEQ Installation";
+
+function getFormSectionsForCategory(cat) {
+    if (cat === SHEQ_INSPECTION_CATEGORY) return INSPECTION_STANDARDS;
+    if (cat === SHEQ_INSTALLATION_CATEGORY) return SHQ_INSTALLATION_STANDARDS;
+    return INSTALLATION_STANDARDS;
+}
+
+function getDefaultHeaderLabelsForCategory(cat) {
+    const isInspection = cat === SHEQ_INSPECTION_CATEGORY;
+    return {
+        formTitle: isInspection ? "SHEQ INSPECTION SERVICE REPORT" : "SHEQ INSTALLATION SERVICE REPORT",
+        dateLabel: "Date",
+        docNoLabel: "Document No.",
+        approvedByLabel: "Approved by",
+        clientLabel: "Client",
+        siteAddressLabel: "Site Address",
+        equipmentIdLabel: "Equipment ID",
+        engineersLabel: "Engineer(s)",
+        dateFieldLabel: "Date",
+        auditorLabel: "Auditor",
+        serviceManagerLabel: "Service Manager",
+        siteContactLabel: "Site Contact",
+        projectSummaryLabel: "Project Summary - Assessment of the project H&S status",
+        reportDistributionLabel: "Report Distribution",
+        remedialColLabel: "Comments",
+        ratingColLabel: "RATING",
+        scoreColLabel: "SCORE",
+        uploadLabel: "PHOTOS / DOCUMENTS",
+        commentsLabel: "INSPECTOR'S FINAL COMMENTS / SUMMARY",
+        headerTitle: isInspection ? "SHEQ Inspection" : "SHEQ Installation",
+    };
+}
+
+function getPdfFileName(category, id, client) {
+    const slug = category === SHEQ_INSPECTION_CATEGORY ? "SHEQ_Inspection" : "SHEQ_Installation";
+    const clientPart = (client || "Report").replace(/[^\w\-]+/g, "_").slice(0, 40);
+    return `${slug}_${clientPart}_${id || "draft"}`;
+}
+
 const SHQ_INSTALLATION_STANDARDS = [
     {
         category: "1. PROJECT DOCUMENTATION",
@@ -648,8 +689,10 @@ export default function SheqInstallationForm({
     const [searchParams] = useSearchParams();
     
     const siteId = searchParams.get("siteId");
-    const category = propsCategory || searchParams.get("category") || "General forms";
+    const rawCategory = propsCategory || searchParams.get("category") || SHEQ_INSTALLATION_CATEGORY;
+    const category = decodeURIComponent(String(rawCategory));
     const action = searchParams.get("action");
+    const isViewMode = searchParams.get("view") === "true";
     const containerRef = useRef(null);
 
     const [loading, setLoading] = useState(false);
@@ -662,47 +705,26 @@ export default function SheqInstallationForm({
     // State structure
     const [docInfo, setDocInfo] = useState({
         date: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
-        docNo: "SHEQ-INST-01",
+        docNo: category === SHEQ_INSPECTION_CATEGORY ? "SHEQ-INSP-01" : "SHEQ-INST-01",
         approvedBy: "Management",
         logo: "",
         logoRight: "",
         signature: ""
     });
 
-    const [formSections, setFormSections] = useState(INSTALLATION_STANDARDS);
+    const [formSections, setFormSections] = useState(() => getFormSectionsForCategory(category));
     
-    const [headerLabels, setHeaderLabels] = useState({
-        formTitle: category === "SHEQ Inspection" ? "SHEQ INSPECTION SERVICE REPORT" : "SHEQ INSTALLATION SERVICE REPORT",
-        dateLabel: "Date",
-        docNoLabel: "Document No.",
-        approvedByLabel: "Approved by",
-        clientLabel: "Client",
-        siteAddressLabel: "Site Address",
-        equipmentIdLabel: "Equipment ID",
-        engineersLabel: "Engineer(s)",
-        dateFieldLabel: "Date",
-        auditorLabel: "Auditor",
-        serviceManagerLabel: "Service Manager",
-        siteContactLabel: "Site Contact",
-        projectSummaryLabel: "Project Summary - Assessment of the project H&S status",
-        reportDistributionLabel: "Report Distribution",
-        remedialColLabel: "Comments",
-        ratingColLabel: "RATING",
-        scoreColLabel: "SCORE",
-        uploadLabel: "PHOTOS / DOCUMENTS",
-        commentsLabel: "INSPECTOR'S FINAL COMMENTS / SUMMARY",
-        headerTitle: category === "SHEQ Inspection" ? "SHEQ Inspection" : "SHEQ Installation",
-    });
+    const [headerLabels, setHeaderLabels] = useState(() => getDefaultHeaderLabelsForCategory(category));
 
     useEffect(() => {
-        if (category === "SHEQ Inspection") {
-            setFormSections(INSTALLATION_STANDARDS);
-            setHeaderLabels(prev => ({ ...prev, formTitle: "SHEQ INSPECTION SERVICE REPORT", headerTitle: "SHEQ Inspection" }));
-        } else if (category === "SHEQ Installation") {
-            setFormSections(SHQ_INSTALLATION_STANDARDS);
-            setHeaderLabels(prev => ({ ...prev, formTitle: "SHEQ INSTALLATION SERVICE REPORT", headerTitle: "SHEQ Installation" }));
-        }
-    }, [category]);
+        if (id) return;
+        setFormSections(getFormSectionsForCategory(category));
+        setHeaderLabels(getDefaultHeaderLabelsForCategory(category));
+        setDocInfo((prev) => ({
+            ...prev,
+            docNo: category === SHEQ_INSPECTION_CATEGORY ? "SHEQ-INSP-01" : "SHEQ-INST-01",
+        }));
+    }, [category, id]);
 
     const [deleteDialog, setDeleteDialog] = useState({
         open: false,
@@ -751,18 +773,26 @@ export default function SheqInstallationForm({
         }
     }, [id]);
 
+    const listPath =
+        category === SHEQ_INSPECTION_CATEGORY
+            ? "/sheq-inspection"
+            : category === SHEQ_INSTALLATION_CATEGORY
+              ? "/shq-installation"
+              : "/general-forms";
+
     useEffect(() => {
-        if (!loading && action === "download" && id && !hasDownloaded.current) {
-            hasDownloaded.current = true;
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(containerRef, `SHEQ_Installation_${id}`, () => {
-                    setDownloading(false);
-                    navigate(category === "SHEQ Inspection" ? '/sheq-inspection' : '/shq-installation');
-                });
-            }, 800);
-        }
-    }, [loading, action, id]);
+        if (loading || action !== "download" || !id || hasDownloaded.current) return;
+        hasDownloaded.current = true;
+        setDownloading(true);
+        const fileName = getPdfFileName(category, id, formData.client);
+        const timer = setTimeout(() => {
+            downloadPdfFromRef(containerRef, fileName, () => {
+                setDownloading(false);
+                navigate(listPath);
+            });
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [loading, action, id, category, listPath, formData.client]);
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);
@@ -772,25 +802,48 @@ export default function SheqInstallationForm({
                 const submission = res.data.data;
                 if (submission && submission.answers) {
                     const ans = submission.answers;
-                    if (ans.headerLabels) setHeaderLabels(prev => ({ ...prev, ...ans.headerLabels }));
-                    if (ans.formSections) setFormSections(ans.formSections);
+                    const savedCategory = submission.category || ans.category || category;
+                    if (ans.headerLabels) setHeaderLabels(prev => ({ ...getDefaultHeaderLabelsForCategory(savedCategory), ...prev, ...ans.headerLabels }));
+                    if (ans.formSections?.length) setFormSections(ans.formSections);
+                    else setFormSections(getFormSectionsForCategory(savedCategory));
                     if (ans.visibleSections) setVisibleSections(prev => ({ ...prev, ...ans.visibleSections }));
                     if (ans.docInfo) setDocInfo(prev => ({ ...prev, ...ans.docInfo }));
                     if (ans.formData) setFormData(prev => ({ ...prev, ...ans.formData }));
                     setFormMetadata({
-                        name: ans.name || `${category === "SHEQ Inspection" ? "Inspection" : "Installation"} - ${new Date(submission.createdAt).toLocaleDateString()}`,
+                        name: ans.name || submission.name || `${savedCategory === SHEQ_INSPECTION_CATEGORY ? "Inspection" : "Installation"} - ${new Date(submission.createdAt).toLocaleDateString("en-GB")}`,
                         tags: ans.tags || ""
                     });
                 }
             }
         } catch (e) {
             console.error("Failed to load submission", e);
+            alert("Failed to load this report. Please try again.");
         } finally {
             setLoading(false);
         }
     };
 
+    const buildSavePayload = (name = "", tags = "") => {
+        const displayName =
+            name ||
+            formMetadata.name ||
+            `${category} - ${new Date().toLocaleDateString("en-GB")}`;
+        const payload = {
+            docInfo: { ...docInfo },
+            headerLabels: { ...headerLabels },
+            formSections: JSON.parse(JSON.stringify(formSections)),
+            visibleSections: { ...visibleSections },
+            formData: { ...formData },
+            name: displayName,
+            tags: tags || formMetadata.tags || "",
+            category,
+        };
+        if (siteId) payload.siteId = siteId;
+        return payload;
+    };
+
     const handleSaveClick = () => {
+        if (isViewMode) return;
         if (id) {
             setSaveDialogOpen(true);
         } else {
@@ -798,46 +851,64 @@ export default function SheqInstallationForm({
         }
     };
 
+    const handleDownloadClick = () => {
+        if (!id) {
+            alert("Please save the form before downloading.");
+            return;
+        }
+        hasDownloaded.current = false;
+        setDownloading(true);
+        const fileName = getPdfFileName(category, id, formData.client);
+        setTimeout(() => {
+            downloadPdfFromRef(containerRef, fileName, () => {
+                setDownloading(false);
+            });
+        }, 1500);
+    };
+
     const executeSave = async (asNew = false, name = "", tags = "") => {
         setSaving(true);
         try {
-            const payload = { 
-                docInfo, 
-                headerLabels, 
-                formSections,
-                visibleSections,
-                formData,
-                name: name || formMetadata.name,
-                tags: tags || formMetadata.tags
-            };
-            if (siteId) payload.siteId = siteId;
-            
+            const payload = buildSavePayload(name, tags);
+            const templateTitle =
+                category === SHEQ_INSPECTION_CATEGORY
+                    ? SHEQ_INSPECTION_CATEGORY
+                    : SHEQ_INSTALLATION_CATEGORY;
+
             if (id && !asNew) {
-                await api.put(`/forms/responses/${id}`, { answers: payload });
-            } else {
-                const formId = await getOrCreateTemplateForm(category === "SHEQ Inspection" ? "SHEQ Inspection" : "SHEQ Installation");
-                await api.post(`/forms/${formId}/responses`, {
+                const res = await api.put(`/forms/responses/${id}`, {
                     answers: payload,
-                    category: category
+                    category,
                 });
+                if (!res.data?.success) {
+                    throw new Error(res.data?.message || "Update failed");
+                }
+            } else {
+                const formId = await getOrCreateTemplateForm(templateTitle);
+                const res = await api.post(`/forms/${formId}/responses`, {
+                    answers: payload,
+                    category,
+                });
+                if (!res.data?.success) {
+                    throw new Error(res.data?.message || "Save failed");
+                }
             }
-            
+
+            setFormMetadata({ name: payload.name, tags: payload.tags });
             setSaveDialogOpen(false);
             if (isModal && onClose) {
-                onClose(true); // true means success
+                onClose(true);
                 return;
             }
-            if (category === "SHEQ Inspection") {
-                navigate('/sheq-inspection');
-            } else if (category === "SHEQ Installation") {
-                navigate('/shq-installation');
-            } else if (siteId) {
-                navigate('/sitepack-management', { state: { siteId, moduleTitle: category } });
+            if (siteId) {
+                navigate("/sitepack-management", { state: { siteId, moduleTitle: category } });
             } else {
-                navigate('/general-forms');
+                navigate(listPath);
             }
         } catch (e) {
             console.error("Failed to save", e);
+            const msg = e?.response?.data?.message || e.message || "Failed to save the form.";
+            alert(msg);
         } finally {
             setSaving(false);
         }
@@ -1058,14 +1129,10 @@ export default function SheqInstallationForm({
                 {!isModal ? (
                     <IconButton 
                         onClick={() => {
-                            if (category === "SHEQ Inspection") {
-                                navigate('/sheq-inspection');
-                            } else if (category === "SHEQ Installation") {
-                                navigate('/shq-installation');
-                            } else if (siteId) {
+                            if (siteId) {
                                 navigate('/sitepack-management', { state: { siteId, moduleTitle: category } });
                             } else {
-                                navigate('/general-forms');
+                                navigate(listPath);
                             }
                         }} 
                         sx={{ bgcolor: isDarkMode ? '#374151' : '#E5E7EB' }}
@@ -1085,10 +1152,29 @@ export default function SheqInstallationForm({
                             Cancel
                         </Button>
                     )}
+                    {id && (
+                        <Button
+                            variant="outlined"
+                            onClick={handleDownloadClick}
+                            disabled={saving || downloading || loading}
+                            startIcon={downloading ? <CircularProgress size={20} /> : <Download size={20} />}
+                            sx={{
+                                borderRadius: "12px",
+                                textTransform: "none",
+                                fontWeight: 600,
+                                px: 3,
+                                borderColor: customBlue,
+                                color: customBlue,
+                            }}
+                        >
+                            {downloading ? "Downloading..." : "Download PDF"}
+                        </Button>
+                    )}
+                    {!isViewMode && (
                     <Button 
                         variant="contained" 
                         onClick={handleSaveClick}
-                        disabled={saving}
+                        disabled={saving || downloading}
                         startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <Save size={20} />}
                         sx={{ 
                             bgcolor: customBlue, 
@@ -1110,6 +1196,7 @@ export default function SheqInstallationForm({
                     >
                         {downloading ? "Downloading..." : (saving ? "Saving..." : "Save")}
                     </Button>
+                    )}
                 </Box>
             </Box>
 

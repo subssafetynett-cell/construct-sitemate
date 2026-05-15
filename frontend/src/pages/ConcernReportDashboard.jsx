@@ -18,6 +18,10 @@ import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
 import DomainIcon from "@mui/icons-material/Domain";
 import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
+import EcoIcon from "@mui/icons-material/Eco";
+import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
+import { useAuth } from "../context/AuthContext";
 
 const T = {
     bg: "#f4f4f2",
@@ -171,29 +175,110 @@ const ChartBox = ({ height, children }) => (
     <div style={{ width: "100%", minWidth: 0, height, position: "relative" }}>{children}</div>
 );
 
+const defaultDashboard = {
+    stats: {},
+    charts: { areaChartData: [], barChartData: [] },
+    recentActions: [],
+    scope: {
+        label: "",
+        capabilities: { showSites: false, showUsers: false, showCompliance: true },
+    },
+};
+
 export default function ConcernReportDashboard() {
+    const { currentUser } = useAuth();
     const [loading, setLoading] = useState(true);
-    const [data, setData] = useState({
-        stats: {},
-        charts: { areaChartData: [], barChartData: [] },
-        recentActions: [],
-    });
+    const [error, setError] = useState("");
+    const [data, setData] = useState(defaultDashboard);
 
     useEffect(() => {
         setLoading(true);
+        setError("");
         api.get("/dashboard/stats")
             .then((res) => {
-                if (res.data.success) setData(res.data);
+                if (res.data?.success) {
+                    setData({
+                        ...defaultDashboard,
+                        ...res.data,
+                        scope: res.data.scope || defaultDashboard.scope,
+                    });
+                } else {
+                    setError(res.data?.message || "Could not load dashboard");
+                }
             })
-            .catch((err) => console.error("Dashboard Fetch Error:", err))
+            .catch((err) => {
+                console.error("Dashboard Fetch Error:", err);
+                setError(err.response?.data?.message || "Could not load dashboard");
+            })
             .finally(() => setLoading(false));
-    }, []);
+    }, [currentUser?.id]);
 
     const areaData = data.charts.areaChartData?.length
         ? data.charts.areaChartData
         : [{ name: "—", completed: 0 }];
     const barData = data.charts.barChartData?.length ? data.charts.barChartData : [];
     const maxBar = Math.max(1, ...barData.map((d) => d.value));
+    const caps = data.scope?.capabilities || defaultDashboard.scope.capabilities;
+    const scopeLabel = data.scope?.label || "Your data";
+
+    const statCards = [
+        {
+            key: "reports",
+            show: true,
+            icon: AssignmentTurnedInIcon,
+            color: "blue",
+            label: caps.showUsers ? "Total reports" : "Your reports",
+            value: data.stats.totalReports ?? 0,
+        },
+        {
+            key: "sites",
+            show: caps.showSites,
+            icon: DomainIcon,
+            color: "blue",
+            label: "Sites",
+            value: data.stats.totalSites ?? 0,
+        },
+        {
+            key: "users",
+            show: caps.showUsers,
+            icon: PeopleOutlineIcon,
+            color: "green",
+            label: "Users",
+            value: data.stats.totalUsers ?? 0,
+        },
+        {
+            key: "hs",
+            show: true,
+            icon: WarningAmberIcon,
+            color: "red",
+            label: "Health & safety",
+            value: data.stats.hsConcerns ?? 0,
+        },
+        {
+            key: "env",
+            show: true,
+            icon: EcoIcon,
+            color: "green",
+            label: "Sustainability",
+            value: data.stats.envConcerns ?? 0,
+        },
+        {
+            key: "quality",
+            show: !caps.showUsers,
+            icon: FactCheckIcon,
+            color: "blue",
+            label: "Quality",
+            value: data.stats.qualityConcerns ?? 0,
+        },
+        {
+            key: "positive",
+            show: !caps.showUsers,
+            icon: ThumbUpOffAltIcon,
+            color: "green",
+            label: "Positive",
+            value: data.stats.positiveObs ?? 0,
+        },
+    ].filter((c) => c.show);
 
     return (
         <Layout disablePadding={true}>
@@ -210,9 +295,25 @@ export default function ConcernReportDashboard() {
                             Dashboard
                         </h1>
                         <p style={{ margin: "6px 0 0", fontSize: 13, color: T.inkMid }}>
-                            Reports over time and breakdown by category.
+                            {scopeLabel} — reports over time and by category.
                         </p>
                     </div>
+
+                    {error && !loading ? (
+                        <div
+                            style={{
+                                marginBottom: 16,
+                                padding: "12px 14px",
+                                borderRadius: 8,
+                                background: "#fef2f2",
+                                border: "1px solid #fecaca",
+                                color: "#991b1b",
+                                fontSize: 13,
+                            }}
+                        >
+                            {error}
+                        </div>
+                    ) : null}
 
                     <div
                         style={{
@@ -222,34 +323,16 @@ export default function ConcernReportDashboard() {
                             marginBottom: 16,
                         }}
                     >
-                        <StatCard
-                            loading={loading}
-                            icon={AssignmentTurnedInIcon}
-                            color="blue"
-                            label="Total reports"
-                            value={data.stats.totalReports ?? 0}
-                        />
-                        <StatCard
-                            loading={loading}
-                            icon={DomainIcon}
-                            color="blue"
-                            label="Sites"
-                            value={data.stats.totalSites ?? 0}
-                        />
-                        <StatCard
-                            loading={loading}
-                            icon={PeopleOutlineIcon}
-                            color="green"
-                            label="Users"
-                            value={data.stats.totalUsers ?? 0}
-                        />
-                        <StatCard
-                            loading={loading}
-                            icon={WarningAmberIcon}
-                            color="red"
-                            label="Health & safety"
-                            value={data.stats.hsConcerns ?? 0}
-                        />
+                        {statCards.map((card) => (
+                            <StatCard
+                                key={card.key}
+                                loading={loading}
+                                icon={card.icon}
+                                color={card.color}
+                                label={card.label}
+                                value={card.value}
+                            />
+                        ))}
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

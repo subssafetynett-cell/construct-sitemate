@@ -1,23 +1,56 @@
 // src/api.js
 import axios from "axios";
 import { getBackendOrigin } from "../utils/backendOrigin.js";
+import {
+  getStoredToken,
+  isTokenExpired,
+  handleSessionExpired,
+} from "../utils/authSession.js";
 
 const api = axios.create({
   timeout: 15000,
 });
 
+function isPublicAuthRequest(url = "") {
+  return /\/auth\/(login|signup|forgot-password|reset-password)(\/|$|\?)/.test(url);
+}
+
 api.interceptors.request.use(
   (config) => {
     const origin = getBackendOrigin().replace(/\/$/, "");
     config.baseURL = `${origin}/api`;
-    const token = localStorage.getItem("token");
-    if (token) {
+    const token = getStoredToken();
+    const url = config.url || "";
+
+    if (token && !isPublicAuthRequest(url)) {
+      if (isTokenExpired(token)) {
+        handleSessionExpired("expired");
+        return Promise.reject(new axios.CanceledError("Session expired"));
+      }
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+
+    const status = error.response?.status;
+    const url = error.config?.url || "";
+
+    if (status === 401 && !isPublicAuthRequest(url)) {
+      handleSessionExpired("unauthorized");
+    }
+
+    return Promise.reject(error);
+  }
 );
 
 export default api;

@@ -1,9 +1,15 @@
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
+const bcrypt = require('bcryptjs');
 const authService = require('../services/authService');
+const {
+  requestPasswordReset,
+  resetPasswordWithToken,
+} = require('../services/passwordResetService');
 const prisma = require('../prismaClient');
 const asyncHandler = require('express-async-handler');
-const bcrypt = require('bcryptjs');
+const { validateNewPassword } = require('../utils/passwordPolicy');
+const { reqUserDbId, resolveTokenRole } = require('../utils/userAuthorization');
 
 // Existing signup...
 exports.signup = asyncHandler(async (req, res) => {
@@ -30,8 +36,102 @@ exports.signup = asyncHandler(async (req, res) => {
 });
 
 // Setup 2FA - Generate Secret & QR Code
+exports.me = asyncHandler(async (req, res) => {
+    const actorId = reqUserDbId(req);
+    if (!actorId) {
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id: actorId },
+        select: {
+            id: true,
+            username: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            jobTitle: true,
+            companyname: true,
+            mobile: true,
+            role: true,
+            active: true,
+            clientId: true,
+            avatar: true,
+            createdAt: true,
+            lastLoginAt: true,
+            lastSeenAt: true,
+            twoFactorEnabled: true,
+        },
+    });
+
+    if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({
+        success: true,
+        user: {
+            ...user,
+            _id: user.id,
+            role: resolveTokenRole(user),
+        },
+    });
+});
+
+exports.changePassword = asyncHandler(async (req, res) => {
+    const actorId = reqUserDbId(req);
+    if (!actorId) {
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await prisma.user.findUnique({
+        where: { id: actorId },
+        select: { id: true, password: true, active: true },
+    });
+
+    if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.active === false) {
+        return res.status(403).json({ success: false, message: 'This account is disabled.' });
+    }
+
+    if (!user.password) {
+        return res.status(400).json({
+            success: false,
+            message: 'This account cannot change password here. Contact your administrator.',
+        });
+    }
+
+    const matches = await bcrypt.compare(String(currentPassword), user.password);
+    if (!matches) {
+        return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    const pwdCheck = validateNewPassword(newPassword);
+    if (!pwdCheck.ok) {
+        return res.status(400).json({ success: false, message: pwdCheck.message });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(pwdCheck.value, salt);
+
+    await prisma.user.update({
+        where: { id: actorId },
+        data: { password: hashed },
+    });
+
+    res.json({ success: true, message: 'Password updated successfully' });
+});
+
 exports.setup2FA = asyncHandler(async (req, res) => {
-    const userId = req.user.id;
+    const userId = reqUserDbId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
 
     // Generate a secret
     const secret = speakeasy.generateSecret({
@@ -56,7 +156,10 @@ exports.setup2FA = asyncHandler(async (req, res) => {
 // Verify 2FA & Enable
 exports.verify2FA = asyncHandler(async (req, res) => {
     const { token } = req.body;
-    const userId = req.user.id;
+    const userId = reqUserDbId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
 
@@ -118,26 +221,30 @@ exports.login = asyncHandler(async (req, res) => {
     }
 });
 
-// Reset Password (Stub/Basic Implementation)
-exports.resetPassword = asyncHandler(async (req, res) => {
-    const { token, password } = req.body;
-    // In a real app, verify token validity (expiration, signature)
-    // Here we might verify a JWT from the link or a specialized token field
-    // For now, assuming token IS the userId or checking a temp field would be safer.
-    // Simplifying: Verify JWT token if used, otherwise this is insecure without a token store.
-
-    // Let's assume the token is a JWT containing { id: userId, scope: 'reset' }
-    // Or if we don't have that infrastructure, just fail for now or implementing basic logic.
-
-    // To allow the frontend flow to complete (even if insecurely for this demo step), we'll try to decode it.
+exports.forgotPassword = asyncHandler(async (req, res) => {
     try {
-        // Attempt verify as normal auth token
-        // const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        // await prisma.user.update ...
+        await requestPasswordReset(req.body.email);
+        res.json({
+            success: true,
+            message:
+                'If an account exists for that email, we sent a password reset link. Check your inbox and spam folder.',
+        });
+    } catch (err) {
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Could not process password reset request',
+        });
+    }
+});
 
-        // Return dummy success for now to satisfy UI check, or throw Error
-        res.json({ success: true, message: "Password reset successful (Simulation)" });
-    } catch (e) {
-        res.status(400).json({ success: false, message: "Invalid or expired token" });
+exports.resetPassword = asyncHandler(async (req, res) => {
+    try {
+        await resetPasswordWithToken(req.body.token, req.body.password);
+        res.json({ success: true, message: 'Password reset successfully. You can sign in with your new password.' });
+    } catch (err) {
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Could not reset password',
+        });
     }
 });

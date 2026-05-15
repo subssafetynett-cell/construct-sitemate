@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useCompanyLogo } from "../hooks/useCompanyLogo";
 import {
   Box,
   Typography,
@@ -37,6 +36,7 @@ const ACTIVE_COLOR = "#1B212C";
 const ACTIVE_BG = "hsl(38, 70%, 55%)";
 const TEXT_COLOR = "#9CA3AF";
 const BG_COLOR = "#1B212C";
+const SIDEBAR_LOGO_SRC = "/logo.png";
 
 /* === ROLE CONSTANTS (Prisma roles only) === */
 const ALL_ROLES = ["superadmin", "company_admin", "site_manager", "supervisor", "worker"];
@@ -150,7 +150,6 @@ let globalCachedStats = { userCount: 0, clientCount: 0 };
 let globalStatsLastFetch = 0;
 
 export default function Sidebar({ sx = {} }) {
-  const logoUrl = useCompanyLogo();
   const { isDarkMode, toggleTheme } = useTheme();
   const location = useLocation();
   const [openGroup, setOpenGroup] = useState(null);
@@ -241,15 +240,29 @@ export default function Sidebar({ sx = {} }) {
       }}
     >
       {/* LOGO */}
-      <Box sx={{ p: 2, pb: 1.5, mb: 2, display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
+      <Box
+        component={RouterLink}
+        to="/dashboard"
+        sx={{
+          p: 2,
+          pb: 1.5,
+          mb: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          textDecoration: "none",
+        }}
+      >
         <Box
           component="img"
-          src={logoUrl}
-          alt="Company Logo"
+          src={SIDEBAR_LOGO_SRC}
+          alt="Sitemate"
           sx={{
-            height: 65,
+            height: 72,
             width: "auto",
-            objectFit: "contain"
+            maxWidth: "100%",
+            objectFit: "contain",
+            display: "block",
           }}
         />
       </Box>

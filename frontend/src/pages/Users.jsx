@@ -136,14 +136,15 @@ export default function UsersPage() {
   const clientName = location.state?.clientName;
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { isSafetyNett, isCompanyAdmin, currentUser } = useAuth();
-  const canInvite = isCompanyAdmin || isSafetyNett;
+  const { isSafetyNett, currentUser } = useAuth();
 
   const storedRole = useMemo(
     () => (currentUser?.role || "").toString().toLowerCase(),
     [currentUser?.role]
   );
   const isSuperAdminAccount = storedRole === "superadmin";
+  const isCompanyAdminAccount = storedRole === "company_admin";
+  const canInvite = isSuperAdminAccount || isCompanyAdminAccount || isSafetyNett;
 
   // Sorting State
   const [order, setOrder] = useState('desc');
@@ -499,16 +500,32 @@ export default function UsersPage() {
         )}
       </Box>
 
-      {/* Search Filters */}
-      <Grid container spacing={2} sx={{ mb: 4 }}>
+      {/* Search Filters — disabled while invite modal is open so autofill does not target these fields */}
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 4 }}
+        aria-hidden={inviteDialogOpen}
+      >
         {/* Search row */}
         <Grid item xs={12}>
           <TextField
             fullWidth
             size="small"
+            type="search"
+            name="users-list-search"
+            id="users-list-search"
+            autoComplete="off"
+            disabled={inviteDialogOpen}
             placeholder="Search by name or email..."
             value={searchName}
             onChange={(e) => setSearchName(e.target.value)}
+            inputProps={{
+              autoComplete: "off",
+              "data-lpignore": "true",
+              "data-1p-ignore": "true",
+              "data-form-type": "other",
+            }}
             InputProps={{
               startAdornment: (
                 <Box component="span" sx={{ color: '#6B7280', mr: 1, display: 'flex', ml: 1 }}>
@@ -548,6 +565,7 @@ export default function UsersPage() {
           <Autocomplete
             fullWidth
             freeSolo
+            disabled={inviteDialogOpen}
             options={uniqueCompanies}
             value={searchCompany}
             onInputChange={(event, newInputValue) => {
@@ -592,6 +610,13 @@ export default function UsersPage() {
                 size="small"
                 placeholder="All Companies"
                 fullWidth
+                autoComplete="off"
+                inputProps={{
+                  ...params.inputProps,
+                  autoComplete: "off",
+                  name: "users-list-company-filter",
+                  "data-lpignore": "true",
+                }}
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     borderRadius: 4,
@@ -625,6 +650,7 @@ export default function UsersPage() {
             select
             fullWidth
             size="small"
+            disabled={inviteDialogOpen}
             value={searchRole}
             onChange={(e) => setSearchRole(e.target.value)}
             SelectProps={{
@@ -672,6 +698,7 @@ export default function UsersPage() {
             select
             fullWidth
             size="small"
+            disabled={inviteDialogOpen}
             value={searchStatus}
             onChange={(e) => setSearchStatus(e.target.value)}
             SelectProps={{
@@ -1374,6 +1401,7 @@ export default function UsersPage() {
         onClose={() => setInviteDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        disableRestoreFocus
         PaperProps={{ sx: { borderRadius: 4, bgcolor: isDarkMode ? "#111827" : "#FFFFFF", color: isDarkMode ? "#F9FAFB" : "inherit" } }}
       >
         <DialogTitle sx={{ fontWeight: 700, borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #F3F4F6" }}>
@@ -1406,13 +1434,21 @@ export default function UsersPage() {
             };
 
             return (
-              <Box sx={{ display: 'grid', gap: 1.5 }}>
+              <Box
+                component="form"
+                id="invite-user-form"
+                autoComplete="on"
+                onSubmit={(e) => e.preventDefault()}
+                sx={{ display: 'grid', gap: 1.5 }}
+              >
                 {/* Name row */}
                 <Grid container spacing={2}>
                   <Grid item xs={6}>
                     <TextField
                       label="First Name"
                       fullWidth size="small"
+                      name="invite-given-name"
+                      autoComplete="given-name"
                       value={inviteForm.firstName}
                       onChange={e => {
                         setInviteForm(f => ({ ...f, firstName: e.target.value }));
@@ -1427,6 +1463,8 @@ export default function UsersPage() {
                     <TextField
                       label="Last Name"
                       fullWidth size="small"
+                      name="invite-family-name"
+                      autoComplete="family-name"
                       value={inviteForm.lastName}
                       onChange={e => {
                         setInviteForm(f => ({ ...f, lastName: e.target.value }));
@@ -1444,6 +1482,8 @@ export default function UsersPage() {
                   label="Email Address"
                   type="email"
                   fullWidth size="small"
+                  name="invite-email"
+                  autoComplete="email"
                   value={inviteForm.email}
                   onChange={e => {
                     setInviteForm(f => ({ ...f, email: e.target.value }));
@@ -1457,13 +1497,33 @@ export default function UsersPage() {
                 <TextField
                   label="Mobile Number"
                   fullWidth size="small"
+                  name="invite-tel"
+                  autoComplete="tel"
                   placeholder="+447700900123"
                   value={inviteForm.mobile}
                   onChange={e => setInviteForm(f => ({ ...f, mobile: e.target.value }))}
                   sx={fieldSx}
                 />
 
-                {/* Company Dropdown (only for superadmin) */}
+                {/* Company — fixed for company admin; dropdown for super admin */}
+                {isCompanyAdminAccount && !isSuperAdminAccount && (
+                  <TextField
+                    label="Company"
+                    fullWidth
+                    size="small"
+                    value={currentUser?.companyname || inviteForm.companyname || ""}
+                    InputProps={{ readOnly: true }}
+                    disabled
+                    helperText="New users are added to your organisation"
+                    sx={{
+                      ...fieldSx,
+                      "& .MuiInputBase-input.Mui-disabled": {
+                        WebkitTextFillColor: isDarkMode ? "#F9FAFB" : "#111827",
+                        color: isDarkMode ? "#F9FAFB" : "#111827",
+                      },
+                    }}
+                  />
+                )}
                 {isSuperAdminAccount && (
                   <TextField
                     select
@@ -1499,6 +1559,8 @@ export default function UsersPage() {
                   label="Password"
                   type={inviteShowPassword ? 'text' : 'password'}
                   fullWidth size="small"
+                  name="invite-new-password"
+                  autoComplete="new-password"
                   value={inviteForm.password}
                   onChange={e => {
                     setInviteForm(f => ({ ...f, password: e.target.value }));
@@ -1649,7 +1711,12 @@ export default function UsersPage() {
                 };
                 const res = await api.post('/users/invite', payload);
                 if (res?.data?.success) {
-                  setSnack({ open: true, msg: `${inviteForm.firstName} has been invited successfully`, severity: 'success' });
+                  const baseMsg = res.data.message || `${inviteForm.firstName} has been invited successfully`;
+                  setSnack({
+                    open: true,
+                    msg: baseMsg,
+                    severity: res.data.emailSent === false ? 'warning' : 'success',
+                  });
                   setInviteDialogOpen(false);
                   fetchUsers(); // refresh list
                 } else {

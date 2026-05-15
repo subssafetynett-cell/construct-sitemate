@@ -1,4 +1,4 @@
-const GENERAL_FORM_TEMPLATE_ROLES = ["superadmin", "company_admin", "supervisor"];
+const GENERAL_FORM_TEMPLATE_ROLES = ["superadmin", "company_admin", "site_manager"];
 
 function isSafetynettUser(user) {
   const n = (user?.companyname || user?.company || "")
@@ -29,7 +29,7 @@ function assertGeneralFormTemplateWrite(req, answers, body = {}) {
     ok: false,
     status: 403,
     message:
-      "Only Super Admin, Company Admin, or Supervisor can edit general form templates. Use a site pack link if you are filling this for a site.",
+      "Only Super Admin, Company Admin, or Site Manager can edit general form templates. Use a site pack link if you are filling this for a site.",
   };
 }
 

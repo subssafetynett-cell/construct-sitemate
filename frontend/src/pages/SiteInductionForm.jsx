@@ -19,6 +19,7 @@ import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
+import { GENERAL_FORM_TEMPLATE_READONLY_MESSAGE } from "../utils/generalFormTemplateAccess";
 import FormDocumentHeader from "../components/FormDocumentHeader";
 import FormHeaderApprovedRow from "../components/FormHeaderApprovedRow";
 import FormYesNoTickCells from "../components/FormYesNoTickCells";
@@ -212,7 +213,7 @@ export default function SiteInductionForm() {
         <Layout>
             {!canEdit && (
                 <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-                    You can view this template but only a Super Admin, Company Admin, or Supervisor can edit or save it. Use a site pack link to fill this form for a site.
+                    {GENERAL_FORM_TEMPLATE_READONLY_MESSAGE}
                 </Alert>
             )}
 

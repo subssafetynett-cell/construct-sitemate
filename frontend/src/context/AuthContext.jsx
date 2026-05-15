@@ -1,4 +1,10 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
+import {
+  clearAuthStorage,
+  getStoredToken,
+  isTokenExpired,
+  scheduleTokenExpiryLogout,
+} from "../utils/authSession";
 
 // ─── Role helpers ──────────────────────────────────────────────────────────────
 export const ROLES = {
@@ -31,6 +37,11 @@ export const ASSIGNABLE_ROLES = {
 const AuthContext = createContext(null);
 
 function readUserFromStorage() {
+  const token = getStoredToken();
+  if (!token || isTokenExpired(token)) {
+    if (token) clearAuthStorage();
+    return null;
+  }
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
   } catch {
@@ -43,13 +54,17 @@ export function AuthProvider({ children }) {
 
   /** Call after login/signup to sync context with localStorage */
   const refreshUser = useCallback(() => {
-    setCurrentUser(readUserFromStorage());
+    const user = readUserFromStorage();
+    setCurrentUser(user);
+    const token = getStoredToken();
+    if (token && !isTokenExpired(token)) {
+      scheduleTokenExpiryLogout(token);
+    }
   }, []);
 
   /** Call on logout */
   const clearUser = useCallback(() => {
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    clearAuthStorage();
     setCurrentUser(null);
   }, []);
 

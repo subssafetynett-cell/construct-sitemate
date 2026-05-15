@@ -2,7 +2,7 @@ const prisma = require("../prismaClient");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { validatePlainName } = require("../utils/plainTextName");
-const { isSafetynettCompanyName } = require("../utils/company");
+const { resolveTokenRole } = require("../utils/userAuthorization");
 
 exports.signup = async (payload) => {
   if (!process.env.JWT_SECRET) {
@@ -110,10 +110,7 @@ exports.signup = async (payload) => {
 
   console.log("Signup Step 5: Generating token");
   // 5️⃣ Generate token
-  // Safetynett users are always superadmin
-  const effectiveRole = isSafetynettCompanyName(user.companyname)
-    ? "superadmin"
-    : user.role;
+  const effectiveRole = resolveTokenRole(user);
 
   const token = jwt.sign(
     {
@@ -121,7 +118,7 @@ exports.signup = async (payload) => {
       email: user.email,
       role: effectiveRole,
       clientId: client.id,
-      companyname: user.companyname
+      companyname: user.companyname,
     },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
@@ -202,10 +199,7 @@ exports.login = async ({ email, password }) => {
     throw Object.assign(new Error("JWT_SECRET missing"), { status: 500 });
   }
 
-  // Safetynett users are always superadmin
-  const effectiveRole = isSafetynettCompanyName(refreshed.companyname)
-    ? "superadmin"
-    : refreshed.role;
+  const effectiveRole = resolveTokenRole(refreshed);
 
   const token = jwt.sign(
     {
@@ -213,7 +207,7 @@ exports.login = async ({ email, password }) => {
       email: refreshed.email,
       role: effectiveRole,
       clientId: refreshed.clientId,
-      companyname: refreshed.companyname
+      companyname: refreshed.companyname,
     },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }

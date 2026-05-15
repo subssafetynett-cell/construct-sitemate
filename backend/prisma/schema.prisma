@@ -18,6 +18,7 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   users     User[]
+  sites     Site[]
 }
 
 model User {
@@ -49,6 +50,20 @@ model User {
   createdForms  Form[]
   submittedResponses FormResponse[]
   uploadedDocuments SiteDocument[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Site {
@@ -58,6 +73,9 @@ model Site {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
 
   managerId String?
   manager   User?   @relation(fields: [managerId], references: [id])
