@@ -72,8 +72,8 @@ services:
         ]
       interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 90s
+      retries: 24
+      start_period: 180s
 
   frontend:
     build:

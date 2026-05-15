@@ -1,4 +1,19 @@
 const path = require("path");
+const fs = require("fs");
 const dotenv = require("dotenv");
 
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+function loadEnvFile(filePath) {
+  if (fs.existsSync(filePath)) {
+    dotenv.config({ path: filePath });
+  }
+}
+
+// Coolify / Docker Compose inject env vars — dotenv only fills gaps for local dev.
+// Local monorepo: repo root `.env` lives one level above `backend/` when __dirname is backend.
+// In Docker, WORKDIR is /app and __dirname is /app — parent is "/" so we skip loading `/.env`.
+const parentDir = path.dirname(__dirname);
+const rootEnv = path.join(parentDir, ".env");
+if (parentDir && parentDir !== path.parse(parentDir).root) {
+  loadEnvFile(rootEnv);
+}
+loadEnvFile(path.join(__dirname, ".env"));

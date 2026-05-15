@@ -19,8 +19,9 @@ COPY . .
 # Generate Prisma client after schema is available
 RUN npx prisma generate
 
+RUN chmod +x docker-entrypoint.sh
+
 # Expose the port the app runs on
 EXPOSE 4000
 
-# Apply pending migrations then start (do not rely on `npm start` / prestart — many hosts run `node` directly).
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node server.js"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
