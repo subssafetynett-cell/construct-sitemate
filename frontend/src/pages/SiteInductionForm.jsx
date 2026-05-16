@@ -2,11 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useCompanyLogo } from "../hooks/useCompanyLogo";
 import { 
     Box, Typography, Button, Paper, TextField, CircularProgress, 
-<<<<<<< HEAD
-    IconButton, 
-=======
-    IconButton
->>>>>>> 6e15f2feaf07bdbadbbba37a840bbc66823e3c3e
+    IconButton,
 } from "@mui/material";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import { ArrowLeft } from "lucide-react";
@@ -17,13 +13,7 @@ import api from "../services/api";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
-<<<<<<< HEAD
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
-import FormDocumentHeader from "../components/FormDocumentHeader";
-import FormHeaderApprovedRow from "../components/FormHeaderApprovedRow";
-import FormYesNoTickCells from "../components/FormYesNoTickCells";
-=======
->>>>>>> 6e15f2feaf07bdbadbbba37a840bbc66823e3c3e
 
 export default function SiteInductionForm() {
   const logoUrl = useCompanyLogo();
@@ -35,6 +25,7 @@ export default function SiteInductionForm() {
     const category = searchParams.get("category") || "General forms";
     const action = searchParams.get("action");
     const containerRef = useRef(null);
+    const { canEdit } = useGeneralFormTemplateAccess(action, downloading);
     
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -126,16 +117,12 @@ export default function SiteInductionForm() {
     };
 
     const handleSaveClick = () => {
-<<<<<<< HEAD
         if (!canEdit) return;
-        setSaveDialogOpen(true);
-=======
         if (id) {
             setSaveDialogOpen(true);
         } else {
             executeSave(false);
         }
->>>>>>> 6e15f2feaf07bdbadbbba37a840bbc66823e3c3e
     };
 
     const executeSave = async (asNew = false, name = "", tags = "") => {
