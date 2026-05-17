@@ -4,9 +4,20 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-    const clientName = 'Safetynett';
+    const clientName = process.env.SUPERADMIN_CLIENT_NAME || 'Safetynett';
+    const adminEmail = String(process.env.SUPERADMIN_EMAIL || 'admin@safetynet.com')
+        .trim()
+        .toLowerCase();
+    const adminPassword = String(process.env.SUPERADMIN_PASSWORD || 'AdminPass1!').trim();
+    const resetPassword =
+        process.env.SUPERADMIN_RESET_PASSWORD === 'true' ||
+        process.env.SUPERADMIN_RESET_PASSWORD === '1';
 
-    // 1. Create Default Client
+    if (!adminEmail || !adminPassword) {
+        throw new Error('SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD must be non-empty when seeding.');
+    }
+
+    // 1. Create default client (required for superadmin FK)
     let client = await prisma.client.findUnique({
         where: { name: clientName },
     });
@@ -23,19 +34,17 @@ async function main() {
         console.log(`Client ${client.name} already exists.`);
     }
 
-    // 2. Create Super Admin User
-    const adminEmail = 'admin@safetynet.com';
-    const adminPassword = 'AdminPass1!';
+    // 2. Create or update super admin
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
-    let admin = await prisma.user.findUnique({
-        where: { email: adminEmail },
+    let admin = await prisma.user.findFirst({
+        where: { email: { equals: adminEmail, mode: 'insensitive' } },
     });
 
     if (!admin) {
         admin = await prisma.user.create({
             data: {
-                username: 'superadmin',
+                username: process.env.SUPERADMIN_USERNAME || 'superadmin',
                 firstName: 'Super',
                 lastName: 'Admin',
                 email: adminEmail,
@@ -44,29 +53,44 @@ async function main() {
                 active: true,
                 clientId: client.id,
                 companyname: client.name,
-                mobile: '1234567890',
-                jobTitle: 'System Administrator'
+                mobile: process.env.SUPERADMIN_MOBILE || '1234567890',
+                jobTitle: 'System Administrator',
             },
         });
-        console.log(`Created superadmin: ${admin.email} / ${adminPassword}`);
+        console.log(`Created superadmin: ${admin.email}`);
     } else {
         console.log(`Superadmin ${admin.email} already exists.`);
-        // Ensure role is superadmin
+        const updates = {};
         if (admin.role !== 'superadmin') {
+            updates.role = 'superadmin';
+        }
+        if (!admin.active) {
+            updates.active = true;
+        }
+        if (resetPassword) {
+            updates.password = hashedPassword;
+            console.log(`Reset superadmin password for ${admin.email}`);
+        }
+        if (Object.keys(updates).length > 0) {
             admin = await prisma.user.update({
                 where: { id: admin.id },
-                data: { role: 'superadmin' }
+                data: updates,
             });
-            console.log(`Updated existing admin role to superadmin`);
+            if (updates.role) {
+                console.log('Updated existing user role to superadmin');
+            }
         }
     }
 }
 
-main()
-    .catch((e) => {
+(async () => {
+    try {
+        await main();
+    } catch (e) {
         console.error(e);
-        process.exit(1);
-    })
-    .finally(async () => {
+        process.exitCode = 1;
+    } finally {
         await prisma.$disconnect();
-    });
+    }
+    process.exit(process.exitCode ?? 0);
+})();

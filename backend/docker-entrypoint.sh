@@ -8,5 +8,8 @@ fi
 
 /app/docker-migrate.sh
 
+echo "Seeding default client and superadmin (idempotent)..."
+node /app/prisma/seed.js
+
 echo "Starting API server..."
 exec node server.js
