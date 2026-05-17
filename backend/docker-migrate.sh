@@ -59,6 +59,13 @@ set -e
 echo "$MIGRATION_OUTPUT"
 
 if [ "$MIGRATION_EXIT_CODE" -ne 0 ]; then
+  if echo "$MIGRATION_OUTPUT" | grep -q 'P1010'; then
+    echo ""
+    echo "Hint: P1010 often means DATABASE_URL points at the wrong Postgres."
+    echo "  - Docker stack (this repo): use localhost:5434 in .env (see docker-compose.local.yaml)."
+    echo "  - Or run migrations inside the container: npm run db:init:docker"
+    echo "  - Mac with Postgres.app/Homebrew on 5432: keep that on 5432; use 5434 for Docker only."
+  fi
   if echo "$MIGRATION_OUTPUT" | grep -q 'P3005'; then
     echo "Prisma P3005: non-empty database without migration history. Baselining and retrying..."
     baseline_migration "20250513180000_init"

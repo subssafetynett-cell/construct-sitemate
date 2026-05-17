@@ -9,7 +9,9 @@
     "dev": " nodemon server.js",
     "postinstall": "npx prisma@5.22.0 generate",
     "migrate": "sh ./docker-migrate.sh",
-    "db:init": "npm run migrate && cross-env DOTENV_CONFIG_PATH=../.env node -r dotenv/config ./node_modules/prisma/build/index.js db seed",
+    "db:init": "npm run migrate && npm run seed",
+    "db:init:docker": "docker compose -f ../docker-compose.yaml -f ../docker-compose.local.yaml exec -T backend npm run db:init",
+    "seed": "cross-env DOTENV_CONFIG_PATH=../.env node -r dotenv/config prisma/seed.js",
     "prisma": "cross-env DOTENV_CONFIG_PATH=../.env node -r dotenv/config ./node_modules/prisma/build/index.js"
   },
   "keywords": [],

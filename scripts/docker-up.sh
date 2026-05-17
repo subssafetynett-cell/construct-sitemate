@@ -47,7 +47,7 @@ if [[ ! -f .env ]]; then
   echo ""
 fi
 
-echo "Starting containers (with localhost port publish: 8080→SPA, 4000→API, 5432→Postgres)..."
+echo "Starting containers (with localhost port publish: 8080→SPA, 4000→API, 5434→Postgres)..."
 docker compose -f docker-compose.yaml -f docker-compose.local.yaml up -d --build "$@"
 echo ""
 docker compose -f docker-compose.yaml -f docker-compose.local.yaml ps
