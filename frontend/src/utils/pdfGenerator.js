@@ -1,12 +1,34 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
-const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB hard cap (base64 ≈ 4/3 binary; we also compress in PDF)
-const ORPHAN_PAGE_FRACTION = 0.28; // If last page would be shorter than this × usable page height, fit on one page
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+const DEFAULT_TARGET_BYTES = 2 * 1024 * 1024;
+const ORPHAN_PAGE_FRACTION = 0.28;
+const BLOCK_GAP_MM = 2;
 
-/**
- * Wait for <img> nodes to finish loading so PDF capture includes logos and signatures.
- */
+function waitForChart(root, timeoutMs = 4000) {
+    const chartRoot = root?.querySelector?.("[data-pdf-chart]");
+    if (!chartRoot) return Promise.resolve();
+
+    const started = Date.now();
+    return new Promise((resolve) => {
+        const tick = () => {
+            const svg = chartRoot.querySelector("svg");
+            const hasBars =
+                svg &&
+                (svg.querySelector(".recharts-bar-rectangle") ||
+                    svg.querySelector("path.recharts-rectangle") ||
+                    svg.querySelector(".recharts-layer.recharts-bar"));
+            if (hasBars || Date.now() - started >= timeoutMs) {
+                resolve();
+                return;
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+}
+
 function waitForImages(root, timeoutMs = 15000) {
     if (!root) return Promise.resolve();
     const imgs = Array.from(root.querySelectorAll("img")).filter((img) => img.getAttribute("src"));
@@ -40,26 +62,39 @@ function absolutizeMediaUrlsInClone(_document, clonedRoot) {
     });
 }
 
-/**
- * Pick html2canvas scale + JPEG quality to stay sharp but avoid huge captures.
- */
-function pickCaptureOptions(element) {
+function html2canvasOnClone(_document, clonedElement) {
+    absolutizeMediaUrlsInClone(_document, clonedElement);
+    const style = _document.createElement("style");
+    style.textContent = `
+        [data-pdf-block] { break-inside: avoid !important; page-break-inside: avoid !important; }
+        .pdf-hide-on-export { display: none !important; }
+        .pdf-export-root { padding: 12px !important; }
+        .pdf-export-root [data-pdf-block] { margin-bottom: 0 !important; }
+        [data-pdf-chart] .recharts-wrapper,
+        [data-pdf-chart] .recharts-surface,
+        [data-pdf-chart] svg { overflow: visible !important; }
+        .pdf-header-logo { display: block !important; margin-left: auto !important; margin-right: auto !important; }
+    `;
+    _document.head.appendChild(style);
+}
+
+function pickCaptureOptions(element, overrides = {}) {
     const w = element?.scrollWidth || 1000;
     const h = element?.scrollHeight || 1000;
     const megapixels = (w * h) / 1e6;
-    let scale = 1.45;
-    if (megapixels > 3.5) scale = 1.25;
-    if (megapixels > 8) scale = 1.05;
-    let jpegQuality = 0.74;
-    if (megapixels > 5) jpegQuality = 0.68;
-    if (megapixels > 10) jpegQuality = 0.62;
+    let scale = overrides.scale ?? 1.45;
+    if (overrides.scale == null) {
+        if (megapixels > 3.5) scale = 1.25;
+        if (megapixels > 8) scale = 1.05;
+    }
+    let jpegQuality = overrides.jpegQuality ?? 0.74;
+    if (overrides.jpegQuality == null) {
+        if (megapixels > 5) jpegQuality = 0.68;
+        if (megapixels > 10) jpegQuality = 0.62;
+    }
     return { scale, jpegQuality };
 }
 
-/**
- * If the bitmap would span two pages but the second slice is only a small strip,
- * scale the whole image down so everything fits on one page (no orphan page).
- */
 function applyOrphanPageMerge(imgWidth, imgHeight, availableWidth, availableHeight, onePageOnly) {
     if (onePageOnly) return { imgWidth, imgHeight, singlePage: true };
     if (imgHeight <= availableHeight) return { imgWidth, imgHeight, singlePage: true };
@@ -80,154 +115,296 @@ function applyOrphanPageMerge(imgWidth, imgHeight, availableWidth, availableHeig
     return { imgWidth, imgHeight, singlePage: false };
 }
 
-/**
- * Generates and downloads a PDF from a given HTML element reference.
- *
- * @param {React.RefObject} printRef - The useRef hook pointing to the component to print
- * @param {string} fileName - The desired name of the downloaded file
- * @param {function} onComplete - Callback executed after generation (e.g. to close the window)
- * @param {object} [options]
- * @param {boolean} [options.onePageOnly] - Force single page (scale down)
- * @param {number} [options.marginX] - Left/right inset (mm); default ~12
- * @param {number} [options.marginY] - Legacy vertical band; overridden by header/footer insets when not set with headerInset
- * @param {number} [options.headerInsetMm] - Top reserved band (mm)
- * @param {number} [options.footerInsetMm] - Bottom reserved band for footer text (mm)
- */
-export const downloadPdfFromRef = async (printRef, fileName = "document", onComplete = null, options = {}) => {
-    if (!printRef || !printRef.current) {
-        console.error("No print reference provided for PDF generation.");
-        return;
-    }
-
-    const { onePageOnly = false } = options;
-
+function resolveLayout(options) {
     const marginX = options.marginX !== undefined ? options.marginX : 12;
     const legacyY = options.marginY;
     const headerInsetMm =
         options.headerInsetMm !== undefined ? options.headerInsetMm : legacyY !== undefined ? legacyY : 11;
     const footerInsetMm =
         options.footerInsetMm !== undefined ? options.footerInsetMm : legacyY !== undefined ? legacyY : 13;
+    return { marginX, headerInsetMm, footerInsetMm };
+}
+
+async function captureElement(element, captureOpts) {
+    const { scale, jpegQuality } = pickCaptureOptions(element, captureOpts);
+    const canvas = await html2canvas(element, {
+        useCORS: true,
+        allowTaint: false,
+        scale,
+        logging: false,
+        backgroundColor: "#ffffff",
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        onclone: html2canvasOnClone,
+    });
+    return { canvas, jpegQuality };
+}
+
+function canvasToJpeg(canvas, quality, targetMaxBytes) {
+    let q = quality;
+    let data = canvas.toDataURL("image/jpeg", q);
+    const cap = targetMaxBytes * 0.55;
+    while (q >= 0.5 && data.length > cap) {
+        q -= 0.05;
+        data = canvas.toDataURL("image/jpeg", q);
+    }
+    return data;
+}
+
+function cropCanvasSlice(source, srcY, srcHeight) {
+    const slice = document.createElement("canvas");
+    slice.width = source.width;
+    slice.height = srcHeight;
+    const ctx = slice.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, slice.width, slice.height);
+    ctx.drawImage(source, 0, srcY, source.width, srcHeight, 0, 0, source.width, srcHeight);
+    return slice;
+}
+
+/**
+ * Renders marked sections (`[data-pdf-block]`) one after another with page breaks between
+ * sections instead of slicing one tall screenshot (avoids cutting rows in half).
+ */
+async function downloadPdfPaginatedByBlocks(root, fileName, onComplete, options) {
+    const { marginX, headerInsetMm, footerInsetMm } = resolveLayout(options);
+    const blockScale = options.blockScale ?? 2;
+    const jpegQuality = options.jpegQuality ?? 0.85;
+    const targetMaxBytes = options.targetMaxBytes ?? DEFAULT_TARGET_BYTES;
+    const blockGapMm = options.blockGapMm ?? BLOCK_GAP_MM;
+
+    const blocks = Array.from(root.querySelectorAll("[data-pdf-block]")).filter(
+        (el) => el.offsetWidth > 0 && el.offsetHeight > 0
+    );
+
+    if (blocks.length === 0) {
+        return downloadPdfSingleCanvas(root, fileName, onComplete, options);
+    }
+
+    const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const contentLeft = marginX;
+    const contentRight = marginX;
+    const availableWidth = pageWidth - contentLeft - contentRight;
+    const contentTop = headerInsetMm;
+    const contentBottom = footerInsetMm;
+    const availableHeight = pageHeight - contentTop - contentBottom;
+
+    let cursorY = contentTop;
+    let pageCount = 1;
+
+    const ensureSpace = (neededMm) => {
+        if (cursorY + neededMm <= pageHeight - contentBottom) return;
+        pdf.addPage();
+        pageCount += 1;
+        cursorY = contentTop;
+    };
+
+    for (const block of blocks) {
+        const { canvas } = await captureElement(block, { scale: blockScale, jpegQuality });
+        const imgWidth = availableWidth;
+        const imgHeightMm = (canvas.height * imgWidth) / canvas.width;
+
+        if (imgHeightMm <= availableHeight) {
+            ensureSpace(imgHeightMm + blockGapMm);
+            const imgData = canvasToJpeg(canvas, jpegQuality, targetMaxBytes);
+            pdf.addImage(imgData, "JPEG", contentLeft, cursorY, imgWidth, imgHeightMm, undefined, "FAST");
+            cursorY += imgHeightMm + blockGapMm;
+            continue;
+        }
+
+        // Tall block: slice at page boundaries (kept within one section)
+        const pxPerMm = canvas.height / imgHeightMm;
+        const pageSlicePx = Math.floor(availableHeight * pxPerMm);
+        let srcY = 0;
+
+        while (srcY < canvas.height) {
+            const remainingPx = canvas.height - srcY;
+            const slicePx = Math.min(pageSlicePx, remainingPx);
+            const sliceHeightMm = slicePx / pxPerMm;
+
+            if (srcY > 0) {
+                pdf.addPage();
+                pageCount += 1;
+                cursorY = contentTop;
+            } else {
+                ensureSpace(sliceHeightMm);
+            }
+
+            const sliceCanvas = cropCanvasSlice(canvas, srcY, slicePx);
+            const imgData = canvasToJpeg(sliceCanvas, jpegQuality, targetMaxBytes);
+            pdf.addImage(imgData, "JPEG", contentLeft, cursorY, imgWidth, sliceHeightMm, undefined, "FAST");
+            srcY += slicePx;
+            cursorY = contentTop + sliceHeightMm;
+        }
+        cursorY += blockGapMm;
+    }
+
+    const currentDate = new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+    const footerLineY = pageHeight - contentBottom + 4;
+    const footerTextY = pageHeight - contentBottom + 8.5;
+    const totalPages = pdf.getNumberOfPages();
+
+    for (let p = 1; p <= totalPages; p += 1) {
+        pdf.setPage(p);
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, pageWidth, contentTop, "F");
+        pdf.rect(0, pageHeight - contentBottom, pageWidth, contentBottom, "F");
+        pdf.setDrawColor(230, 230, 230);
+        pdf.setLineWidth(0.2);
+        pdf.line(contentLeft, contentTop - 0.5, pageWidth - contentRight, contentTop - 0.5);
+        pdf.line(contentLeft, footerLineY, pageWidth - contentRight, footerLineY);
+        pdf.setFontSize(8);
+        pdf.setTextColor(90, 90, 90);
+        pdf.text(currentDate, contentLeft + 2, footerTextY);
+        pdf.text(`Page ${p} of ${totalPages}`, pageWidth - contentRight - 2, footerTextY, { align: "right" });
+    }
+
+    const out = pdf.output("arraybuffer");
+    if (out.byteLength > MAX_OUTPUT_BYTES) {
+        console.warn(
+            `PDF output is ${(out.byteLength / (1024 * 1024)).toFixed(2)} MB (cap ${MAX_OUTPUT_BYTES / (1024 * 1024)} MB).`
+        );
+    }
+
+    pdf.save(`${fileName}.pdf`);
+    if (onComplete) onComplete();
+}
+
+async function downloadPdfSingleCanvas(root, fileName, onComplete, options) {
+    const { onePageOnly = false } = options;
+    const { marginX, headerInsetMm, footerInsetMm } = resolveLayout(options);
+    const targetMaxBytes = options.targetMaxBytes ?? DEFAULT_TARGET_BYTES;
+
+    const { scale, jpegQuality } = pickCaptureOptions(root, {
+        scale: options.blockScale,
+        jpegQuality: options.jpegQuality,
+    });
+
+    const canvas = await html2canvas(root, {
+        useCORS: true,
+        allowTaint: false,
+        scale,
+        logging: false,
+        backgroundColor: "#ffffff",
+        windowWidth: root.scrollWidth,
+        windowHeight: root.scrollHeight,
+        onclone: html2canvasOnClone,
+    });
+
+    const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const contentLeft = marginX;
+    const contentRight = marginX;
+    const availableWidth = pageWidth - contentLeft - contentRight;
+    const contentTop = headerInsetMm;
+    const contentBottom = footerInsetMm;
+    const availableHeight = pageHeight - contentTop - contentBottom;
+
+    let imgWidth = availableWidth;
+    let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    if (onePageOnly && imgHeight > availableHeight) {
+        const r = availableHeight / imgHeight;
+        imgHeight = availableHeight;
+        imgWidth *= r;
+    }
+
+    const merged = applyOrphanPageMerge(imgWidth, imgHeight, availableWidth, availableHeight, onePageOnly);
+    imgWidth = merged.imgWidth;
+    imgHeight = merged.imgHeight;
+    const forceSinglePage = merged.singlePage;
+
+    const imgData = canvasToJpeg(canvas, jpegQuality, targetMaxBytes);
+    const totalPages = forceSinglePage ? 1 : Math.max(1, Math.ceil(imgHeight / availableHeight));
+
+    const currentDate = new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+    const footerLineY = pageHeight - contentBottom + 4;
+    const footerTextY = pageHeight - contentBottom + 8.5;
+
+    const drawHeaderFooter = (pageNum) => {
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, pageWidth, contentTop, "F");
+        pdf.rect(0, pageHeight - contentBottom, pageWidth, contentBottom, "F");
+        pdf.setDrawColor(230, 230, 230);
+        pdf.setLineWidth(0.2);
+        pdf.line(contentLeft, contentTop - 0.5, pageWidth - contentRight, contentTop - 0.5);
+        pdf.line(contentLeft, footerLineY, pageWidth - contentRight, footerLineY);
+        pdf.setFontSize(8);
+        pdf.setTextColor(90, 90, 90);
+        pdf.text(currentDate, contentLeft + 2, footerTextY);
+        pdf.text(`Page ${pageNum} of ${totalPages}`, pageWidth - contentRight - 2, footerTextY, { align: "right" });
+    };
+
+    const xPos = contentLeft + (availableWidth - imgWidth) / 2;
+    const yStart = contentTop;
+
+    pdf.addImage(imgData, "JPEG", xPos, yStart, imgWidth, imgHeight, undefined, "FAST");
+    drawHeaderFooter(1);
+
+    if (!forceSinglePage && !onePageOnly) {
+        let heightLeft = imgHeight - availableHeight;
+        let currentPage = 2;
+        while (heightLeft > 0) {
+            const yPos = contentTop - availableHeight * (currentPage - 1);
+            pdf.addPage();
+            pdf.addImage(imgData, "JPEG", xPos, yPos, imgWidth, imgHeight, undefined, "FAST");
+            drawHeaderFooter(currentPage);
+            heightLeft -= availableHeight;
+            currentPage += 1;
+        }
+    }
+
+    const out = pdf.output("arraybuffer");
+    if (out.byteLength > MAX_OUTPUT_BYTES) {
+        console.warn(
+            `PDF output is ${(out.byteLength / (1024 * 1024)).toFixed(2)} MB (cap ${MAX_OUTPUT_BYTES / (1024 * 1024)} MB).`
+        );
+    }
+
+    pdf.save(`${fileName}.pdf`);
+    if (onComplete) onComplete();
+}
+
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.paginateBlocks] - Capture each `[data-pdf-block]` as its own unit (clean page breaks)
+ * @param {number} [options.blockScale] - html2canvas scale for block mode (default 2)
+ * @param {number} [options.jpegQuality] - JPEG quality 0–1 (default 0.85 in block mode)
+ * @param {number} [options.targetMaxBytes] - Soft size target per slice (~2 MB default)
+ */
+export const downloadPdfFromRef = async (printRef, fileName = "document", onComplete = null, options = {}) => {
+    if (!printRef?.current) {
+        console.error("No print reference provided for PDF generation.");
+        return;
+    }
 
     try {
         await waitForImages(printRef.current);
+        await waitForChart(printRef.current);
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await new Promise((r) => setTimeout(r, 150));
 
-        const el = printRef.current;
-        const { scale, jpegQuality } = pickCaptureOptions(el);
+        const root = printRef.current;
+        const useBlocks =
+            options.paginateBlocks === true ||
+            (options.paginateBlocks !== false && root.querySelector("[data-pdf-block]"));
 
-        const canvas = await html2canvas(el, {
-            useCORS: true,
-            allowTaint: false,
-            scale,
-            logging: false,
-            windowWidth: el.scrollWidth,
-            windowHeight: el.scrollHeight,
-            onclone: (_clonedDoc, clonedElement) => {
-                absolutizeMediaUrlsInClone(_clonedDoc, clonedElement);
-            },
-        });
-
-        const pdf = new jsPDF({
-            orientation: "p",
-            unit: "mm",
-            format: "a4",
-            compress: true,
-        });
-
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-
-        const contentLeft = marginX;
-        const contentRight = marginX;
-        const availableWidth = pageWidth - contentLeft - contentRight;
-
-        const contentTop = headerInsetMm;
-        const contentBottom = footerInsetMm;
-        const availableHeight = pageHeight - contentTop - contentBottom;
-
-        let imgWidth = availableWidth;
-        let imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-        if (onePageOnly && imgHeight > availableHeight) {
-            const r = availableHeight / imgHeight;
-            imgHeight = availableHeight;
-            imgWidth *= r;
+        if (useBlocks) {
+            await downloadPdfPaginatedByBlocks(root, fileName, onComplete, options);
+        } else {
+            await downloadPdfSingleCanvas(root, fileName, onComplete, options);
         }
-
-        const merged = applyOrphanPageMerge(
-            imgWidth,
-            imgHeight,
-            availableWidth,
-            availableHeight,
-            onePageOnly
-        );
-        imgWidth = merged.imgWidth;
-        imgHeight = merged.imgHeight;
-        const forceSinglePage = merged.singlePage;
-
-        let imgData = canvas.toDataURL("image/jpeg", jpegQuality);
-
-        // If the embedded image is still huge, step down JPEG quality until under cap (rough guard).
-        for (let q = jpegQuality - 0.06; q >= 0.45 && imgData.length > MAX_OUTPUT_BYTES * 0.55; q -= 0.06) {
-            imgData = canvas.toDataURL("image/jpeg", q);
-        }
-
-        const totalPages = forceSinglePage ? 1 : Math.max(1, Math.ceil(imgHeight / availableHeight));
-        const currentDate = new Date().toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-        });
-
-        const footerLineY = pageHeight - contentBottom + 4;
-        const footerTextY = pageHeight - contentBottom + 8.5;
-
-        const drawHeaderFooter = (pageNum) => {
-            pdf.setFillColor(255, 255, 255);
-            pdf.rect(0, 0, pageWidth, contentTop, "F");
-            pdf.rect(0, pageHeight - contentBottom, pageWidth, contentBottom, "F");
-
-            pdf.setDrawColor(230, 230, 230);
-            pdf.setLineWidth(0.2);
-            pdf.line(contentLeft, contentTop - 0.5, pageWidth - contentRight, contentTop - 0.5);
-            pdf.line(contentLeft, footerLineY, pageWidth - contentRight, footerLineY);
-
-            pdf.setFontSize(8);
-            pdf.setTextColor(90, 90, 90);
-            pdf.text(currentDate, contentLeft + 2, footerTextY);
-            const pageLabel = `Page ${pageNum} of ${totalPages}`;
-            pdf.text(pageLabel, pageWidth - contentRight - 2, footerTextY, { align: "right" });
-        };
-
-        const xPos = contentLeft + (availableWidth - imgWidth) / 2;
-        const yStart = contentTop;
-
-        pdf.addImage(imgData, "JPEG", xPos, yStart, imgWidth, imgHeight, undefined, "FAST");
-        drawHeaderFooter(1);
-
-        if (!forceSinglePage && !onePageOnly) {
-            let heightLeft = imgHeight - availableHeight;
-            let currentPage = 2;
-            while (heightLeft > 0) {
-                const yPos = contentTop - availableHeight * (currentPage - 1);
-                pdf.addPage();
-                pdf.addImage(imgData, "JPEG", xPos, yPos, imgWidth, imgHeight, undefined, "FAST");
-                drawHeaderFooter(currentPage);
-                heightLeft -= availableHeight;
-                currentPage++;
-            }
-        }
-
-        const out = pdf.output("arraybuffer");
-        if (out.byteLength > MAX_OUTPUT_BYTES) {
-            console.warn(
-                `PDF output is ${(out.byteLength / (1024 * 1024)).toFixed(2)} MB (cap ${MAX_OUTPUT_BYTES / (1024 * 1024)} MB). Try printing a shorter section or reduce images.`
-            );
-        }
-
-        pdf.save(`${fileName}.pdf`);
-
-        if (onComplete) onComplete();
     } catch (err) {
         console.error("PDF generation failed:", err);
         if (onComplete) onComplete(err);

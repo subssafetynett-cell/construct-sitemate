@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { 
     Box, Typography, Button, Paper, TextField, CircularProgress, 
     IconButton, Checkbox, FormControlLabel, Radio, RadioGroup, FormControl, MenuItem,
-    Dialog, DialogTitle, DialogContent, DialogActions, Tooltip
+    Dialog, DialogTitle, DialogContent, DialogActions, Tooltip,
+    Table, TableBody, TableCell, TableHead, TableRow,
 } from "@mui/material";
 import { ArrowLeft, Save, Download, X, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -273,11 +274,26 @@ const INSTALLATION_STANDARDS = [
     }
 ];
 
-/** Full site/vehicle inspection checklist (SHEQ Inspection). */
-const INSPECTION_STANDARDS = INSTALLATION_STANDARDS;
+/** SHEQ service checklist — vehicle/site audit layout (ITEM | SCORE | REMEDIAL | TIMING | RESPONSIBILITY). */
+const SHEQ_SERVICE_STANDARDS = [
+    ...INSTALLATION_STANDARDS.slice(0, -1),
+    {
+        category: "OTHER COMMENTS / OBSERVATIONS",
+        subcategories: [],
+    },
+];
+
+const INSPECTION_STANDARDS = SHEQ_SERVICE_STANDARDS;
 
 const SHEQ_INSPECTION_CATEGORY = "SHEQ Inspection";
 const SHEQ_INSTALLATION_CATEGORY = "SHEQ Installation";
+
+function isOtherCommentsCategory(category) {
+    return (
+        category === "OTHER COMMENTS/OBSERVATIONS" ||
+        category === "OTHER COMMENTS / OBSERVATIONS"
+    );
+}
 
 function getFormSectionsForCategory(cat) {
     if (cat === SHEQ_INSPECTION_CATEGORY) return INSPECTION_STANDARDS;
@@ -288,7 +304,6 @@ function getFormSectionsForCategory(cat) {
 function getDefaultHeaderLabelsForCategory(cat) {
     const isInspection = cat === SHEQ_INSPECTION_CATEGORY;
     return {
-        formTitle: isInspection ? "SHEQ INSPECTION SERVICE REPORT" : "SHEQ INSTALLATION SERVICE REPORT",
         dateLabel: "Date",
         docNoLabel: "Document No.",
         approvedByLabel: "Approved by",
@@ -302,12 +317,15 @@ function getDefaultHeaderLabelsForCategory(cat) {
         siteContactLabel: "Site Contact",
         projectSummaryLabel: "Project Summary - Assessment of the project H&S status",
         reportDistributionLabel: "Report Distribution",
-        remedialColLabel: "Comments",
+        remedialColLabel: isInspection ? "REMEDIAL ACTION" : "Comments",
+        timingColLabel: "TIMING",
+        responsibilityColLabel: "RESPONSIBILITY",
         ratingColLabel: "RATING",
         scoreColLabel: "SCORE",
         uploadLabel: "PHOTOS / DOCUMENTS",
         commentsLabel: "INSPECTOR'S FINAL COMMENTS / SUMMARY",
-        headerTitle: isInspection ? "SHEQ Inspection" : "SHEQ Installation",
+        headerTitle: isInspection ? "SHEQ service" : "SHEQ Installation",
+        formTitle: isInspection ? "SHEQ SERVICE REPORT" : "SHEQ INSTALLATION SERVICE REPORT",
     };
 }
 
@@ -316,6 +334,120 @@ function getPdfFileName(category, id, client) {
     const clientPart = (client || "Report").replace(/[^\w\-]+/g, "_").slice(0, 40);
     return `${slug}_${clientPart}_${id || "draft"}`;
 }
+
+/** Block-based PDF: sharp text (~2 MB target), sections break on page boundaries. */
+const SHEQ_PDF_OPTIONS = {
+    paginateBlocks: true,
+    blockScale: 2.5,
+    jpegQuality: 0.92,
+    targetMaxBytes: 2 * 1024 * 1024,
+    blockGapMm: 1,
+    marginX: 10,
+    headerInsetMm: 8,
+    footerInsetMm: 10,
+};
+
+const PROJECT_STATUS_PDF = {
+    green: { label: "GREEN", color: "#16a34a", bg: "#dcfce7" },
+    amber: { label: "AMBER", color: "#d97706", bg: "#fef3c7" },
+    red: { label: "RED", color: "#dc143c", bg: "#fee2e2" },
+};
+
+function countTextLines(text, fallback = 1) {
+    if (!text?.trim()) return fallback;
+    return Math.max(fallback, String(text).split(/\r?\n/).length);
+}
+
+const PdfProjectStatusBadge = ({ status }) => {
+    const key = PROJECT_STATUS_PDF[status] ? status : "amber";
+    const s = PROJECT_STATUS_PDF[key];
+    return (
+        <Box sx={{ py: 0.75, px: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
+            <Box
+                sx={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 1,
+                    px: 2,
+                    py: 0.6,
+                    borderRadius: "6px",
+                    bgcolor: s.bg,
+                    border: `2px solid ${s.color}`,
+                }}
+            >
+                <Box sx={{ width: 14, height: 14, borderRadius: "50%", bgcolor: s.color, flexShrink: 0 }} />
+                <Typography sx={{ fontWeight: 800, fontSize: "0.85rem", color: s.color, letterSpacing: "0.05em", lineHeight: 1 }}>
+                    {s.label}
+                </Typography>
+            </Box>
+        </Box>
+    );
+};
+
+const ReportSignatureBlock = ({ compact = false, customBlue, signature, onChange, readOnly }) => (
+    <Box sx={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>
+        <Box sx={{ width: compact ? 240 : 300, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
+            <Box
+                sx={{
+                    width: "100%",
+                    minHeight: compact ? 56 : 80,
+                    borderBottom: `2px solid ${customBlue}`,
+                    mb: compact ? 1 : 1.5,
+                    py: compact ? 0.5 : 1,
+                }}
+            >
+                <SignatureCapture value={signature || null} onChange={onChange} readOnly={readOnly} />
+            </Box>
+            <Typography
+                sx={{
+                    fontWeight: "bold",
+                    color: customBlue,
+                    fontSize: compact ? "0.8rem" : "0.85rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    textAlign: "right",
+                    width: "100%",
+                }}
+            >
+                Signature
+            </Typography>
+        </Box>
+    </Box>
+);
+
+const PdfCheckboxRow = ({ checked, label, accentColor = "#003049" }) => (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 0.4, minHeight: 24 }}>
+        <Box
+            sx={{
+                width: 18,
+                height: 18,
+                flexShrink: 0,
+                border: `2px solid ${accentColor}`,
+                borderRadius: "3px",
+                bgcolor: checked ? accentColor : "#ffffff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxSizing: "border-box",
+            }}
+        >
+            {checked && (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                    <path
+                        d="M2 6.2L4.6 8.8L10 3.4"
+                        stroke="#ffffff"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+            )}
+        </Box>
+        <Typography sx={{ fontSize: "0.8rem", fontWeight: 500, color: "#111827", lineHeight: 1.25 }}>
+            {label}
+        </Typography>
+    </Box>
+);
 
 const SHQ_INSTALLATION_STANDARDS = [
     {
@@ -623,14 +755,13 @@ const HeaderInput = ({ value, onChange, textColor, multiline = true, minRows = 2
     if (downloading) {
         return (
             <Typography sx={{ 
-                px: 1.5, 
-                py: 1.25, 
-                fontSize: '0.9rem', 
+                px: 1, 
+                py: 0.65, 
+                fontSize: '0.85rem', 
                 color: textColor, 
-                lineHeight: 1.4, 
+                lineHeight: 1.35, 
                 whiteSpace: 'pre-wrap', 
                 wordBreak: 'break-word',
-                minHeight: multiline ? `${minRows * 1.4}rem` : 'auto'
             }}>
                 {value || " "}
             </Typography>
@@ -754,11 +885,15 @@ export default function SheqInstallationForm({
         images: []
     });
 
+    const fromTemplateId = searchParams.get("fromTemplate");
+
     useEffect(() => {
         if (id) {
             loadSubmission(id);
+        } else if (fromTemplateId) {
+            loadSubmission(fromTemplateId, { asTemplate: true });
         }
-    }, [id]);
+    }, [id, fromTemplateId]);
 
     const listPath =
         category === SHEQ_INSPECTION_CATEGORY
@@ -776,68 +911,98 @@ export default function SheqInstallationForm({
             downloadPdfFromRef(containerRef, fileName, () => {
                 setDownloading(false);
                 navigate(listPath);
-            });
-        }, 1500);
+            }, SHEQ_PDF_OPTIONS);
+        }, 3200);
         return () => clearTimeout(timer);
     }, [loading, action, id, category, listPath, formData.client]);
 
-    const loadSubmission = async (submissionId) => {
+    const hydrateSubmissionAnswers = (submission, { asTemplate = false } = {}) => {
+        if (!submission?.answers) return;
+        const ans = submission.answers;
+        const savedCategory = submission.category || ans.category || category;
+        if (ans.headerLabels) {
+            setHeaderLabels((prev) => ({
+                ...getDefaultHeaderLabelsForCategory(savedCategory),
+                ...prev,
+                ...ans.headerLabels,
+            }));
+        }
+        if (ans.formSections?.length) setFormSections(ans.formSections);
+        else setFormSections(getFormSectionsForCategory(savedCategory));
+        if (ans.visibleSections) setVisibleSections((prev) => ({ ...prev, ...ans.visibleSections }));
+        if (ans.docInfo) {
+            setDocInfo((prev) => ({
+                ...prev,
+                ...ans.docInfo,
+                ...(asTemplate ? { signature: "" } : {}),
+            }));
+        }
+        if (ans.formData) {
+            const fd = ans.formData;
+            const savedIsInspection = savedCategory === SHEQ_INSPECTION_CATEGORY;
+            let measures =
+                Array.isArray(fd.measures) && fd.measures.length >= 20
+                    ? fd.measures.slice(0, 20).map((m) => ({
+                          compliant: m?.compliant ?? "",
+                          comments: m?.comments ?? "",
+                      }))
+                    : Array(20).fill({ compliant: "", comments: "" });
+
+            if (savedIsInspection && fd.installationMeasures) {
+                for (let i = 0; i < 20; i++) {
+                    const key = `standard_${i + 1}`;
+                    const im = fd.installationMeasures[key];
+                    if (im && !measures[i].compliant) {
+                        measures[i] = {
+                            compliant: im.score != null ? String(im.score) : "",
+                            comments: im.remedial || measures[i].comments || "",
+                        };
+                    }
+                }
+            }
+
+            setFormData((prev) => ({
+                ...prev,
+                ...fd,
+                ...(asTemplate
+                    ? {
+                          client: "",
+                          siteAddress: "",
+                          equipmentId: "",
+                          engineers: "",
+                          dateValue: new Date().toLocaleDateString("en-GB"),
+                          auditor: "",
+                          serviceManager: "",
+                          siteContact: "",
+                          comments: "",
+                          images: [],
+                      }
+                    : {}),
+                measures,
+                actions:
+                    Array.isArray(fd.actions) && fd.actions.length > 0 ? fd.actions : prev.actions,
+            }));
+        }
+        const baseName =
+            ans.name ||
+            submission.name ||
+            `${savedCategory === SHEQ_INSPECTION_CATEGORY ? "Service" : "Installation"} - ${new Date().toLocaleDateString("en-GB")}`;
+        setFormMetadata({
+            name: asTemplate ? "" : baseName,
+            tags: asTemplate ? "" : ans.tags || "",
+        });
+    };
+
+    const loadSubmission = async (submissionId, { asTemplate = false } = {}) => {
         setLoading(true);
         try {
             const res = await api.get(`/forms/responses/${submissionId}`);
             if (res.data?.success) {
-                const submission = res.data.data;
-                if (submission && submission.answers) {
-                    const ans = submission.answers;
-                    const savedCategory = submission.category || ans.category || category;
-                    if (ans.headerLabels) setHeaderLabels(prev => ({ ...getDefaultHeaderLabelsForCategory(savedCategory), ...prev, ...ans.headerLabels }));
-                    if (ans.formSections?.length) setFormSections(ans.formSections);
-                    else setFormSections(getFormSectionsForCategory(savedCategory));
-                    if (ans.visibleSections) setVisibleSections(prev => ({ ...prev, ...ans.visibleSections }));
-                    if (ans.docInfo) setDocInfo(prev => ({ ...prev, ...ans.docInfo }));
-                    if (ans.formData) {
-                        const fd = ans.formData;
-                        const savedIsInspection = savedCategory === SHEQ_INSPECTION_CATEGORY;
-                        let measures =
-                            Array.isArray(fd.measures) && fd.measures.length >= 20
-                                ? fd.measures.slice(0, 20).map((m) => ({
-                                      compliant: m?.compliant ?? "",
-                                      comments: m?.comments ?? "",
-                                  }))
-                                : Array(20).fill({ compliant: "", comments: "" });
-
-                        if (savedIsInspection && fd.installationMeasures) {
-                            for (let i = 0; i < 20; i++) {
-                                const key = `standard_${i + 1}`;
-                                const im = fd.installationMeasures[key];
-                                if (im && !measures[i].compliant) {
-                                    measures[i] = {
-                                        compliant: im.score != null ? String(im.score) : "",
-                                        comments: im.remedial || measures[i].comments || "",
-                                    };
-                                }
-                            }
-                        }
-
-                        setFormData((prev) => ({
-                            ...prev,
-                            ...fd,
-                            measures,
-                            actions:
-                                Array.isArray(fd.actions) && fd.actions.length > 0
-                                    ? fd.actions
-                                    : prev.actions,
-                        }));
-                    }
-                    setFormMetadata({
-                        name: ans.name || submission.name || `${savedCategory === SHEQ_INSPECTION_CATEGORY ? "Inspection" : "Installation"} - ${new Date(submission.createdAt).toLocaleDateString("en-GB")}`,
-                        tags: ans.tags || ""
-                    });
-                }
+                hydrateSubmissionAnswers(res.data.data, { asTemplate });
             }
         } catch (e) {
             console.error("Failed to load submission", e);
-            alert("Failed to load this report. Please try again.");
+            alert(asTemplate ? "Failed to load the selected template." : "Failed to load this report. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -882,8 +1047,8 @@ export default function SheqInstallationForm({
         setTimeout(() => {
             downloadPdfFromRef(containerRef, fileName, () => {
                 setDownloading(false);
-            });
-        }, 1500);
+            }, SHEQ_PDF_OPTIONS);
+        }, 3200);
     };
 
     const executeSave = async (asNew = false, name = "", tags = "") => {
@@ -986,8 +1151,11 @@ export default function SheqInstallationForm({
 
     const handleAddItem = (catIdx, subIdx) => {
         const newSections = [...formSections];
+        if (!newSections[catIdx].subcategories[subIdx]) {
+            newSections[catIdx].subcategories[subIdx] = { title: "", subtitle: "", items: [] };
+        }
         const newKey = `custom_${Date.now()}`;
-        newSections[catIdx].subcategories[subIdx].items.push({ label: "New Item", key: newKey });
+        newSections[catIdx].subcategories[subIdx].items.push({ label: "New Item", key: newKey, rating: 3 });
         setFormSections(newSections);
     };
 
@@ -1033,7 +1201,9 @@ export default function SheqInstallationForm({
         let grandScore = 0;
 
         formSections.forEach(cat => {
-            const isSpecial = cat.category === "OTHER COMMENTS/OBSERVATIONS" || cat.category === "OTHER CONTRACTORS";
+            const isSpecial =
+                isOtherCommentsCategory(cat.category) ||
+                cat.category === "OTHER CONTRACTORS";
             if (isSpecial) return;
 
             cat.subcategories.forEach(sub => {
@@ -1072,8 +1242,6 @@ export default function SheqInstallationForm({
         });
 
         const overallRate = grandRating > 0 ? Math.round((grandScore / grandRating) * 100) : 0;
-
-        return { items: categories, overallRating: grandRating, overallScore: grandScore, overallRate };
 
         return { items: categories, overallRating: grandRating, overallScore: grandScore, overallRate };
     }, [formSections, formData.installationMeasures]);
@@ -1132,11 +1300,29 @@ export default function SheqInstallationForm({
     const borderColor = isDarkMode ? "#334155" : "#E2E8F0";
     const headerBgColor = isDarkMode ? "rgba(255,255,255,0.03)" : "#F8FAFC";
     const customBlue = "#003049"; // New Dark Blue
+    const isServiceForm = category === SHEQ_INSPECTION_CATEGORY;
+    const serviceSectionBg = isDarkMode ? "#374151" : "#d1d5db";
+    const serviceSectionColor = isDarkMode ? "#F9FAFB" : "#111827";
+    const scoreColBg = isDarkMode ? "rgba(255,255,255,0.06)" : "#e5e7eb";
     const sectionTitleBgColor = "#004a6e"; // Corresponding lighter shade
     const sectionTitleTextColor = "#FFF";
     const textColor = isDarkMode ? "#F9FAFB" : "#111827";
     const cellPadding = "4px 8px";
     const contentReadOnly = isViewMode || downloading;
+    const pdfMb = downloading ? 1 : 4;
+    const engineerPdfRows = downloading ? Math.min(6, countTextLines(formData.engineers, 2)) : 10;
+    const summaryChartItems = summaryData.items;
+    const summaryChartHeight = Math.max(320, summaryChartItems.length * 34);
+    const summaryChartWidth = 1060;
+    const chartTickColor = downloading ? "#1e293b" : (isDarkMode ? "#cbd5e1" : "#1e293b");
+    const chartLabelColor = downloading ? "#1e293b" : (isDarkMode ? "#cbd5e1" : "#1e293b");
+    /** PDF: render signature in exactly one place — comments, uploads, or standalone. */
+    const pdfSignatureInComments =
+        downloading && visibleSections.signatures && visibleSections.comments;
+    const pdfSignatureInUploads =
+        downloading && visibleSections.signatures && !visibleSections.comments && visibleSections.uploads;
+    const pdfSignatureStandalone =
+        downloading && visibleSections.signatures && !visibleSections.comments && !visibleSections.uploads;
 
     if (loading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
@@ -1224,12 +1410,13 @@ export default function SheqInstallationForm({
             <Box sx={{ 
                 display: 'flex', 
                 justifyContent: 'center', 
-                mb: 8, 
+                mb: downloading ? 2 : 8, 
                 overflow: downloading ? "visible" : "auto",
                 height: downloading ? "auto" : "unset"
             }}>
                 <Paper 
                     ref={containerRef}
+                    className={downloading ? "pdf-export-root" : undefined}
                     elevation={0} 
                     sx={{ 
                         width: downloading ? "1100px" : "100%", 
@@ -1238,8 +1425,8 @@ export default function SheqInstallationForm({
                         minHeight: downloading ? "max-content" : "unset",
                         height: downloading ? "auto" : "unset",
                         overflow: downloading ? "visible" : "hidden",
-                        p: { xs: 2, md: 5 }, 
-                        pb: downloading ? 10 : 5, 
+                        p: downloading ? 1.5 : { xs: 2, md: 5 }, 
+                        pb: downloading ? 2 : 5, 
                         bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF", 
                         color: textColor,
                         borderRadius: "12px",
@@ -1249,7 +1436,7 @@ export default function SheqInstallationForm({
                 >
                     {/* Professional Header Section */}
                     {visibleSections.header && (
-                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, border: `1px solid ${borderColor}`, mb: 4, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
+                        <Box data-pdf-block sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, border: `1px solid ${borderColor}`, mb: pdfMb, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
                         {/* Logo Left */}
                         {visibleSections.logoLeft && (
                             <Box sx={{ 
@@ -1271,8 +1458,8 @@ export default function SheqInstallationForm({
                                     </Tooltip>
                                 )}
                                 {docInfo.logo ? (
-                                    <Box sx={{ position: 'relative', width: '100%', textAlign: 'center' }}>
-                                        <Box component="img" src={docInfo.logo} sx={{ maxWidth: '100%', maxHeight: '80px', objectFit: 'contain' }} />
+                                    <Box sx={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Box component="img" className={downloading ? "pdf-header-logo" : undefined} src={docInfo.logo} sx={{ maxWidth: '90%', maxHeight: downloading ? 72 : 80, objectFit: 'contain', display: 'block', mx: 'auto' }} />
                                         {!downloading && (
                                             <Button variant="text" size="small" component="label" sx={{ display: 'block', mx: 'auto', mt: 1, textTransform: 'none', fontSize: '0.7rem' }}>
                                                 Change Logo
@@ -1429,8 +1616,8 @@ export default function SheqInstallationForm({
                                     </Tooltip>
                                 )}
                                 {docInfo.logoRight ? (
-                                    <Box sx={{ position: 'relative', width: '100%', textAlign: 'center' }}>
-                                        <Box component="img" src={docInfo.logoRight} sx={{ maxWidth: '100%', maxHeight: '80px', objectFit: 'contain' }} />
+                                    <Box sx={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Box component="img" className={downloading ? "pdf-header-logo" : undefined} src={docInfo.logoRight} sx={{ maxWidth: '90%', maxHeight: downloading ? 72 : 80, objectFit: 'contain', display: 'block', mx: 'auto' }} />
                                         {!downloading && (
                                             <Button variant="text" size="small" component="label" sx={{ display: 'block', mx: 'auto', mt: 1, textTransform: 'none', fontSize: '0.7rem' }}>
                                                 Change Logo
@@ -1466,77 +1653,81 @@ export default function SheqInstallationForm({
                 )}
 
                     {/* CUSTOM GRID HEADER */}
-                    <Box sx={{ border: `1px solid ${borderColor}`, mb: 4, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
+                    <Box data-pdf-block sx={{ border: `1px solid ${borderColor}`, mb: pdfMb, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
                         {/* Left Column */}
                         <Box sx={{ width: { xs: '100%', md: '33%' }, display: 'flex', flexDirection: 'column', borderRight: { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' } }}>
                             <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.clientLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, clientLabel: v }))}>Client</HeaderLabel>
-                            <Box sx={{ flex: 1, minHeight: '45px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
+                            <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '45px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
                                 <HeaderInput downloading={downloading} textColor={textColor} value={formData.client} onChange={(e) => setFormData(prev => ({ ...prev, client: e.target.value }))} minRows={1} />
                             </Box>
                             <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.siteAddressLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, siteAddressLabel: v }))}>Site Address</HeaderLabel>
-                            <Box sx={{ flex: 2, minHeight: '80px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'stretch' }}>
+                            <Box sx={{ flex: downloading ? 'none' : 2, minHeight: downloading ? 'auto' : '80px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'stretch' }}>
                                 <HeaderInput downloading={downloading} textColor={textColor} value={formData.siteAddress} onChange={(e) => setFormData(prev => ({ ...prev, siteAddress: e.target.value }))} />
                             </Box>
                             <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.equipmentIdLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, equipmentIdLabel: v }))}>Equipment ID</HeaderLabel>
-                            <Box sx={{ flex: 1, minHeight: '45px', display: 'flex', alignItems: 'center' }}>
+                            <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '45px', display: 'flex', alignItems: 'center' }}>
                                 <HeaderInput downloading={downloading} textColor={textColor} value={formData.equipmentId} onChange={(e) => setFormData(prev => ({ ...prev, equipmentId: e.target.value }))} minRows={1} />
                             </Box>
                         </Box>
 
-                        {/* Slim Divider Column (Hidden on Mobile) */}
+                        {/* Slim Divider Column (Hidden on Mobile / PDF) */}
+                        {!downloading && (
                         <Box sx={{ width: '5%', display: { xs: 'none', md: 'flex' }, flexDirection: 'column', borderRight: `1px solid ${borderColor}` }}>
                             {Array(8).fill(0).map((_, i) => (
                                 <Box key={i} sx={{ borderBottom: i < 7 ? `1px solid ${borderColor}` : 'none', flex: 1 }} />
                             ))}
                         </Box>
+                        )}
 
                         {/* Middle Column */}
-                        <Box sx={{ width: { xs: '100%', md: '30%' }, display: 'flex', flexDirection: 'column', borderRight: { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' } }}>
+                        <Box sx={{ width: { xs: '100%', md: downloading ? '34%' : '30%' }, display: 'flex', flexDirection: 'column', borderRight: { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' } }}>
                             <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.engineersLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, engineersLabel: v }))}>Engineer(s)</HeaderLabel>
-                            <Box sx={{ flex: 1, borderBottom: `1px solid ${borderColor}` }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.engineers} onChange={(e) => setFormData(prev => ({ ...prev, engineers: e.target.value }))} minRows={10} />
+                            <Box sx={{ flex: downloading ? 'none' : 1, borderBottom: downloading ? 'none' : `1px solid ${borderColor}` }}>
+                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.engineers} onChange={(e) => setFormData(prev => ({ ...prev, engineers: e.target.value }))} minRows={engineerPdfRows} />
                             </Box>
                             {/* Filling empty space with lines like image - Hidden on Mobile */}
+                            {!downloading && (
                             <Box sx={{ height: '100px', display: { xs: 'none', md: 'flex' }, flexDirection: 'column' }}>
                                 {Array(4).fill(0).map((_, i) => (
                                     <Box key={i} sx={{ borderTop: `1px solid ${borderColor}`, flex: 1 }} />
                                 ))}
                             </Box>
+                            )}
                         </Box>
 
                         {/* Right Column */}
-                        <Box sx={{ width: { xs: '100%', md: '32%' }, display: 'flex', flexDirection: 'column' }}>
+                        <Box sx={{ width: { xs: '100%', md: downloading ? '33%' : '32%' }, display: 'flex', flexDirection: 'column' }}>
                             <Box sx={{ display: 'flex', borderBottom: `1px solid ${borderColor}` }}>
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${borderColor}` }}>
                                     <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.dateFieldLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, dateFieldLabel: v }))}>Date</HeaderLabel>
-                                    <Box sx={{ minHeight: '45px', display: 'flex', alignItems: 'center' }}>
+                                    <Box sx={{ minHeight: downloading ? 'auto' : '45px', display: 'flex', alignItems: 'center' }}>
                                         <HeaderInput downloading={downloading} textColor={textColor} value={formData.dateValue} onChange={(e) => setFormData(prev => ({ ...prev, dateValue: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                                     <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.auditorLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, auditorLabel: v }))}>Auditor</HeaderLabel>
-                                    <Box sx={{ minHeight: '45px', display: 'flex', alignItems: 'center' }}>
+                                    <Box sx={{ minHeight: downloading ? 'auto' : '45px', display: 'flex', alignItems: 'center' }}>
                                         <HeaderInput downloading={downloading} textColor={textColor} value={formData.auditor} onChange={(e) => setFormData(prev => ({ ...prev, auditor: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                             </Box>
                             
                             <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.serviceManagerLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, serviceManagerLabel: v }))}>Service Manager</HeaderLabel>
-                            <Box sx={{ minHeight: '45px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
+                            <Box sx={{ minHeight: downloading ? 'auto' : '45px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
                                 <HeaderInput downloading={downloading} textColor={textColor} value={formData.serviceManager} onChange={(e) => setFormData(prev => ({ ...prev, serviceManager: e.target.value }))} minRows={1} />
                             </Box>
                             
                             <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.siteContactLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, siteContactLabel: v }))}>Site Contact</HeaderLabel>
-                            <Box sx={{ flex: 1, minHeight: '80px', display: 'flex', alignItems: 'stretch' }}>
+                            <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '80px', display: 'flex', alignItems: 'stretch' }}>
                                 <HeaderInput downloading={downloading} textColor={textColor} value={formData.siteContact} onChange={(e) => setFormData(prev => ({ ...prev, siteContact: e.target.value }))} />
                             </Box>
                         </Box>
                     </Box>
 
                     {/* Project Summary & Distribution Section (Triple-Column Layout) */}
-                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, border: `1px solid ${borderColor}`, mb: 4, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
+                    <Box data-pdf-block sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, border: `1px solid ${borderColor}`, mb: pdfMb, bgcolor: isDarkMode ? "#1B212C" : "#FFF", alignItems: 'stretch' }}>
                         {/* Project Status Column (Left) */}
-                        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' } }}>
+                        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' }, borderRight: { md: `1px solid ${borderColor}` } }}>
                             <Box sx={{ bgcolor: customBlue, color: "#FFF", textAlign: 'center', py: 0.5, px: 2, fontWeight: 'bold', fontSize: '0.8rem', borderBottom: `1px solid ${borderColor}`, minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {downloading ? headerLabels.projectSummaryLabel : (
                                     <TextField 
@@ -1548,29 +1739,9 @@ export default function SheqInstallationForm({
                                     />
                                 )}
                             </Box>
-                            <Box sx={{ p: 1, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Box sx={{ p: downloading ? 0.5 : 1, flex: downloading ? '0 0 auto' : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {downloading ? (
-                                    <Box sx={{ display: 'flex', gap: 2, justifyContent: 'space-around', width: '100%' }}>
-                                        {['green', 'amber', 'red'].map(status => (
-                                            <Box key={status} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                <Box sx={{ 
-                                                    width: 14, 
-                                                    height: 14, 
-                                                    borderRadius: '50%', 
-                                                    border: `1.5px solid ${status === 'green' ? '#228B22' : status === 'amber' ? '#D2691E' : '#DC143C'}`, 
-                                                    bgcolor: formData.projectStatus === status ? (status === 'green' ? '#228B22' : status === 'amber' ? '#D2691E' : '#DC143C') : 'transparent',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center'
-                                                }}>
-                                                    {formData.projectStatus === status && <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#FFF' }} />}
-                                                </Box>
-                                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: status === 'green' ? '#228B22' : status === 'amber' ? '#D2691E' : '#DC143C' }}>
-                                                    {status.toUpperCase()}
-                                                </Typography>
-                                            </Box>
-                                        ))}
-                                    </Box>
+                                    <PdfProjectStatusBadge status={formData.projectStatus} />
                                 ) : (
                                     <RadioGroup 
                                         row 
@@ -1586,12 +1757,14 @@ export default function SheqInstallationForm({
                             </Box>
                         </Box>
 
-                        {/* Slim Divider (Middle) - Hidden on Mobile */}
+                        {/* Slim Divider (Middle) - Hidden on Mobile / PDF */}
+                        {!downloading && (
                         <Box sx={{ width: '40px', borderLeft: `1px solid ${borderColor}`, borderRight: `1px solid ${borderColor}`, display: { xs: 'none', md: 'flex' }, flexDirection: 'column' }}>
                             {Array(4).fill(0).map((_, i) => (
                                 <Box key={i} sx={{ borderBottom: i < 3 ? `1px solid ${borderColor}` : 'none', flex: 1 }} />
                             ))}
                         </Box>
+                        )}
 
                         {/* Distribution Column (Right) */}
                         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -1606,28 +1779,19 @@ export default function SheqInstallationForm({
                                     />
                                 )}
                             </Box>
-                            <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center' }}>
+                            <Box sx={{ p: downloading ? 0.75 : 1, display: 'flex', flexDirection: 'column', flex: downloading ? '0 0 auto' : 1, justifyContent: downloading ? 'flex-start' : 'center', gap: downloading ? 0.25 : 0 }}>
                                 {[
                                     { key: 'installationDirector', label: 'Installation Director' },
                                     { key: 'sheqAdvisor', label: 'SHEQ Advisor' },
                                     { key: 'principalContractor', label: 'Principal Contractor' }
                                 ].map(item => (
                                     downloading ? (
-                                        <Box key={item.key} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                            <Box sx={{ 
-                                                width: 14, 
-                                                height: 14, 
-                                                border: `1.5px solid ${customBlue}`, 
-                                                borderRadius: '3px',
-                                                display: 'flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'center',
-                                                bgcolor: formData.distribution[item.key] ? customBlue : 'transparent'
-                                            }}>
-                                                {formData.distribution[item.key] && <Typography sx={{ color: '#FFF', fontSize: '10px', fontWeight: 'bold' }}>✓</Typography>}
-                                            </Box>
-                                            <Typography sx={{ fontSize: '0.75rem' }}>{item.label}</Typography>
-                                        </Box>
+                                        <PdfCheckboxRow
+                                            key={item.key}
+                                            checked={!!formData.distribution[item.key]}
+                                            label={item.label}
+                                            accentColor={customBlue}
+                                        />
                                     ) : (
                                         <FormControlLabel 
                                             key={item.key}
@@ -1642,40 +1806,38 @@ export default function SheqInstallationForm({
 
                     {/* Summary Section */}
                     {id && visibleSections.summary && (
-                        <Box sx={{ mt: 6, mb: 6, position: 'relative', breakInside: 'avoid' }}>
-                            {!downloading && (
-                                <Tooltip title="Delete Summary Section">
-                                    <IconButton size="small" onClick={() => confirmDeleteSection('summary')} sx={{ position: 'absolute', top: -10, right: 0, color: 'error.main', opacity: 0.3, '&:hover': { opacity: 1 }, zIndex: 10 }}>
-                                        <Trash2 size={16} />
-                                    </IconButton>
-                                </Tooltip>
-                            )}
-                            
-                            <Typography sx={{ fontWeight: 'bold', color: customBlue, fontSize: '1.2rem', mb: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Scoring Summary & Performance Analytics
-                            </Typography>
+                        <>
+                            <Box sx={{ mt: downloading ? 1 : 6, position: 'relative', breakInside: 'avoid' }}>
+                                {!downloading && (
+                                    <Tooltip title="Delete Summary Section">
+                                        <IconButton size="small" onClick={() => confirmDeleteSection('summary')} sx={{ position: 'absolute', top: -10, right: 0, color: 'error.main', opacity: 0.3, '&:hover': { opacity: 1 }, zIndex: 10 }}>
+                                            <Trash2 size={16} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                
+                                <Typography className="pdf-hide-on-export" sx={{ fontWeight: 'bold', color: customBlue, fontSize: '1.2rem', mb: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Scoring Summary & Performance Analytics
+                                </Typography>
+                            </Box>
 
-                            {/* Analytics Graph */}
-                            <Box sx={{ 
-                                mt: 4, 
-                                p: 0, // Padding moved to internal boxes to prevent border clipping on breaks
-                                borderRadius: '16px', 
-                                border: `1px solid ${borderColor}`,
-                                bgcolor: isDarkMode ? "#111827" : "#FFF",
-                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)',
-                                overflow: 'visible',
-                                display: 'block',
-                                breakInside: 'avoid',
-                                pageBreakInside: 'avoid',
-                                position: 'relative'
-                            }}>
-                                <Box sx={{ p: 2, borderBottom: `1px solid ${borderColor}`, bgcolor: isDarkMode ? "rgba(255,255,255,0.02)" : "#f8fafc", breakInside: 'avoid' }}>
+                            <Box
+                                data-pdf-block
+                                sx={{
+                                    mb: downloading ? 0.5 : 2,
+                                    borderRadius: '16px',
+                                    border: `1px solid ${borderColor}`,
+                                    bgcolor: downloading ? '#FFF' : (isDarkMode ? '#111827' : '#FFF'),
+                                    boxShadow: downloading ? 'none' : '0 10px 25px -5px rgba(0,0,0,0.05)',
+                                    overflow: 'visible',
+                                    breakInside: 'avoid',
+                                }}
+                            >
+                                <Box sx={{ p: 2, borderBottom: `1px solid ${borderColor}`, bgcolor: downloading ? '#f8fafc' : (isDarkMode ? 'rgba(255,255,255,0.02)' : '#f8fafc') }}>
                                     <Typography sx={{ fontSize: '1.1rem', fontWeight: 800, color: '#003049', letterSpacing: '-0.01em', textTransform: 'uppercase' }}>
                                         SCORING SUMMARY & PERFORMANCE ANALYTICS
                                     </Typography>
                                 </Box>
-
-                                {/* New Summary Table */}
                                 <Box sx={{ overflowX: 'auto' }}>
                                     <Table size="small">
                                         <TableHead sx={{ bgcolor: '#003049' }}>
@@ -1687,68 +1849,117 @@ export default function SheqInstallationForm({
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
-                                            {calculateSummaryData().items.map((item, idx) => (
-                                                <TableRow key={idx} sx={{ bgcolor: idx % 2 === 0 ? 'transparent' : (isDarkMode ? 'rgba(255,255,255,0.02)' : '#fcfcfc') }}>
-                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 700, color: isDarkMode ? '#cbd5e1' : '#1e293b' }}>{item.name}</TableCell>
+                                            {summaryChartItems.map((item, idx) => (
+                                                <TableRow key={idx} sx={{ bgcolor: idx % 2 === 0 ? 'transparent' : (downloading ? '#fcfcfc' : (isDarkMode ? 'rgba(255,255,255,0.02)' : '#fcfcfc')) }}>
+                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 700, color: downloading ? '#1e293b' : (isDarkMode ? '#cbd5e1' : '#1e293b') }}>{item.name}</TableCell>
                                                     <TableCell align="center" sx={{ fontSize: '0.75rem', fontWeight: 800, color: '#003049' }}>{item.avgScore}</TableCell>
-                                                    <TableCell align="center" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>{item.rating / (item.rating / (item.rating / 3) || 1) * (item.rating / 3 || 0)}</TableCell>
+                                                    <TableCell align="center" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>{item.rating}</TableCell>
                                                     <TableCell align="center" sx={{ fontSize: '0.75rem', fontWeight: 800, color: item.color }}>{item.rate}%</TableCell>
                                                 </TableRow>
                                             ))}
                                             <TableRow sx={{ bgcolor: '#f0f7ff' }}>
                                                 <TableCell colSpan={3} align="right" sx={{ fontWeight: 800, fontSize: '0.8rem', color: '#003049', py: 1.5 }}>OVERALL COMPLIANCE RATE:</TableCell>
-                                                <TableCell align="center" sx={{ fontWeight: 900, fontSize: '0.9rem', color: calculateSummaryData().overallRate >= 90 ? '#10b981' : calculateSummaryData().overallRate >= 75 ? '#f59e0b' : '#ef4444', py: 1.5 }}>{calculateSummaryData().overallRate}%</TableCell>
+                                                <TableCell align="center" sx={{ fontWeight: 900, fontSize: '0.9rem', color: summaryData.overallRate >= 90 ? '#10b981' : summaryData.overallRate >= 75 ? '#f59e0b' : '#ef4444', py: 1.5 }}>{summaryData.overallRate}%</TableCell>
                                             </TableRow>
                                         </TableBody>
                                     </Table>
                                 </Box>
+                            </Box>
 
-                                <Box sx={{ p: 3, borderTop: `1px solid ${borderColor}`, breakInside: 'avoid' }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, breakInside: 'avoid' }}>
-                                        <Typography sx={{ fontSize: '1.1rem', fontWeight: 800, color: '#003049', letterSpacing: '-0.01em' }}>
+                            <Box
+                                data-pdf-block
+                                data-pdf-chart
+                                sx={{
+                                    mb: pdfMb,
+                                    borderRadius: '16px',
+                                    border: `1px solid ${borderColor}`,
+                                    bgcolor: '#FFF',
+                                    overflow: 'visible',
+                                    breakInside: 'avoid',
+                                }}
+                            >
+                                <Box sx={{ p: downloading ? 1.5 : 3, borderBottom: `1px solid ${borderColor}`, bgcolor: '#f8fafc' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
+                                        <Typography sx={{ fontSize: downloading ? '0.95rem' : '1.1rem', fontWeight: 800, color: '#003049', letterSpacing: '-0.01em' }}>
                                             Sectional Performance Analytics
                                         </Typography>
-                                        <Box sx={{ display: 'flex', gap: 2 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: '#10b981' }} />
-                                                <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: 'text.secondary' }}>High</Typography>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: '#10b981', flexShrink: 0 }} />
+                                                <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#475569', lineHeight: 1 }}>High</Typography>
                                             </Box>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: '#f59e0b' }} />
-                                                <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: 'text.secondary' }}>Action Needed</Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: '#f59e0b', flexShrink: 0 }} />
+                                                <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#475569', lineHeight: 1 }}>Action Needed</Typography>
                                             </Box>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: '#ef4444' }} />
-                                                <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: 'text.secondary' }}>Critical</Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: '#ef4444', flexShrink: 0 }} />
+                                                <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#475569', lineHeight: 1 }}>Critical</Typography>
                                             </Box>
                                         </Box>
                                     </Box>
+                                </Box>
 
-                                    <Box sx={{ height: `${Math.max(400, calculateSummaryData().items.length * 35)}px` }}>
+                                <Box
+                                    sx={{
+                                        width: downloading ? summaryChartWidth : '100%',
+                                        height: downloading ? summaryChartHeight : Math.max(400, summaryChartItems.length * 35),
+                                        mx: downloading ? 'auto' : 0,
+                                        px: downloading ? 0 : 3,
+                                        py: downloading ? 1 : 3,
+                                        bgcolor: '#FFF',
+                                        '& .recharts-wrapper': { margin: '0 auto' },
+                                    }}
+                                >
+                                    {downloading ? (
+                                        <BarChart
+                                            width={summaryChartWidth}
+                                            height={summaryChartHeight}
+                                            data={summaryChartItems}
+                                            layout="vertical"
+                                            margin={{ top: 12, right: 58, left: 185, bottom: 12 }}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal vertical={false} />
+                                            <XAxis type="number" domain={[0, 100]} hide />
+                                            <YAxis
+                                                dataKey="name"
+                                                type="category"
+                                                tick={{ fontSize: 10, fontWeight: 700, fill: chartTickColor }}
+                                                width={175}
+                                                axisLine={{ stroke: borderColor }}
+                                                tickLine={false}
+                                            />
+                                            <Bar dataKey="rate" radius={[0, 4, 4, 0]} barSize={22} isAnimationActive={false}>
+                                                {summaryChartItems.map((entry, index) => (
+                                                    <Cell key={`pdf-cell-${index}`} fill={entry.color} />
+                                                ))}
+                                                <LabelList dataKey="rate" position="right" style={{ fontSize: 11, fontWeight: 800, fill: chartLabelColor }} formatter={(v) => `${v}%`} offset={10} />
+                                            </Bar>
+                                        </BarChart>
+                                    ) : (
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart 
-                                                data={calculateSummaryData().items} 
+                                            <BarChart
+                                                data={summaryChartItems}
                                                 layout="vertical"
                                                 margin={{ top: 10, right: 50, left: 160, bottom: 10 }}
                                             >
-                                                <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? "rgba(255,255,255,0.05)" : "#E2E8F0"} horizontal={true} vertical={false} />
+                                                <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? 'rgba(255,255,255,0.05)' : '#E2E8F0'} horizontal vertical={false} />
                                                 <XAxis type="number" domain={[0, 100]} hide />
-                                                <YAxis 
-                                                    dataKey="name" 
+                                                <YAxis
+                                                    dataKey="name"
                                                     type="category"
-                                                    tick={{ fontSize: 9, fontWeight: 700, fill: isDarkMode ? "#cbd5e1" : "#1e293b" }}
+                                                    tick={{ fontSize: 9, fontWeight: 700, fill: chartTickColor }}
                                                     width={150}
                                                     axisLine={{ stroke: borderColor }}
                                                     tickLine={false}
                                                 />
-                                                <RechartsTooltip 
-                                                    active={!downloading}
+                                                <RechartsTooltip
                                                     cursor={{ fill: 'rgba(70, 130, 180, 0.05)' }}
                                                     content={({ active, payload }) => {
                                                         if (active && payload && payload.length) {
                                                             const data = payload[0].payload;
                                                             return (
-                                                                <Box sx={{ bgcolor: isDarkMode ? "#1e293b" : "#FFF", p: 2, borderRadius: '12px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', border: `1px solid ${borderColor}` }}>
+                                                                <Box sx={{ bgcolor: isDarkMode ? '#1e293b' : '#FFF', p: 2, borderRadius: '12px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', border: `1px solid ${borderColor}` }}>
                                                                     <Typography sx={{ fontWeight: 800, color: '#003049', fontSize: '0.85rem', mb: 1 }}>{data.fullName}</Typography>
                                                                     <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>Compliance: <span style={{ color: data.color, fontWeight: 800 }}>{data.rate}%</span></Typography>
                                                                     <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', mt: 0.5 }}>Rating: {data.rating} | Score: {data.score}</Typography>
@@ -1758,42 +1969,78 @@ export default function SheqInstallationForm({
                                                         return null;
                                                     }}
                                                 />
-                                                <Bar dataKey="rate" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={!downloading}>
-                                                    {calculateSummaryData().items.map((entry, index) => (
+                                                <Bar dataKey="rate" radius={[0, 4, 4, 0]} barSize={20}>
+                                                    {summaryChartItems.map((entry, index) => (
                                                         <Cell key={`cell-${index}`} fill={entry.color} />
                                                     ))}
-                                                    <LabelList dataKey="rate" position="right" style={{ fontSize: 10, fontWeight: 800, fill: isDarkMode ? "#cbd5e1" : "#1e293b" }} formatter={(v) => `${v}%`} offset={10} />
+                                                    <LabelList dataKey="rate" position="right" style={{ fontSize: 10, fontWeight: 800, fill: chartLabelColor }} formatter={(v) => `${v}%`} offset={10} />
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
-                                    </Box>
+                                    )}
                                 </Box>
                             </Box>
-                        </Box>
+                        </>
                     )}
 
-                    {/* Spacer for PDF break protection */}
-                    {downloading && <Box sx={{ height: '40px' }} />}
-
-                    <Box sx={{ border: `1px solid ${borderColor}`, mb: 4, overflow: 'hidden', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <Box sx={{ border: `1px solid ${borderColor}`, mb: pdfMb, overflow: 'hidden', borderRadius: '8px', boxShadow: downloading ? 'none' : '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <Box data-pdf-block>
                         {/* Table Header Row */}
                         <Box sx={{ display: 'flex', background: `linear-gradient(135deg, ${customBlue} 0%, #004a6e 100%)`, color: "#FFF", fontWeight: 'bold', fontSize: '0.75rem', borderBottom: `1px solid ${borderColor}`, letterSpacing: '0.05em', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)' }}>
-                            <Box sx={{ width: { xs: '40%', md: '35%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
+                            <Box sx={{ width: isServiceForm ? { xs: '32%', md: '30%' } : { xs: '40%', md: '35%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
                                 ITEM
                             </Box>
-                            <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
-                                {headerLabels.ratingColLabel || "RATING"}
-                            </Box>
-                            <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
+                            {!isServiceForm && (
+                                <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
+                                    {headerLabels.ratingColLabel || "RATING"}
+                                </Box>
+                            )}
+                            <Box sx={{ width: isServiceForm ? { xs: '12%', md: '10%' } : { xs: '15%', md: '10%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
                                 {headerLabels.scoreColLabel || "SCORE"}
                             </Box>
-                            <Box sx={{ width: { xs: '30%', md: '45%' }, p: 1.25, textAlign: 'center' }}>
+                            <Box sx={{ width: isServiceForm ? { xs: '19%', md: '20%' } : { xs: '30%', md: '45%' }, p: 1.25, borderRight: isServiceForm ? `1px solid rgba(255,255,255,0.1)` : 'none', textAlign: 'center' }}>
                                 {headerLabels.remedialColLabel || "Comments"}
                             </Box>
+                            {isServiceForm && (
+                                <>
+                                    <Box sx={{ width: { xs: '19%', md: '20%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
+                                        {headerLabels.timingColLabel || "TIMING"}
+                                    </Box>
+                                    <Box sx={{ width: { xs: '18%', md: '20%' }, p: 1.25, textAlign: 'center' }}>
+                                        {headerLabels.responsibilityColLabel || "RESPONSIBILITY"}
+                                    </Box>
+                                </>
+                            )}
+                        </Box>
+
+                        {isServiceForm && (
+                            <Box
+                                sx={{
+                                    px: 2,
+                                    py: 1.25,
+                                    bgcolor: isDarkMode ? "rgba(251, 191, 36, 0.18)" : "#FEF3C7",
+                                    borderBottom: `1px solid ${borderColor}`,
+                                    textAlign: "center",
+                                }}
+                            >
+                                <Typography
+                                    sx={{
+                                        fontSize: "0.8rem",
+                                        fontWeight: 700,
+                                        color: isDarkMode ? "#FCD34D" : "#92400E",
+                                        letterSpacing: "0.02em",
+                                    }}
+                                >
+                                    1 Non-compliant &nbsp;&nbsp; 2 Partial &nbsp;&nbsp; 3 Full Compliance
+                                </Typography>
+                            </Box>
+                        )}
                         </Box>
 
                         {formSections.map((cat, catIdx) => {
-                            const isSpecialSection = cat.category === "OTHER COMMENTS/OBSERVATIONS" || cat.category === "OTHER CONTRACTORS";
+                            const isSpecialSection =
+                                isOtherCommentsCategory(cat.category) ||
+                                cat.category === "OTHER CONTRACTORS";
                             
                             // Calculate category totals
                             let catRating = 0;
@@ -1809,13 +2056,13 @@ export default function SheqInstallationForm({
                             });
 
                             return (
-                                <Box key={catIdx} sx={{ borderBottom: catIdx < formSections.length - 1 ? `3px solid ${borderColor}` : 'none' }}>
+                                <Box key={catIdx} data-pdf-block sx={{ borderBottom: catIdx < formSections.length - 1 ? `3px solid ${borderColor}` : 'none' }}>
                                     {/* Main Category Header */}
                                 <Box sx={{ 
                                     p: 1.5, 
-                                    bgcolor: customBlue, 
+                                    bgcolor: isServiceForm ? serviceSectionBg : customBlue, 
                                     borderBottom: `1px solid ${borderColor}`, 
-                                    color: "#FFF", 
+                                    color: isServiceForm ? serviceSectionColor : "#FFF", 
                                     fontWeight: 'bold', 
                                     fontSize: '0.9rem', 
                                     letterSpacing: '0.05em', 
@@ -1823,12 +2070,12 @@ export default function SheqInstallationForm({
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
                                     textTransform: 'uppercase',
-                                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)'
+                                    boxShadow: isServiceForm ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.1)'
                                 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                                         {!downloading && (
                                             <Tooltip title="Delete Section">
-                                                <IconButton size="small" onClick={() => confirmDeleteCategory(catIdx)} sx={{ color: 'rgba(255,255,255,0.7)', mr: 1, '&:hover': { color: '#FFF' } }}>
+                                                <IconButton size="small" onClick={() => confirmDeleteCategory(catIdx)} sx={{ color: isServiceForm ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.7)', mr: 1, '&:hover': { color: isServiceForm ? serviceSectionColor : '#FFF' } }}>
                                                     <Trash2 size={16} />
                                                 </IconButton>
                                             </Tooltip>
@@ -1839,11 +2086,11 @@ export default function SheqInstallationForm({
                                                 variant="standard"
                                                 value={cat.category}
                                                 onChange={(e) => updateSectionLabel(catIdx, e.target.value)}
-                                                InputProps={{ disableUnderline: true, sx: { fontWeight: 'bold', fontSize: '0.9rem', color: '#FFF', textTransform: 'uppercase' } }}
+                                                InputProps={{ disableUnderline: true, sx: { fontWeight: 'bold', fontSize: '0.9rem', color: isServiceForm ? serviceSectionColor : '#FFF', textTransform: 'uppercase' } }}
                                             />
                                         )}
                                     </Box>
-                                    {!downloading && cat.category !== "OTHER COMMENTS/OBSERVATIONS" && cat.category !== "OTHER CONTRACTORS" && (
+                                    {!downloading && !isOtherCommentsCategory(cat.category) && cat.category !== "OTHER CONTRACTORS" && (
                                         <Button 
                                             size="small" 
                                             variant="text" 
@@ -1855,7 +2102,7 @@ export default function SheqInstallationForm({
                                         </Button>
                                     )}
                                 </Box>
-                                {cat.category === "OTHER COMMENTS/OBSERVATIONS" || cat.category === "OTHER CONTRACTORS" ? (
+                                {isOtherCommentsCategory(cat.category) || cat.category === "OTHER CONTRACTORS" ? (
                                     <Box sx={{ p: 2, bgcolor: isDarkMode ? "rgba(255,255,255,0.02)" : "#FFF" }}>
                                         {downloading ? (
                                             <Typography sx={{ whiteSpace: 'pre-wrap', fontSize: '0.85rem', minHeight: '100px' }}>
@@ -1884,10 +2131,11 @@ export default function SheqInstallationForm({
                                     cat.subcategories.map((sub, subIdx) => (
                                     <Box key={subIdx}>
                                         {/* Subcategory Header */}
+                                        {!(isServiceForm && !String(sub.title || "").trim()) && (
                                         <Box sx={{ 
                                             display: 'flex', 
-                                            bgcolor: isDarkMode ? "rgba(2, 132, 199, 0.15)" : "#E0F2FE", // Sky-100
-                                            color: customBlue, 
+                                            bgcolor: isServiceForm ? customBlue : (isDarkMode ? "rgba(2, 132, 199, 0.15)" : "#E0F2FE"),
+                                            color: isServiceForm ? "#FFF" : customBlue, 
                                             fontWeight: 'bold', 
                                             fontSize: '0.8rem', 
                                             borderBottom: `1px solid ${borderColor}`,
@@ -1897,58 +2145,63 @@ export default function SheqInstallationForm({
                                             <Box sx={{ display: 'flex', flex: 1, alignItems: 'center' }}>
                                                 {!downloading && (
                                                     <Tooltip title="Delete Sub-section">
-                                                        <IconButton size="small" onClick={() => confirmDeleteSubcategory(catIdx, subIdx)} sx={{ color: 'error.main', opacity: 0.5, mx: 0.5, '&:hover': { opacity: 1 } }}>
+                                                        <IconButton size="small" onClick={() => confirmDeleteSubcategory(catIdx, subIdx)} sx={{ color: isServiceForm ? 'rgba(255,255,255,0.8)' : 'error.main', opacity: 0.5, mx: 0.5, '&:hover': { opacity: 1 } }}>
                                                             <Trash2 size={14} />
                                                         </IconButton>
                                                     </Tooltip>
                                                 )}
-                                                <Box sx={{ width: '35%', p: 1, px: 2, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
+                                                <Box sx={{ flex: 1, p: 1, px: 2, borderRight: isServiceForm ? 'none' : `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
                                                     {downloading ? sub.title : (
                                                         <TextField
                                                             fullWidth
                                                             variant="standard"
                                                             value={sub.title}
                                                             onChange={(e) => updateSubcategoryLabel(catIdx, subIdx, 'title', e.target.value)}
-                                                            InputProps={{ disableUnderline: true, sx: { fontWeight: 'bold', fontSize: '0.8rem', color: customBlue } }}
+                                                            InputProps={{ disableUnderline: true, sx: { fontWeight: 'bold', fontSize: '0.8rem', color: isServiceForm ? '#FFF' : customBlue } }}
                                                             placeholder="Subcategory Title"
                                                         />
                                                     )}
                                                 </Box>
-                                                <Box sx={{ width: '10%', borderRight: `1px solid ${borderColor}` }} />
-                                                <Box sx={{ width: '10%', borderRight: `1px solid ${borderColor}` }} />
-                                                <Box sx={{ flex: 1, p: 1, px: 2, textAlign: 'left', fontSize: '0.7rem', display: 'flex', alignItems: 'center', fontWeight: 600, opacity: 0.9 }}>
-                                                    {downloading ? (sub.subtitle || "") : (
-                                                        <TextField
-                                                            fullWidth
-                                                            variant="standard"
-                                                            value={sub.subtitle || ""}
-                                                            onChange={(e) => updateSubcategoryLabel(catIdx, subIdx, 'subtitle', e.target.value)}
-                                                            InputProps={{ disableUnderline: true, sx: { fontSize: '0.7rem', fontWeight: 600 } }}
-                                                            placeholder="Subtitle"
-                                                        />
-                                                    )}
-                                                </Box>
+                                                {!isServiceForm && (
+                                                    <>
+                                                        <Box sx={{ width: '10%', borderRight: `1px solid ${borderColor}` }} />
+                                                        <Box sx={{ width: '10%', borderRight: `1px solid ${borderColor}` }} />
+                                                        <Box sx={{ flex: 1, p: 1, px: 2, textAlign: 'left', fontSize: '0.7rem', display: 'flex', alignItems: 'center', fontWeight: 600, opacity: 0.9 }}>
+                                                            {downloading ? (sub.subtitle || "") : (
+                                                                <TextField
+                                                                    fullWidth
+                                                                    variant="standard"
+                                                                    value={sub.subtitle || ""}
+                                                                    onChange={(e) => updateSubcategoryLabel(catIdx, subIdx, 'subtitle', e.target.value)}
+                                                                    InputProps={{ disableUnderline: true, sx: { fontSize: '0.7rem', fontWeight: 600 } }}
+                                                                    placeholder="Subtitle"
+                                                                />
+                                                            )}
+                                                        </Box>
+                                                    </>
+                                                )}
                                             </Box>
                                             {!downloading && (
                                                 <Box sx={{ pr: 1 }}>
                                                     <Tooltip title="Add Item">
-                                                        <IconButton size="small" onClick={() => handleAddItem(catIdx, subIdx)} sx={{ color: customBlue }}>
+                                                        <IconButton size="small" onClick={() => handleAddItem(catIdx, subIdx)} sx={{ color: isServiceForm ? '#FFF' : customBlue }}>
                                                             <Plus size={16} />
                                                         </IconButton>
                                                     </Tooltip>
                                                 </Box>
                                             )}
                                         </Box>
+                                        )}
                                         {/* Items */}
                                         {sub.items.map((item, itemIdx) => (
                                             <Box key={itemIdx} sx={{ 
                                                 display: 'flex', 
                                                 borderBottom: `1px solid ${borderColor}`, 
-                                                minHeight: '40px',
+                                                minHeight: downloading ? '32px' : '40px',
                                                 transition: 'background-color 0.2s',
                                                 "&:hover": { bgcolor: isDarkMode ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)" }
                                             }}>
-                                        <Box sx={{ width: { xs: '40%', md: '35%' }, p: 1.5, borderRight: `1px solid ${borderColor}`, fontSize: '0.8rem', fontWeight: 500, display: 'flex', alignItems: 'center', color: isDarkMode ? "#cbd5e1" : "#334155" }}>
+                                        <Box sx={{ width: isServiceForm ? { xs: '32%', md: '30%' } : { xs: '40%', md: '35%' }, p: downloading ? 0.75 : 1.5, borderRight: `1px solid ${borderColor}`, fontSize: '0.8rem', fontWeight: 500, display: 'flex', alignItems: 'center', color: isDarkMode ? "#cbd5e1" : "#334155" }}>
                                                     {!downloading && (
                                                         <Tooltip title="Delete Item">
                                                             <IconButton 
@@ -1971,14 +2224,16 @@ export default function SheqInstallationForm({
                                                         />
                                                     )}
                                                 </Box>
-                                                <Box sx={{ width: { xs: '15%', md: '10%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isDarkMode ? "rgba(255,255,255,0.03)" : "#f1f5f9" }}>
-                                                    <Typography sx={{ fontWeight: 'bold', fontSize: '0.9rem', color: isDarkMode ? "#94a3b8" : "#64748b" }}>
-                                                        {item.rating ?? 3}
-                                                    </Typography>
-                                                </Box>
-                                                <Box sx={{ width: { xs: '15%', md: '10%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isDarkMode ? "rgba(255,255,255,0.03)" : "#f8fafc" }}>
+                                                {!isServiceForm && (
+                                                    <Box sx={{ width: { xs: '15%', md: '10%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isDarkMode ? "rgba(255,255,255,0.03)" : "#f1f5f9" }}>
+                                                        <Typography sx={{ fontWeight: 'bold', fontSize: '0.9rem', color: isDarkMode ? "#94a3b8" : "#64748b" }}>
+                                                            {item.rating ?? 3}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                                <Box sx={{ width: isServiceForm ? { xs: '12%', md: '10%' } : { xs: '15%', md: '10%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: scoreColBg }}>
                                                     {downloading ? (
-                                                        <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: customBlue }}>
+                                                        <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: isDarkMode ? "#F9FAFB" : "#111827" }}>
                                                             {formData.installationMeasures[item.key]?.score || "-"}
                                                         </Typography>
                                                     ) : (
@@ -1995,11 +2250,11 @@ export default function SheqInstallationForm({
                                                                         textAlign: 'center', 
                                                                         fontWeight: 'bold', 
                                                                         fontSize: '0.95rem', 
-                                                                        color: customBlue,
+                                                                        color: isDarkMode ? "#F9FAFB" : "#111827",
                                                                         py: 0.5,
-                                                                        pr: '0 !important' // Remove extra padding for arrow
+                                                                        pr: '0 !important'
                                                                     },
-                                                                    '& .MuiSelect-icon': { display: 'none' } // Hide arrow for cleaner look
+                                                                    '& .MuiSelect-icon': { display: 'none' }
                                                                 }
                                                             }}
                                                             InputProps={{ disableUnderline: true }}
@@ -2015,7 +2270,7 @@ export default function SheqInstallationForm({
                                                         </TextField>
                                                     )}
                                                 </Box>
-                                                <Box sx={{ width: { xs: '30%', md: '45%' }, display: 'flex', alignItems: 'center' }}>
+                                                <Box sx={{ width: isServiceForm ? { xs: '19%', md: '20%' } : { xs: '30%', md: '45%' }, borderRight: isServiceForm ? `1px solid ${borderColor}` : 'none', display: 'flex', alignItems: 'center' }}>
                                                     {downloading ? (
                                                         <Typography sx={{ px: 1.5, py: 1, fontSize: '0.8rem', color: textColor, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                                             {formData.installationMeasures[item.key]?.remedial || " "}
@@ -2028,10 +2283,48 @@ export default function SheqInstallationForm({
                                                             value={formData.installationMeasures[item.key]?.remedial || ""} 
                                                             onChange={(e) => updateInstallationMeasure(item.key, "remedial", e.target.value)}
                                                             InputProps={{ disableUnderline: true, sx: { px: 1.5, py: 1, fontSize: '0.8rem', color: textColor } }}
-                                                            placeholder="Comments"
+                                                            placeholder={isServiceForm ? "Remedial action" : "Comments"}
                                                         />
                                                     )}
                                                 </Box>
+                                                {isServiceForm && (
+                                                    <>
+                                                        <Box sx={{ width: { xs: '19%', md: '20%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
+                                                            {downloading ? (
+                                                                <Typography sx={{ px: 1.5, py: 1, fontSize: '0.8rem', color: textColor, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                                    {formData.installationMeasures[item.key]?.timing || " "}
+                                                                </Typography>
+                                                            ) : (
+                                                                <TextField 
+                                                                    fullWidth 
+                                                                    variant="standard" 
+                                                                    multiline
+                                                                    value={formData.installationMeasures[item.key]?.timing || ""} 
+                                                                    onChange={(e) => updateInstallationMeasure(item.key, "timing", e.target.value)}
+                                                                    InputProps={{ disableUnderline: true, sx: { px: 1.5, py: 1, fontSize: '0.8rem', color: textColor } }}
+                                                                    placeholder="Timing"
+                                                                />
+                                                            )}
+                                                        </Box>
+                                                        <Box sx={{ width: { xs: '18%', md: '20%' }, display: 'flex', alignItems: 'center' }}>
+                                                            {downloading ? (
+                                                                <Typography sx={{ px: 1.5, py: 1, fontSize: '0.8rem', color: textColor, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                                    {formData.installationMeasures[item.key]?.responsibility || " "}
+                                                                </Typography>
+                                                            ) : (
+                                                                <TextField 
+                                                                    fullWidth 
+                                                                    variant="standard" 
+                                                                    multiline
+                                                                    value={formData.installationMeasures[item.key]?.responsibility || ""} 
+                                                                    onChange={(e) => updateInstallationMeasure(item.key, "responsibility", e.target.value)}
+                                                                    InputProps={{ disableUnderline: true, sx: { px: 1.5, py: 1, fontSize: '0.8rem', color: textColor } }}
+                                                                    placeholder="Responsibility"
+                                                                />
+                                                            )}
+                                                        </Box>
+                                                    </>
+                                                )}
                                             </Box>
                                         ))}
                                     </Box>
@@ -2040,34 +2333,46 @@ export default function SheqInstallationForm({
                                 {/* Category Total Row */}
                                 {!isSpecialSection && (
                                     <Box sx={{ display: 'flex', bgcolor: isDarkMode ? "rgba(0, 186, 211, 0.1)" : "#E0F7FA", borderTop: `2px solid ${customBlue}` }}>
-                                        <Box sx={{ width: { xs: '40%', md: '35%' }, p: 1.5, textAlign: 'right', fontWeight: 900, fontSize: '0.8rem', color: customBlue, borderRight: `1px solid ${borderColor}` }}>
+                                        <Box sx={{ width: isServiceForm ? { xs: '32%', md: '30%' } : { xs: '40%', md: '35%' }, p: 1.5, textAlign: 'right', fontWeight: 900, fontSize: '0.8rem', color: customBlue, borderRight: `1px solid ${borderColor}` }}>
                                             TOTAL SCORE
                                         </Box>
-                                        <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '0.9rem', color: customBlue, borderRight: `1px solid ${borderColor}` }}>
-                                            {catRating}
-                                        </Box>
-                                        <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '0.9rem', color: customBlue, borderRight: `1px solid ${borderColor}` }}>
+                                        {!isServiceForm && (
+                                            <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '0.9rem', color: customBlue, borderRight: `1px solid ${borderColor}` }}>
+                                                {catRating}
+                                            </Box>
+                                        )}
+                                        <Box sx={{ width: isServiceForm ? { xs: '12%', md: '10%' } : { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '0.9rem', color: customBlue, borderRight: `1px solid ${borderColor}` }}>
                                             {catScore}
                                         </Box>
-                                        <Box sx={{ flex: 1, bgcolor: isDarkMode ? "rgba(0, 186, 211, 0.05)" : "#B2EBF2" }} />
+                                        {isServiceForm ? (
+                                            <>
+                                                <Box sx={{ width: { xs: '19%', md: '20%' }, borderRight: `1px solid ${borderColor}`, bgcolor: isDarkMode ? "rgba(0, 186, 211, 0.05)" : "#B2EBF2" }} />
+                                                <Box sx={{ width: { xs: '19%', md: '20%' }, borderRight: `1px solid ${borderColor}`, bgcolor: isDarkMode ? "rgba(0, 186, 211, 0.05)" : "#B2EBF2" }} />
+                                                <Box sx={{ width: { xs: '18%', md: '20%' }, bgcolor: isDarkMode ? "rgba(0, 186, 211, 0.05)" : "#B2EBF2" }} />
+                                            </>
+                                        ) : (
+                                            <Box sx={{ width: { xs: '30%', md: '45%' }, bgcolor: isDarkMode ? "rgba(0, 186, 211, 0.05)" : "#B2EBF2" }} />
+                                        )}
                                     </Box>
                                 )}
                             </Box>
                         )})}
 
                         {/* Grand Total Row - Positioned as the final row of the table */}
-                        <Box sx={{ display: 'flex', bgcolor: customBlue, color: "#FFF", borderTop: `2px solid ${isDarkMode ? "#000" : "#FFF"}` }}>
-                            <Box sx={{ width: { xs: '40%', md: '35%' }, p: 1.5, textAlign: 'right', fontWeight: 900, fontSize: '0.9rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
+                        <Box data-pdf-block sx={{ display: 'flex', bgcolor: customBlue, color: "#FFF", borderTop: `2px solid ${isDarkMode ? "#000" : "#FFF"}` }}>
+                            <Box sx={{ width: isServiceForm ? { xs: '32%', md: '30%' } : { xs: '40%', md: '35%' }, p: 1.5, textAlign: 'right', fontWeight: 900, fontSize: '0.9rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
                                 TOTAL SCORE
                             </Box>
-                            <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '1rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
-                                {formSections.reduce((acc, cat) => {
-                                    let r = 0;
-                                    cat.subcategories.forEach(sub => sub.items.forEach(i => r += (i.rating || 0)));
-                                    return acc + r;
-                                }, 0)}
-                            </Box>
-                            <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '1rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
+                            {!isServiceForm && (
+                                <Box sx={{ width: { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '1rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
+                                    {formSections.reduce((acc, cat) => {
+                                        let r = 0;
+                                        cat.subcategories.forEach(sub => sub.items.forEach(i => r += (i.rating || 0)));
+                                        return acc + r;
+                                    }, 0)}
+                                </Box>
+                            )}
+                            <Box sx={{ width: isServiceForm ? { xs: '12%', md: '10%' } : { xs: '15%', md: '10%' }, p: 1.5, textAlign: 'center', fontWeight: 900, fontSize: '1rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
                                 {formSections.reduce((acc, cat) => {
                                     let s = 0;
                                     cat.subcategories.forEach(sub => sub.items.forEach(i => {
@@ -2080,7 +2385,15 @@ export default function SheqInstallationForm({
                                     return acc + s;
                                 }, 0)}
                             </Box>
-                            <Box sx={{ flex: 1 }} />
+                            {isServiceForm ? (
+                                <>
+                                    <Box sx={{ width: { xs: '19%', md: '20%' }, borderRight: `1px solid rgba(255,255,255,0.2)` }} />
+                                    <Box sx={{ width: { xs: '19%', md: '20%' }, borderRight: `1px solid rgba(255,255,255,0.2)` }} />
+                                    <Box sx={{ width: { xs: '18%', md: '20%' } }} />
+                                </>
+                            ) : (
+                                <Box sx={{ width: { xs: '30%', md: '45%' } }} />
+                            )}
                         </Box>
                     </Box>
                         
@@ -2171,7 +2484,7 @@ export default function SheqInstallationForm({
                     
                     {/* Document Upload Section */}
                     {visibleSections.uploads && (
-                        <Box sx={{ mb: 4, border: `1px solid ${borderColor}`, borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <Box data-pdf-block sx={{ mb: pdfMb, border: `1px solid ${borderColor}`, borderRadius: '8px', overflow: 'hidden', boxShadow: downloading ? 'none' : '0 1px 3px rgba(0,0,0,0.05)' }}>
                             <Box sx={{ p: 1.5, bgcolor: customBlue, color: "#FFF", fontWeight: 'bold', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <Box sx={{ flex: 1 }}>
                                     {downloading ? headerLabels.uploadLabel : (
@@ -2227,13 +2540,24 @@ export default function SheqInstallationForm({
                                         </Box>
                                     ))}
                                 </Box>
+                                {pdfSignatureInUploads && (
+                                    <Box sx={{ px: 2, pb: 2, borderTop: `1px solid ${borderColor}` }}>
+                                        <ReportSignatureBlock
+                                            compact
+                                            customBlue={customBlue}
+                                            signature={docInfo.signature}
+                                            onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
+                                            readOnly
+                                        />
+                                    </Box>
+                                )}
                             </Box>
                         </Box>
                     )}
 
                     {/* Final Comments Area */}
                     {visibleSections.comments && (
-                        <Box sx={{ mb: 4, border: `1px solid ${borderColor}`, borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <Box data-pdf-block sx={{ mb: pdfMb, border: `1px solid ${borderColor}`, borderRadius: '8px', overflow: 'hidden', boxShadow: downloading ? 'none' : '0 1px 3px rgba(0,0,0,0.05)' }}>
                             <Box sx={{ p: 1.5, bgcolor: customBlue, color: "#FFF", fontWeight: 'bold', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <Box sx={{ flex: 1 }}>
                                     {downloading ? headerLabels.commentsLabel : (
@@ -2302,6 +2626,17 @@ export default function SheqInstallationForm({
                                     {calculateSummaryData().overallRate >= 90 ? 'EXCELLENT COMPLIANCE' : calculateSummaryData().overallRate >= 75 ? 'GOOD - ACTION MAY BE REQUIRED' : 'CRITICAL - IMMEDIATE ACTION REQUIRED'}
                                 </Typography>
                             </Box>
+                            {pdfSignatureInComments && (
+                                <Box sx={{ px: 2, pt: 2, pb: 2, borderTop: `1px solid ${borderColor}` }}>
+                                    <ReportSignatureBlock
+                                        compact
+                                        customBlue={customBlue}
+                                        signature={docInfo.signature}
+                                        onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
+                                        readOnly
+                                    />
+                                </Box>
+                            )}
                         </Box>
                     )}
 
@@ -2319,32 +2654,31 @@ export default function SheqInstallationForm({
                         </Box>
                     )}
 
-                    {/* Signature Section */}
-                    {visibleSections.signatures && (
+                    {/* Signature Section (on-screen only; PDF embeds signature in final comments/uploads block) */}
+                    {visibleSections.signatures && !downloading && (
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 8, position: 'relative' }}>
-                            {!downloading && (
-                                <Tooltip title="Delete Signature Section">
-                                    <IconButton size="small" onClick={() => confirmDeleteSection('signatures')} sx={{ position: 'absolute', top: -30, right: 0, color: 'error.main', opacity: 0.3, '&:hover': { opacity: 1 } }}>
-                                        <Trash2 size={16} />
-                                    </IconButton>
-                                </Tooltip>
-                            )}
-                            <Box sx={{ width: '300px', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
-                                <Box sx={{
-                                    width: '100%',
-                                    minHeight: '80px',
-                                    borderBottom: `2px solid ${customBlue}`,
-                                    mb: 1.5,
-                                    py: 1,
-                                }}>
-                                    <SignatureCapture
-                                        value={docInfo.signature || null}
-                                        onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
-                                        readOnly={downloading}
-                                    />
-                                </Box>
-                                <Typography sx={{ fontWeight: 'bold', color: customBlue, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', width: '100%' }}>Signature</Typography>
-                            </Box>
+                            <Tooltip title="Delete Signature Section">
+                                <IconButton size="small" onClick={() => confirmDeleteSection('signatures')} sx={{ position: 'absolute', top: -30, right: 0, color: 'error.main', opacity: 0.3, '&:hover': { opacity: 1 } }}>
+                                    <Trash2 size={16} />
+                                </IconButton>
+                            </Tooltip>
+                            <ReportSignatureBlock
+                                customBlue={customBlue}
+                                signature={docInfo.signature}
+                                onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
+                                readOnly={false}
+                            />
+                        </Box>
+                    )}
+                    {pdfSignatureStandalone && (
+                        <Box data-pdf-block sx={{ mb: pdfMb, p: 2, border: `1px solid ${borderColor}`, borderRadius: '8px' }}>
+                            <ReportSignatureBlock
+                                compact
+                                customBlue={customBlue}
+                                signature={docInfo.signature}
+                                onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
+                                readOnly
+                            />
                         </Box>
                     )}
                 </Paper>
@@ -2368,7 +2702,7 @@ export default function SheqInstallationForm({
                 onClose={() => setSaveDialogOpen(false)}
                 onSave={executeSave}
                 existingId={id}
-                defaultName={formMetadata.name || `${category === "SHEQ Inspection" ? "Inspection" : "Installation"} - ${new Date().toLocaleDateString()}`}
+                defaultName={formMetadata.name || `${category === SHEQ_INSPECTION_CATEGORY ? "Service" : "Installation"} - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 saving={saving}
             />
@@ -2378,7 +2712,7 @@ export default function SheqInstallationForm({
     if (isModal) return formContent;
 
     return (
-        <Layout pageTitle={category === "SHEQ Inspection" ? "SHEQ Inspection" : "SHEQ Installation"}>
+        <Layout pageTitle={category === SHEQ_INSPECTION_CATEGORY ? "SHEQ service" : "SHEQ Installation"}>
             {formContent}
         </Layout>
     );

@@ -139,7 +139,7 @@ const MENU_GROUPS = [
     icon: <Shield size={20} />,
     roles: ALL_ROLES,
     items: [
-      { id: "sheq-inspection", label: "SHEQ Inspection", to: "/sheq-inspection" },
+      { id: "sheq-inspection", label: "SHEQ service", to: "/sheq-inspection" },
       { id: "shq-installation", label: "SHEQ Installation", to: "/shq-installation" },
     ],
   },

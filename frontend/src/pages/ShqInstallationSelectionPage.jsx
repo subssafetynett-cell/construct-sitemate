@@ -119,9 +119,13 @@ const ShqInstallationSelectionPage = () => {
         handleMenuClose();
     };
 
-    const handleSelectForm = (form) => {
-        const formId = form.id || form._id;
-        navigate(`/forms/${formId}/use?category=${encodeURIComponent(category)}`);
+    const handleSelectForm = (item) => {
+        const base = `/sheq-install-form?category=${encodeURIComponent(category)}`;
+        if (item?.type === "sheq-template" && item.id) {
+            navigate(`${base}&fromTemplate=${encodeURIComponent(item.id)}`);
+        } else {
+            navigate(base);
+        }
         setFormDialogOpen(false);
     };
 
@@ -223,7 +227,9 @@ const ShqInstallationSelectionPage = () => {
                                             <TableCell sx={{ color: textColor, fontWeight: 500 }}>{date}</TableCell>
                                             <TableCell>
                                                 <Typography sx={{ color: textColor, fontWeight: 600, fontSize: "0.95rem" }}>{client}</Typography>
-                                                <Typography variant="caption" sx={{ color: subTextColor }}>{sub.form?.title || "Standard Form"}</Typography>
+                                                <Typography variant="caption" sx={{ color: subTextColor }}>
+                                                    {category === "SHEQ Installation" ? "SHEQ Installation" : (sub.form?.title || "Standard Form")}
+                                                </Typography>
                                             </TableCell>
                                             <TableCell sx={{ color: subTextColor }}>{site}</TableCell>
                                             <TableCell align="right">
@@ -282,7 +288,8 @@ const ShqInstallationSelectionPage = () => {
             <FormSelectionDialog 
                 open={formDialogOpen} 
                 onClose={() => setFormDialogOpen(false)} 
-                onSelect={handleSelectForm} 
+                onSelect={handleSelectForm}
+                sheqTemplateCategory={category}
             />
 
             {/* Action Menu */}

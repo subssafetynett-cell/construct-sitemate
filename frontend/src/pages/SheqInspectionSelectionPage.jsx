@@ -119,9 +119,13 @@ const SheqInspectionSelectionPage = () => {
         handleMenuClose();
     };
 
-    const handleSelectForm = (form) => {
-        const formId = form.id || form._id;
-        navigate(`/forms/${formId}/use?category=${encodeURIComponent(category)}`);
+    const handleSelectForm = (item) => {
+        const base = `/sheq-install-form?category=${encodeURIComponent(category)}`;
+        if (item?.type === "sheq-template" && item.id) {
+            navigate(`${base}&fromTemplate=${encodeURIComponent(item.id)}`);
+        } else {
+            navigate(base);
+        }
         setFormDialogOpen(false);
     };
 
@@ -132,10 +136,10 @@ const SheqInspectionSelectionPage = () => {
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 4, flexWrap: "wrap", gap: 2 }}>
                     <Box>
                         <Typography variant="h5" sx={{ fontWeight: 600, color: textColor, letterSpacing: "-0.01em" }}>
-                            SHEQ Inspection
+                            SHEQ service
                         </Typography>
                         <Typography variant="body1" sx={{ color: subTextColor }}>
-                            Manage and track your SHEQ inspection findings.
+                            Manage and track your SHEQ service findings.
                         </Typography>
                     </Box>
 
@@ -194,7 +198,7 @@ const SheqInspectionSelectionPage = () => {
                     ) : submissions.length === 0 ? (
                         <Box sx={{ textAlign: "center", py: 10 }}>
                             <Typography variant="h6" sx={{ color: textColor, mb: 1 }}>No reports found</Typography>
-                            <Typography variant="body2" sx={{ color: subTextColor }}>Start by creating a new inspection above.</Typography>
+                            <Typography variant="body2" sx={{ color: subTextColor }}>Start by creating a new service above.</Typography>
                         </Box>
                     ) : (
                         <>
@@ -223,7 +227,9 @@ const SheqInspectionSelectionPage = () => {
                                             <TableCell sx={{ color: textColor, fontWeight: 500 }}>{date}</TableCell>
                                             <TableCell>
                                                 <Typography sx={{ color: textColor, fontWeight: 600, fontSize: "0.95rem" }}>{client}</Typography>
-                                                <Typography variant="caption" sx={{ color: subTextColor }}>{sub.form?.title || "Standard Form"}</Typography>
+                                                <Typography variant="caption" sx={{ color: subTextColor }}>
+                                                    {category === "SHEQ Inspection" ? "SHEQ service" : (sub.form?.title || "Standard Form")}
+                                                </Typography>
                                             </TableCell>
                                             <TableCell sx={{ color: subTextColor }}>{site}</TableCell>
                                             <TableCell align="right">
@@ -282,7 +288,8 @@ const SheqInspectionSelectionPage = () => {
             <FormSelectionDialog 
                 open={formDialogOpen} 
                 onClose={() => setFormDialogOpen(false)} 
-                onSelect={handleSelectForm} 
+                onSelect={handleSelectForm}
+                sheqTemplateCategory={category}
             />
 
             {/* Action Menu */}
