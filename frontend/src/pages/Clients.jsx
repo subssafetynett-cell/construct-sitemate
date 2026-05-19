@@ -31,6 +31,7 @@ import {
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api, { UPLOAD_TIMEOUT_MS } from "../services/api";
 import { getBackendOrigin } from "../utils/backendOrigin.js";
+import { plainCompanyError } from "../utils/plainCompany";
 import Layout from "../components/Layout";
 import { useTheme as useAppTheme } from "../context/ThemeContext";
 
@@ -182,7 +183,8 @@ export default function ClientsPage() {
 
   const validateForm = () => {
     const e = {};
-    if (!form.name || !form.name.trim()) e.name = "Client name is required";
+    const nameErr = plainCompanyError(form.name, "Client name");
+    if (nameErr) e.name = nameErr;
     if (form.file) {
       const allowed = [
         "image/png",

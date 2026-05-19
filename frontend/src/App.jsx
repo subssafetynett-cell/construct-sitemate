@@ -19,6 +19,7 @@ import AccountSettings from './pages/AccountSettings';
 
 import ResetPassword from "./pages/ResetPassword";
 import ForgotPassword from "./pages/ForgotPassword";
+import VerifyEmail from "./pages/VerifyEmail";
 import Setup2FA from "./pages/Setup2FA";
 
 import GenericReportPage from './pages/GenericReportPage';
@@ -65,6 +66,7 @@ function App() {
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
+          <Route path="/verify-email/:token" element={<VerifyEmail />} />
           <Route path="/setup-2fa" element={<Setup2FA />} />
           <Route path="/unauthorized" element={<RequireAuth><UnauthorizedPage /></RequireAuth>} />
 

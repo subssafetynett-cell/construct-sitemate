@@ -33,6 +33,8 @@ export default function LoginPage() {
     showPassword: false,
   });
   const [error, setError] = useState("");
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [snack, setSnack] = useState({ open: false, msg: "", severity: "success" });
 
@@ -42,6 +44,32 @@ export default function LoginPage() {
       [prop]: e.target.type === "checkbox" ? e.target.checked : e.target.value,
     }));
     setError("");
+    setNeedsVerification(false);
+  };
+
+  const handleResendVerification = async () => {
+    const email = values.email.trim().toLowerCase();
+    if (!email) {
+      setError("Enter your email address, then resend verification.");
+      return;
+    }
+    setResendLoading(true);
+    try {
+      const res = await api.post("/auth/resend-verification", { email });
+      setSnack({
+        open: true,
+        msg: res.data?.message || "If an unverified account exists, a new link was sent.",
+        severity: "success",
+      });
+    } catch (err) {
+      setSnack({
+        open: true,
+        msg: err.response?.data?.message || "Could not resend verification email.",
+        severity: "error",
+      });
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const toggleShow = () =>
@@ -56,6 +84,7 @@ export default function LoginPage() {
 
     setLoading(true);
     setError("");
+    setNeedsVerification(false);
 
     try {
       const payload = {
@@ -86,7 +115,10 @@ export default function LoginPage() {
       const status = err?.response?.status;
       const data = err?.response?.data;
 
-      if (status === 401 || status === 403) setError(data?.message || "Invalid credentials");
+      if (data?.code === "EMAIL_NOT_VERIFIED") {
+        setNeedsVerification(true);
+        setError(data?.message || "Please verify your email before signing in.");
+      } else if (status === 401 || status === 403) setError(data?.message || "Invalid credentials");
       else if (!err?.response)
         setError(
           "Cannot reach the API. Docker: `docker compose up --build -d` then http://localhost:8080. Local dev: backend on port 4000 plus `npm run dev` (Vite proxies /api)."
@@ -152,6 +184,19 @@ export default function LoginPage() {
               </Box>
 
               {error && <Typography color="error" sx={{ mt: 1 }}>{error}</Typography>}
+
+              {needsVerification && (
+                <Button
+                  type="button"
+                  variant="outlined"
+                  fullWidth
+                  disabled={resendLoading}
+                  onClick={handleResendVerification}
+                  sx={{ mt: 2, py: 1.1, borderRadius: 2, textTransform: "none" }}
+                >
+                  {resendLoading ? "Sending…" : "Resend verification email"}
+                </Button>
+              )}
 
               <Button type="submit" variant="contained" fullWidth sx={{ mt: 4, mb: 1, py: 1.25, borderRadius: 2, bgcolor: "#013a63", ":hover": { bgcolor: "#2a6f97" } }}>
                 {loading ? "Signing in..." : "Sign In"}

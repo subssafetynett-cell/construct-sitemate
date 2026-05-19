@@ -1,6 +1,7 @@
 // src/controllers/clientsController.js
 const asyncHandler = require("express-async-handler");
 const prisma = require("../prismaClient");
+const { validatePlainCompanyName } = require("../utils/plainTextCompany");
 const {
   buildClientListWhere,
   canAccessClientById,
@@ -41,11 +42,12 @@ exports.createClient = asyncHandler(async (req, res) => {
     }
 
     const { name } = req.body;
-    if (!name || !String(name).trim()) {
+    const nameCheck = validatePlainCompanyName(name || "", "Client name");
+    if (!nameCheck.ok) {
       return res.status(400).json({
         success: false,
-        message: 'Client name is required',
-        errors: { name: 'Client name is required' },
+        message: nameCheck.message,
+        errors: { name: nameCheck.message },
       });
     }
 
@@ -53,7 +55,7 @@ exports.createClient = asyncHandler(async (req, res) => {
 
     const client = await prisma.client.create({
       data: {
-        name: name.trim(),
+        name: nameCheck.value,
         logo: logoUrl || null
       }
     });
@@ -129,9 +131,12 @@ exports.updateClient = asyncHandler(async (req, res) => {
 
     const data = {};
 
-    // update name if provided (trim)
-    if (typeof name === 'string' && name.trim().length) {
-      data.name = name.trim();
+    if (typeof name === "string" && name.trim().length) {
+      const nameCheck = validatePlainCompanyName(name, "Client name");
+      if (!nameCheck.ok) {
+        return res.status(400).json({ success: false, message: nameCheck.message });
+      }
+      data.name = nameCheck.value;
     }
 
     // if a new file uploaded, use the Cloudinary URL

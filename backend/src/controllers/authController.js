@@ -6,6 +6,10 @@ const {
   requestPasswordReset,
   resetPasswordWithToken,
 } = require('../services/passwordResetService');
+const {
+  verifyEmailWithToken,
+  resendVerificationEmail,
+} = require('../services/emailVerificationService');
 const prisma = require('../prismaClient');
 const asyncHandler = require('express-async-handler');
 const { validateNewPassword } = require('../utils/passwordPolicy');
@@ -246,6 +250,37 @@ exports.resetPassword = asyncHandler(async (req, res) => {
         res.status(err.status || 500).json({
             success: false,
             message: err.message || 'Could not reset password',
+        });
+    }
+});
+
+exports.verifyEmail = asyncHandler(async (req, res) => {
+    try {
+        const result = await verifyEmailWithToken(req.body.token);
+        const message = result.alreadyVerified
+            ? 'Your email is already verified. You can sign in.'
+            : 'Email verified successfully. You can now sign in.';
+        res.json({ success: true, message });
+    } catch (err) {
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Could not verify email',
+        });
+    }
+});
+
+exports.resendVerification = asyncHandler(async (req, res) => {
+    try {
+        await resendVerificationEmail(req.body.email);
+        res.json({
+            success: true,
+            message:
+                'If an unverified account exists for that email, we sent a new verification link. Check your inbox and spam folder.',
+        });
+    } catch (err) {
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Could not resend verification email',
         });
     }
 });

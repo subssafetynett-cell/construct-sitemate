@@ -1,4 +1,5 @@
 import { plainNameError } from "./plainName";
+import { plainCompanyError } from "./plainCompany";
 import { newPasswordError } from "./passwordPolicy";
 
 /** Matches backend: Joi.string().alphanum().min(3).max(30) */
@@ -9,7 +10,6 @@ const USERNAME_MAX = 30;
 /** Matches backend: /^\+?\d{7,15}$/ on whitespace-stripped value */
 const MOBILE_RE = /^\+?\d{7,15}$/;
 
-const EMPLOYER_MAX = 200;
 const JOB_TITLE_MAX = 120;
 
 function hasDangerousMarkup(s) {
@@ -63,10 +63,8 @@ export function validateSignupForm(form) {
   const em = emailFieldError(form.email);
   if (em) e.email = em;
 
-  const emp = String(form.employer ?? "").trim();
-  if (!emp) e.employer = "Company name is required";
-  else if (emp.length > EMPLOYER_MAX) e.employer = `Company name must be at most ${EMPLOYER_MAX} characters`;
-  else if (hasDangerousMarkup(emp)) e.employer = "Company name cannot contain HTML or script-like content";
+  const empErr = plainCompanyError(form.employer, "Company name");
+  if (empErr) e.employer = empErr;
 
   const jt = String(form.jobTitle ?? "").trim();
   if (jt.length > JOB_TITLE_MAX) e.jobTitle = `Job title must be at most ${JOB_TITLE_MAX} characters`;

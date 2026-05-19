@@ -36,7 +36,7 @@ export function formatUploadError(error) {
 }
 
 function isPublicAuthRequest(url = "") {
-  return /\/auth\/(login|signup|forgot-password|reset-password)(\/|$|\?)/.test(url);
+  return /\/auth\/(login|signup|forgot-password|reset-password|verify-email|resend-verification)(\/|$|\?)/.test(url);
 }
 
 api.interceptors.request.use(

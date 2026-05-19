@@ -4,6 +4,10 @@ const jwt = require("jsonwebtoken");
 const { validatePlainName } = require("../utils/plainTextName");
 const { resolveTokenRole } = require("../utils/userAuthorization");
 
+/** Generic login failure — do not reveal whether the email/username exists. */
+const INVALID_CREDENTIALS_MESSAGE = "Invalid credentials.";
+const INVALID_CREDENTIALS_CODE = "INVALID_CREDENTIALS";
+
 exports.signup = async (payload) => {
   if (!process.env.JWT_SECRET) {
     const err = new Error("Server configuration error: JWT secret is missing");
@@ -102,6 +106,7 @@ exports.signup = async (payload) => {
       mobile: normalizedMobile,
       password: hashed,
       clientId: client.id,
+      emailVerified: true,
       lastLoginAt: now,
       lastSeenAt: now,
     }
@@ -154,28 +159,33 @@ exports.login = async ({ email, password }) => {
   });
 
   if (!user) {
-    const e = new Error(
-      looksLikeEmail
-        ? "No account exists for this email address."
-        : "No account found with this email or username."
-    );
+    const e = new Error(INVALID_CREDENTIALS_MESSAGE);
     e.status = 401;
-    e.code = looksLikeEmail ? "EMAIL_NOT_FOUND" : "USER_NOT_FOUND";
+    e.code = INVALID_CREDENTIALS_CODE;
     throw e;
   }
 
   if (!user.password) {
-    const e = new Error("This account cannot sign in with a password. Contact your administrator.");
+    const e = new Error(INVALID_CREDENTIALS_MESSAGE);
     e.status = 401;
-    e.code = "NO_PASSWORD";
+    e.code = INVALID_CREDENTIALS_CODE;
     throw e;
   }
 
   const matches = await bcrypt.compare(password, user.password);
   if (!matches) {
-    const e = new Error("Incorrect password.");
+    const e = new Error(INVALID_CREDENTIALS_MESSAGE);
     e.status = 401;
-    e.code = "INVALID_PASSWORD";
+    e.code = INVALID_CREDENTIALS_CODE;
+    throw e;
+  }
+
+  if (user.emailVerified === false) {
+    const e = new Error(
+      "Please verify your email before signing in. Check your inbox for the verification link."
+    );
+    e.status = 403;
+    e.code = "EMAIL_NOT_VERIFIED";
     throw e;
   }
 

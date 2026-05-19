@@ -61,6 +61,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { plainNameError } from "../utils/plainName";
+import { plainCompanyError } from "../utils/plainCompany";
 import { newPasswordError } from "../utils/passwordPolicy";
 import { useAuth, ASSIGNABLE_ROLES } from "../context/AuthContext";
 import { formatLastSignIn, isUserOnline, ONLINE_WINDOW_MS } from "../utils/userPresence";
@@ -376,8 +377,9 @@ export default function UsersPage() {
     if (!editUser) return;
     const fe = plainNameError(editForm.firstName, "First name");
     const le = plainNameError(editForm.lastName, "Last name");
-    if (fe || le) {
-      setSnack({ open: true, msg: fe || le, severity: "error" });
+    const ce = plainCompanyError(editForm.companyname, "Company name");
+    if (fe || le || ce) {
+      setSnack({ open: true, msg: fe || le || ce, severity: "error" });
       return;
     }
     try {

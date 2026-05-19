@@ -5,6 +5,8 @@ const {
   signupSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
   changePasswordSchema,
 } = require('../validators/authValidators');
 const validateReq = require('../middleware/validatereq');
@@ -26,6 +28,8 @@ router.post('/verify-2fa', requireAuth, authController.verify2FA);
 
 router.post('/forgot-password', validateReq(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validateReq(resetPasswordSchema), authController.resetPassword);
+router.post('/verify-email', validateReq(verifyEmailSchema), authController.verifyEmail);
+router.post('/resend-verification', validateReq(resendVerificationSchema), authController.resendVerification);
 
 module.exports = router;
 

@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { PLAIN_NAME_RE, MAX_NAME_LEN } = require('../utils/plainTextName');
+const { PLAIN_COMPANY_RE, MAX_COMPANY_LEN } = require('../utils/plainTextCompany');
 const { NEW_PASSWORD_PATTERN } = require('../utils/passwordPolicy');
 
 const nameFieldMessages = {
@@ -29,10 +30,18 @@ const signupSchema = Joi.object({
     .messages({ ...nameFieldMessages, 'string.empty': 'Last name is required' }),
   email: Joi.string().email().required().messages({ 'string.email': 'Enter a valid email', 'string.empty': 'Email is required' }),
   jobTitle: Joi.string().allow('', null),
-  employer: Joi.string().trim().min(1).required().messages({
-    'string.empty': 'Company name is required',
-    'any.required': 'Company name is required'
-  }),
+  employer: Joi.string()
+    .trim()
+    .min(1)
+    .max(MAX_COMPANY_LEN)
+    .pattern(PLAIN_COMPANY_RE)
+    .required()
+    .messages({
+      'string.empty': 'Company name is required',
+      'any.required': 'Company name is required',
+      'string.pattern.base':
+        'Company name may only contain letters, numbers, spaces, and . \' - & , ( ) / (no HTML)',
+    }),
   mobile: Joi.string().pattern(/^\+?\d{7,15}$/).required().messages({ 'string.empty': 'Mobile number is required', 'string.pattern.base': 'Enter a valid phone number (7–15 digits)' }),
   password: Joi.string()
     .pattern(NEW_PASSWORD_PATTERN)
@@ -66,6 +75,19 @@ const resetPasswordSchema = Joi.object({
     }),
 });
 
+const verifyEmailSchema = Joi.object({
+  token: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'Verification token is required',
+  }),
+});
+
+const resendVerificationSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.email': 'Enter a valid email',
+    'string.empty': 'Email is required',
+  }),
+});
+
 const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().required().messages({
     'string.empty': 'Current password is required',
@@ -84,5 +106,7 @@ module.exports = {
   signupSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
   changePasswordSchema,
 };

@@ -1,15 +1,15 @@
 const asyncHandler = require("express-async-handler");
 const prisma = require("../prismaClient");
 const bcrypt = require("bcryptjs");
-const { sendEmail } = require("../services/emailService");
 const { validatePlainName } = require("../utils/plainTextName");
+const { validatePlainCompanyName } = require("../utils/plainTextCompany");
+const { sendInviteVerificationEmail } = require("../services/emailVerificationService");
 const { validateNewPassword } = require("../utils/passwordPolicy");
 const {
   reqUserDbId,
   loadAdminActor,
   canManageTargetUser,
 } = require("../utils/userAuthorization");
-const { buildAppUrl } = require("../utils/appBaseUrl");
 
 // Role hierarchy — higher index = higher privilege
 const ROLE_HIERARCHY = ["worker", "supervisor", "site_manager", "company_admin", "superadmin"];
@@ -142,7 +142,13 @@ exports.updateUser = asyncHandler(async (req, res) => {
   if (email) data.email = email.trim().toLowerCase();
 
   if (jobTitle) data.jobTitle = jobTitle.trim();
-  if (companyname) data.companyname = companyname.trim(); // "Site"
+  if (companyname !== undefined && companyname !== null && String(companyname).trim() !== "") {
+    const cn = validatePlainCompanyName(companyname, "Company name");
+    if (!cn.ok) {
+      return res.status(400).json({ success: false, message: cn.message });
+    }
+    data.companyname = cn.value;
+  }
   if (mobile) data.mobile = mobile.trim();
 
   if (role) {
@@ -378,6 +384,28 @@ exports.inviteUser = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: "Insufficient permissions" });
   }
 
+  // Admins may have null companyname; use the linked Client name when available.
+  if (!String(resolvedCompany || "").trim() && clientId) {
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { name: true },
+    });
+    if (client?.name) {
+      resolvedCompany = client.name;
+    }
+  }
+
+  const trimmedCompany = String(resolvedCompany || "").trim();
+  if (trimmedCompany) {
+    const companyCheck = validatePlainCompanyName(trimmedCompany, "Company name");
+    if (!companyCheck.ok) {
+      return res.status(400).json({ success: false, message: companyCheck.message });
+    }
+    resolvedCompany = companyCheck.value;
+  } else {
+    resolvedCompany = null;
+  }
+
   const pwdCheck = validateNewPassword(password);
   if (!pwdCheck.ok) {
     return res.status(400).json({ success: false, message: pwdCheck.message });
@@ -415,52 +443,31 @@ exports.inviteUser = asyncHandler(async (req, res) => {
       companyname: resolvedCompany,
       role:        assignedRole,
       active:      true,
+      emailVerified: false,
       clientId,
     },
   });
-
-  const loginUrl = buildAppUrl("/login");
-  const recipientEmail = email.toLowerCase().trim();
 
   let emailSent = false;
   let emailError = null;
 
   try {
-    const emailHtml = `
-      <div style="font-family: sans-serif; color: #1B212C; max-width: 600px; margin: auto; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
-        <h2 style="color: #0B4DA6; border-bottom: 2px solid #0B4DA6; padding-bottom: 10px;">Welcome to Sitemate</h2>
-        <p>Hello <strong>${fn.value}</strong>,</p>
-        <p>Your account has been created for <strong>${resolvedCompany || "your organisation"}</strong>. Use the details below to sign in:</p>
-        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 5px solid #0B4DA6;">
-          <p style="margin: 0 0 10px 0;"><strong>Email:</strong> <code style="background: #fff; padding: 2px 5px; border-radius: 3px;">${recipientEmail}</code></p>
-          <p style="margin: 0 0 10px 0;"><strong>Password:</strong> <code style="background: #fff; padding: 2px 5px; border-radius: 3px;">${password}</code></p>
-          <p style="margin: 0;"><strong>Sign in:</strong> <a href="${loginUrl}" style="color: #0B4DA6;">${loginUrl}</a></p>
-        </div>
-        <p>For your security, change your password after your first login.</p>
-        
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
-          <p>Best regards,<br/><strong>The Sitemate Team</strong></p>
-        </div>
-      </div>
-    `;
-
-    const emailResult = await sendEmail({
-      to: recipientEmail,
-      subject: "Welcome to Sitemate - Your account details",
-      html: emailHtml,
+    const emailResult = await sendInviteVerificationEmail(newUser, {
+      companyName: resolvedCompany,
+      temporaryPassword: password,
     });
     emailSent = Boolean(emailResult?.success);
     if (!emailSent) emailError = emailResult?.error || "Email delivery failed";
   } catch (emailErr) {
-    console.error("Failed to send welcome email:", emailErr);
+    console.error("Failed to send verification email:", emailErr);
     emailError = emailErr.message || "Email delivery failed";
   }
 
   res.status(201).json({
     success: true,
     message: emailSent
-      ? "User invited successfully. A welcome email has been sent."
-      : "User created, but the welcome email could not be sent. Share their login details manually.",
+      ? "User invited. They must verify their email before they can sign in."
+      : "User created, but the verification email could not be sent. Resend verification or share the link manually.",
     emailSent,
     emailError,
     user: {

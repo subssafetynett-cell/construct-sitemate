@@ -51,6 +51,7 @@ async function main() {
                 password: hashedPassword,
                 role: 'superadmin',
                 active: true,
+                emailVerified: true,
                 clientId: client.id,
                 companyname: client.name,
                 mobile: process.env.SUPERADMIN_MOBILE || '1234567890',
