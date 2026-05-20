@@ -30,6 +30,16 @@ import FormTableCellTextField from "../components/FormTableCellTextField";
 const LEGACY_ATTENDEE_DISCLAIMER =
     "The undersigned have been fully briefed on the contents of the attached Tool Box Talk and will ensure they work to the agreed safe system of work in place at all times and shall raise any concerns directly with the Site Supervisor or Construct Lifts Installation Director.";
 
+/** PDF download: one A4 page, entire form scaled to fit (Friday Pack / site pack download). */
+const TOOLBOX_TALK_PDF_OPTIONS = {
+    paginateBlocks: false,
+    onePageOnly: true,
+    skipBuiltInFooter: true,
+    marginX: 8,
+    headerInsetMm: 8,
+    footerInsetMm: 8,
+};
+
 const DEFAULT_HEADER_LABELS = {
     formTitle: "TOOL BOX TALK REGISTER",
     dateLabel: "Date",
@@ -190,21 +200,26 @@ export default function ToolBoxTalkForm() {
         if (!loading && action === "download" && docKey) {
             setDownloading(true);
             setTimeout(() => {
-                downloadPdfFromRef(containerRef, `ToolBoxTalk_${docKey}`, () => {
-                    setDownloading(false);
-                    // Close the newly opened tab
-                    window.close();
-                });
-            }, 800); // Short delay for render
+                downloadPdfFromRef(
+                    containerRef,
+                    `ToolBoxTalk_${docKey}`,
+                    () => {
+                        setDownloading(false);
+                        // Close the newly opened tab
+                        window.close();
+                    },
+                    TOOLBOX_TALK_PDF_OPTIONS
+                );
+            }, 300); // Short delay for render
         }
     }, [loading, action, persistedResponseId, seedSubmissionId]);
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);
         try {
-            const res = await api.get('/forms/responses');
+            const res = await api.get(`/forms/responses/${submissionId}`);
             if (res.data?.success) {
-                const submission = res.data.data.find(r => r.id === submissionId || r._id === submissionId);
+                const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);

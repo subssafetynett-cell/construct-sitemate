@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
-import api from "../services/api";
+import api, { fetchFormResponseById } from "../services/api";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
@@ -336,37 +336,85 @@ function getPdfFileName(category, id, client) {
     return `${slug}_${clientPart}_${id || "draft"}`;
 }
 
-/** Block-based PDF: balanced quality and speed (~2 MB target). */
+/** Block-based PDF: adaptive scale per section, parallel capture, ~2 MB target. */
 const SHEQ_PDF_OPTIONS = {
     paginateBlocks: true,
-    blockScale: 1.85,
-    jpegQuality: 0.82,
-    captureConcurrency: 2,
+    jpegQuality: 0.78,
+    captureConcurrency: 4,
     targetMaxBytes: 2 * 1024 * 1024,
     blockGapMm: 1,
     marginX: 10,
     headerInsetMm: 8,
     footerInsetMm: 10,
+    skipPreCaptureWaits: true,
+    imageWaitTimeoutMs: 1500,
 };
 
-/** Wait for PDF layout (chart/fonts) without a long fixed delay. */
-function waitForSheqPdfReady(root, maxMs = 1200) {
-    return new Promise((resolve) => {
-        const started = Date.now();
-        const tick = () => {
-            const chartRoot = root?.querySelector?.("[data-pdf-chart]");
-            const chartReady =
-                !chartRoot ||
-                chartRoot.querySelector(".recharts-bar-rectangle, path.recharts-rectangle, .recharts-layer.recharts-bar");
-            const elapsed = Date.now() - started;
-            if (chartReady || elapsed >= maxMs) {
-                resolve();
-                return;
-            }
-            requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(() => requestAnimationFrame(tick));
-    });
+function pdfBlockProps(active) {
+    return active ? { "data-pdf-block": true } : {};
+}
+
+function pdfSectionShellSx(downloading, borderColor, pdfMb) {
+    return downloading
+        ? {
+              border: `1px solid ${borderColor}`,
+              mb: pdfMb,
+              overflow: "hidden",
+              borderRadius: "8px",
+              boxShadow: "none",
+          }
+        : {};
+}
+
+/** Lightweight chart for PDF export — avoids Recharts render/capture cost. */
+function SheqPdfPerformanceChart({ items }) {
+    return (
+        <Box sx={{ width: "100%", py: 1 }}>
+            {items.map((item, index) => (
+                <Box
+                    key={`pdf-bar-${index}`}
+                    sx={{ display: "flex", alignItems: "center", mb: 1.1, minHeight: 26 }}
+                >
+                    <Typography
+                        sx={{
+                            width: 175,
+                            flexShrink: 0,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: "#1e293b",
+                            pr: 1,
+                            lineHeight: 1.2,
+                        }}
+                    >
+                        {item.name}
+                    </Typography>
+                    <Box sx={{ flex: 1, position: "relative", height: 22, bgcolor: "#f1f5f9", borderRadius: "0 4px 4px 0" }}>
+                        <Box
+                            sx={{
+                                width: `${Math.max(0, Math.min(100, item.rate))}%`,
+                                height: "100%",
+                                bgcolor: item.color,
+                                borderRadius: "0 4px 4px 0",
+                            }}
+                        />
+                        <Typography
+                            sx={{
+                                position: "absolute",
+                                right: -44,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                color: "#1e293b",
+                            }}
+                        >
+                            {item.rate}%
+                        </Typography>
+                    </Box>
+                </Box>
+            ))}
+        </Box>
+    );
 }
 
 async function runSheqPdfDownload(containerRef, fileName, onComplete) {
@@ -375,7 +423,7 @@ async function runSheqPdfDownload(containerRef, fileName, onComplete) {
         onComplete?.(new Error("Form not ready for PDF export."));
         return;
     }
-    await waitForSheqPdfReady(root);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await downloadPdfFromRef(containerRef, fileName, onComplete, SHEQ_PDF_OPTIONS);
 }
 
@@ -1024,13 +1072,19 @@ export default function SheqInstallationForm({
         hasDownloaded.current = true;
         setDownloading(true);
         const fileName = getPdfFileName(category, id, formData.client);
-        const timer = setTimeout(() => {
-            runSheqPdfDownload(containerRef, fileName, (err) => {
-                setDownloading(false);
-                if (!err) navigate(listPath);
+        let cancelled = false;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (cancelled) return;
+                runSheqPdfDownload(containerRef, fileName, (err) => {
+                    setDownloading(false);
+                    if (!err) navigate(listPath);
+                });
             });
-        }, 80);
-        return () => clearTimeout(timer);
+        });
+        return () => {
+            cancelled = true;
+        };
     }, [loading, action, id, category, listPath, formData.client]);
 
     const hydrateSubmissionAnswers = (submission, { asTemplate = false } = {}) => {
@@ -1120,13 +1174,27 @@ export default function SheqInstallationForm({
     const loadSubmission = async (submissionId, { asTemplate = false } = {}) => {
         setLoading(true);
         try {
-            const res = await api.get(`/forms/responses/${submissionId}`);
-            if (res.data?.success) {
-                hydrateSubmissionAnswers(res.data.data, { asTemplate });
+            const payload = await fetchFormResponseById(submissionId);
+            if (payload?.success) {
+                hydrateSubmissionAnswers(payload.data, { asTemplate });
+            } else {
+                throw new Error(payload?.message || "Failed to load report");
             }
         } catch (e) {
             console.error("Failed to load submission", e);
-            alert(asTemplate ? "Failed to load the selected template." : "Failed to load this report. Please try again.");
+            const serverMsg = e?.response?.data?.message;
+            const timedOut =
+                e?.code === "ECONNABORTED" || /timeout/i.test(e?.message || "");
+            const message = timedOut
+                ? "This report is large and took too long to load. Please try again on a stable connection."
+                : serverMsg ||
+                  (asTemplate
+                      ? "Failed to load the selected template."
+                      : "Failed to load this report. Please try again.");
+            alert(message);
+            if (id) {
+                navigate(listPath);
+            }
         } finally {
             setLoading(false);
         }
@@ -1168,11 +1236,13 @@ export default function SheqInstallationForm({
         hasDownloaded.current = false;
         setDownloading(true);
         const fileName = getPdfFileName(category, id, formData.client);
-        setTimeout(() => {
-            runSheqPdfDownload(containerRef, fileName, () => {
-                setDownloading(false);
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                runSheqPdfDownload(containerRef, fileName, () => {
+                    setDownloading(false);
+                });
             });
-        }, 80);
+        });
     };
 
     const executeSave = async (asNew = false, name = "", tags = "") => {
@@ -1394,17 +1464,20 @@ export default function SheqInstallationForm({
     const pdfMb = downloading ? 1 : 4;
     const engineerPdfRows = downloading ? Math.min(6, countTextLines(formData.engineers, 2)) : 10;
     const summaryChartItems = summaryData.items;
-    const summaryChartHeight = Math.max(320, summaryChartItems.length * 34);
     const summaryChartWidth = 1060;
     const chartTickColor = downloading ? "#1e293b" : (isDarkMode ? "#cbd5e1" : "#1e293b");
     const chartLabelColor = downloading ? "#1e293b" : (isDarkMode ? "#cbd5e1" : "#1e293b");
-    /** PDF: render signature in exactly one place — comments, uploads, or standalone. */
-    const pdfSignatureInComments =
-        downloading && visibleSections.signatures && visibleSections.comments;
-    const pdfSignatureInUploads =
-        downloading && visibleSections.signatures && !visibleSections.comments && visibleSections.uploads;
-    const pdfSignatureStandalone =
-        downloading && visibleSections.signatures && !visibleSections.comments && !visibleSections.uploads;
+    /** PDF: signature always appears below the overall compliance score section. */
+    const pdfSignatureBlock = downloading && visibleSections.signatures;
+
+    if (loading && action === "download") {
+        return (
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 2 }}>
+                <CircularProgress />
+                <Typography color="text.secondary">Loading form for download...</Typography>
+            </Box>
+        );
+    }
 
     if (loading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
@@ -1413,8 +1486,27 @@ export default function SheqInstallationForm({
     );
 
     const formContent = (
-        <Box sx={{ p: isModal ? 0 : 3 }}>
-            <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Box sx={{ p: isModal ? 0 : 3, position: "relative" }}>
+            {action === "download" && downloading && (
+                <Box
+                    className="pdf-hide-on-export"
+                    sx={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 1400,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 2,
+                        bgcolor: "rgba(255,255,255,0.92)",
+                    }}
+                >
+                    <CircularProgress />
+                    <Typography color="text.secondary">Generating PDF...</Typography>
+                </Box>
+            )}
+            <Box sx={{ mb: action === "download" ? 0 : 4, display: action === "download" ? "none" : "flex", justifyContent: "space-between", alignItems: "center" }}>
                 {!isModal ? (
                     <IconButton 
                         onClick={navigateBack}
@@ -1943,8 +2035,7 @@ export default function SheqInstallationForm({
                             </Box>
 
                             <Box
-                                data-pdf-block
-                                data-pdf-chart
+                                {...pdfBlockProps(true)}
                                 sx={{
                                     mb: pdfMb,
                                     borderRadius: '16px',
@@ -1979,39 +2070,16 @@ export default function SheqInstallationForm({
                                 <Box
                                     sx={{
                                         width: downloading ? summaryChartWidth : '100%',
-                                        height: downloading ? summaryChartHeight : Math.max(400, summaryChartItems.length * 35),
+                                        height: downloading ? 'auto' : Math.max(400, summaryChartItems.length * 35),
+                                        minHeight: downloading ? Math.min(280, summaryChartItems.length * 28) : undefined,
                                         mx: downloading ? 'auto' : 0,
-                                        px: downloading ? 0 : 3,
+                                        px: downloading ? 2 : 3,
                                         py: downloading ? 1 : 3,
                                         bgcolor: '#FFF',
-                                        '& .recharts-wrapper': { margin: '0 auto' },
                                     }}
                                 >
                                     {downloading ? (
-                                        <BarChart
-                                            width={summaryChartWidth}
-                                            height={summaryChartHeight}
-                                            data={summaryChartItems}
-                                            layout="vertical"
-                                            margin={{ top: 12, right: 58, left: 185, bottom: 12 }}
-                                        >
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal vertical={false} />
-                                            <XAxis type="number" domain={[0, 100]} hide />
-                                            <YAxis
-                                                dataKey="name"
-                                                type="category"
-                                                tick={{ fontSize: 10, fontWeight: 700, fill: chartTickColor }}
-                                                width={175}
-                                                axisLine={{ stroke: borderColor }}
-                                                tickLine={false}
-                                            />
-                                            <Bar dataKey="rate" radius={[0, 4, 4, 0]} barSize={22} isAnimationActive={false}>
-                                                {summaryChartItems.map((entry, index) => (
-                                                    <Cell key={`pdf-cell-${index}`} fill={entry.color} />
-                                                ))}
-                                                <LabelList dataKey="rate" position="right" style={{ fontSize: 11, fontWeight: 800, fill: chartLabelColor }} formatter={(v) => `${v}%`} offset={10} />
-                                            </Bar>
-                                        </BarChart>
+                                        <SheqPdfPerformanceChart items={summaryChartItems} />
                                     ) : (
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart
@@ -2059,8 +2127,21 @@ export default function SheqInstallationForm({
                         </>
                     )}
 
-                    <Box data-pdf-block sx={{ border: `1px solid ${borderColor}`, mb: pdfMb, overflow: 'hidden', borderRadius: '8px', boxShadow: downloading ? 'none' : '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <Box
+                        {...pdfBlockProps(!downloading)}
+                        sx={{
+                            border: downloading ? 'none' : `1px solid ${borderColor}`,
+                            mb: downloading ? 0 : pdfMb,
+                            overflow: 'hidden',
+                            borderRadius: downloading ? 0 : '8px',
+                            boxShadow: downloading ? 'none' : '0 1px 3px rgba(0,0,0,0.05)',
+                        }}
+                    >
                         {/* Table Header Row */}
+                        <Box
+                            {...pdfBlockProps(downloading)}
+                            sx={pdfSectionShellSx(downloading, borderColor, pdfMb)}
+                        >
                         <Box sx={{ display: 'flex', background: `linear-gradient(135deg, ${customBlue} 0%, #004a6e 100%)`, color: "#FFF", fontWeight: 'bold', fontSize: '0.75rem', borderBottom: `1px solid ${borderColor}`, letterSpacing: '0.05em', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)' }}>
                             <Box sx={{ width: isServiceForm ? { xs: '32%', md: '30%' } : { xs: '40%', md: '35%' }, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
                                 ITEM
@@ -2110,6 +2191,7 @@ export default function SheqInstallationForm({
                                 </Typography>
                             </Box>
                         )}
+                        </Box>
 
                         {formSections.map((cat, catIdx) => {
                             const isSpecialSection =
@@ -2132,7 +2214,14 @@ export default function SheqInstallationForm({
                             });
 
                             return (
-                                <Box key={catIdx} sx={{ borderBottom: catIdx < formSections.length - 1 ? `3px solid ${borderColor}` : 'none' }}>
+                                <Box
+                                    key={catIdx}
+                                    {...pdfBlockProps(downloading)}
+                                    sx={{
+                                        borderBottom: downloading ? 'none' : (catIdx < formSections.length - 1 ? `3px solid ${borderColor}` : 'none'),
+                                        ...pdfSectionShellSx(downloading, borderColor, pdfMb),
+                                    }}
+                                >
                                     {/* Main Category Header */}
                                 <Box sx={{ 
                                     p: 1.5, 
@@ -2435,6 +2524,10 @@ export default function SheqInstallationForm({
                         )})}
 
                         {/* Grand Total Row - Positioned as the final row of the table */}
+                        <Box
+                            {...pdfBlockProps(downloading)}
+                            sx={pdfSectionShellSx(downloading, borderColor, pdfMb)}
+                        >
                         <Box sx={{ display: 'flex', bgcolor: customBlue, color: "#FFF", borderTop: `2px solid ${isDarkMode ? "#000" : "#FFF"}` }}>
                             <Box sx={{ width: isServiceForm ? { xs: '32%', md: '30%' } : { xs: '40%', md: '35%' }, p: 1.5, textAlign: 'right', fontWeight: 900, fontSize: '0.9rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
                                 TOTAL SCORE
@@ -2456,6 +2549,7 @@ export default function SheqInstallationForm({
                             ) : (
                                 <Box sx={{ width: { xs: '30%', md: '45%' } }} />
                             )}
+                        </Box>
                         </Box>
                     </Box>
                         
@@ -2614,17 +2708,6 @@ export default function SheqInstallationForm({
                                         </Box>
                                     ))}
                                 </Box>
-                                {pdfSignatureInUploads && (
-                                    <Box sx={{ px: 2, pb: 2, borderTop: `1px solid ${borderColor}` }}>
-                                        <ReportSignatureBlock
-                                            compact
-                                            customBlue={customBlue}
-                                            signature={docInfo.signature}
-                                            onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
-                                            readOnly
-                                        />
-                                    </Box>
-                                )}
                             </Box>
                         </Box>
                     )}
@@ -2670,17 +2753,6 @@ export default function SheqInstallationForm({
                                     />
                                 )}
                             </Box>
-                            {pdfSignatureInComments && (
-                                <Box sx={{ px: 2, pt: 2, pb: 2, borderTop: `1px solid ${borderColor}` }}>
-                                    <ReportSignatureBlock
-                                        compact
-                                        customBlue={customBlue}
-                                        signature={docInfo.signature}
-                                        onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
-                                        readOnly
-                                    />
-                                </Box>
-                            )}
                         </Box>
                     )}
 
@@ -2731,6 +2803,18 @@ export default function SheqInstallationForm({
                         </Box>
                     )}
 
+                    {pdfSignatureBlock && (
+                        <Box data-pdf-block sx={{ mb: pdfMb, p: 2, border: `1px solid ${borderColor}`, borderRadius: '8px' }}>
+                            <ReportSignatureBlock
+                                compact
+                                customBlue={customBlue}
+                                signature={docInfo.signature}
+                                onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
+                                readOnly
+                            />
+                        </Box>
+                    )}
+
                     {!downloading && !visibleSections.signatures && (
                         <Box sx={{ p: 2, display: 'flex', justifyContent: 'center', borderTop: `1px solid ${borderColor}` }}>
                             <Button 
@@ -2745,7 +2829,7 @@ export default function SheqInstallationForm({
                         </Box>
                     )}
 
-                    {/* Signature Section (on-screen only; PDF embeds signature in final comments/uploads block) */}
+                    {/* Signature Section (on-screen only; PDF renders signature below compliance score) */}
                     {visibleSections.signatures && !downloading && (
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 8, position: 'relative' }}>
                             <Tooltip title="Delete Signature Section">
@@ -2758,17 +2842,6 @@ export default function SheqInstallationForm({
                                 signature={docInfo.signature}
                                 onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
                                 readOnly={false}
-                            />
-                        </Box>
-                    )}
-                    {pdfSignatureStandalone && (
-                        <Box data-pdf-block sx={{ mb: pdfMb, p: 2, border: `1px solid ${borderColor}`, borderRadius: '8px' }}>
-                            <ReportSignatureBlock
-                                compact
-                                customBlue={customBlue}
-                                signature={docInfo.signature}
-                                onChange={(url) => setDocInfo((prev) => ({ ...prev, signature: url || "" }))}
-                                readOnly
                             />
                         </Box>
                     )}
@@ -2801,7 +2874,7 @@ export default function SheqInstallationForm({
         </Box>
     );
 
-    if (isModal) return formContent;
+    if (isModal || action === "download") return formContent;
 
     return (
         <Layout pageTitle={category === SHEQ_INSPECTION_CATEGORY ? "SHEQ service" : "SHEQ Installation"}>

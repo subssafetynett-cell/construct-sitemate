@@ -1,6 +1,7 @@
 const prisma = require("../prismaClient");
 const { reqUserDbId } = require("./userAuthorization");
 const { canViewFormResponse } = require("./generalFormVisibility");
+const { isGlobalSiteAccess } = require("./siteAccess");
 
 /** Legacy: only own submissions (used where company sharing does not apply). */
 function buildOwnFormResponseWhere(userId) {
@@ -53,7 +54,8 @@ async function assertFormResponseAccess(req, responseId, { write = false } = {})
   }
 
   const clientId = req.user?.clientId;
-  if (!canViewFormResponse(row, userId, clientId)) {
+  const globalAccess = isGlobalSiteAccess(req.user);
+  if (!canViewFormResponse(row, userId, clientId, { globalAccess })) {
     return { ok: false, status: 403, message: "You do not have access to this submission" };
   }
 

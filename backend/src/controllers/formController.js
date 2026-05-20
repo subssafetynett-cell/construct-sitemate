@@ -7,6 +7,7 @@ const {
   canViewFormResponse,
 } = require("../utils/formResponseAccess");
 const { sanitizeVisibilityOnSave } = require("../utils/generalFormVisibility");
+const { isGlobalSiteAccess } = require("../utils/siteAccess");
 const {
   STATIC_CONCERN_FORM_ID,
   assertAuthenticatedForm,
@@ -245,6 +246,7 @@ exports.getAllResponses = async (req, res) => {
       return res.status(401).json({ success: false, message: "Not authenticated" });
     }
     const clientId = req.user?.clientId;
+    const globalAccess = isGlobalSiteAccess(req.user);
     const filter = buildCompanyFormResponseWhere(userId, clientId);
     if (req.query.category) {
       filter.category = req.query.category;
@@ -262,7 +264,7 @@ exports.getAllResponses = async (req, res) => {
     });
 
     const visible = responses.filter((row) =>
-      canViewFormResponse(row, userId, clientId)
+      canViewFormResponse(row, userId, clientId, { globalAccess })
     );
 
     res.json({

@@ -6,6 +6,15 @@ function isGlobalSiteAccess(user) {
   return user.role === "superadmin";
 }
 
+function buildAssignedSiteWhere(userId) {
+  return {
+    OR: [
+      { managerId: userId },
+      { siteManagers: { some: { userId } } },
+    ],
+  };
+}
+
 /** Prisma `where` fragment for listing sites for the current user. */
 function buildSiteListWhere(user) {
   if (isGlobalSiteAccess(user)) {
@@ -16,12 +25,8 @@ function buildSiteListWhere(user) {
     return { clientId: user.clientId };
   }
 
-  if (user.role === "site_manager") {
-    return { managerId: user.id };
-  }
-
-  // Other roles: no sites via this API
-  return { id: { in: [] } };
+  // Any user explicitly assigned as a site manager (any role).
+  return buildAssignedSiteWhere(user.id);
 }
 
 function mergeSiteSearchWhere(accessWhere, search) {
@@ -70,16 +75,19 @@ async function userCanAccessSite(prisma, user, siteId) {
     return siteClientId === user.clientId;
   }
 
-  if (user.role === "site_manager") {
-    return site.managerId === user.id;
-  }
+  if (site.managerId === user.id) return true;
 
-  return false;
+  const assignment = await prisma.siteManager.findFirst({
+    where: { siteId, userId: user.id },
+    select: { siteId: true },
+  });
+  return Boolean(assignment);
 }
 
 module.exports = {
   isGlobalSiteAccess,
   buildSiteListWhere,
+  buildAssignedSiteWhere,
   mergeSiteSearchWhere,
   resolveSiteClientId,
   userCanAccessSite,

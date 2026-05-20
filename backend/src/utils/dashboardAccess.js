@@ -8,11 +8,22 @@ const { isGlobalSiteAccess, buildSiteListWhere } = require("./siteAccess");
  */
 async function getManagedSiteIds(prisma, managerUserId) {
   if (!managerUserId) return [];
-  const sites = await prisma.site.findMany({
-    where: { managerId: managerUserId },
-    select: { id: true },
-  });
-  return sites.map((s) => s.id);
+  const [legacySites, assignments] = await Promise.all([
+    prisma.site.findMany({
+      where: { managerId: managerUserId },
+      select: { id: true },
+    }),
+    prisma.siteManager.findMany({
+      where: { userId: managerUserId },
+      select: { siteId: true },
+    }),
+  ]);
+  return [
+    ...new Set([
+      ...legacySites.map((s) => s.id),
+      ...assignments.map((a) => a.siteId),
+    ]),
+  ];
 }
 
 function canShowDashboardUsers(actor) {
@@ -116,32 +127,26 @@ function getDashboardScopeMeta(actor) {
  * Form submission counts per company (Client), for superadmin dashboard.
  */
 async function buildFormsByCompany(prisma) {
-  const clients = await prisma.client.findMany({
-    select: {
-      id: true,
-      name: true,
-      users: {
-        select: {
-          _count: { select: { submittedResponses: true } },
-        },
-      },
-    },
-    orderBy: { name: "asc" },
-  });
+  const rows = await prisma.$queryRaw`
+    SELECT
+      c.id AS "clientId",
+      c.name AS "companyName",
+      COALESCE(counts."count", 0)::int AS "count"
+    FROM "Client" c
+    LEFT JOIN (
+      SELECT u."clientId", COUNT(fr.id)::int AS "count"
+      FROM "User" u
+      INNER JOIN "FormResponse" fr ON fr."submittedById" = u.id
+      GROUP BY u."clientId"
+    ) counts ON counts."clientId" = c.id
+    ORDER BY "count" DESC, c.name ASC
+  `;
 
-  return clients
-    .map((client) => ({
-      clientId: client.id,
-      companyName: client.name,
-      count: client.users.reduce(
-        (sum, user) => sum + user._count.submittedResponses,
-        0
-      ),
-    }))
-    .sort(
-      (a, b) =>
-        b.count - a.count || a.companyName.localeCompare(b.companyName)
-    );
+  return rows.map((row) => ({
+    clientId: row.clientId,
+    companyName: row.companyName,
+    count: Number(row.count) || 0,
+  }));
 }
 
 /**

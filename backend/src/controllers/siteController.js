@@ -10,6 +10,31 @@ const prisma = new PrismaClient();
 
 const SITE_CREATE_ROLES = ["superadmin", "company_admin"];
 
+const SITE_INCLUDE = {
+    manager: {
+        select: {
+            id: true,
+            username: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+        },
+    },
+    siteManagers: {
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    username: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                },
+            },
+        },
+    },
+};
+
 function assertCanCreateSite(req) {
     if (isSafetynettCompanyName(req.user?.companyname || req.user?.company)) {
         return null;
@@ -33,14 +58,61 @@ function companyUserWhere(req) {
     return {};
 }
 
-async function assertManagerInCompany(req, managerId) {
-    if (!managerId) return true;
+function normalizeManagerIds(body = {}) {
+    if (Array.isArray(body.managerIds)) {
+        return [...new Set(body.managerIds.filter(Boolean))];
+    }
+    if (body.managerId) {
+        return [body.managerId];
+    }
+    return [];
+}
+
+async function assertManagersInCompany(req, managerIds) {
+    if (!managerIds.length) return true;
     const companyWhere = companyUserWhere(req);
     if (companyWhere === null) return false;
-    const manager = await prisma.user.findFirst({
-        where: { id: managerId, active: true, ...companyWhere },
+
+    const count = await prisma.user.count({
+        where: {
+            id: { in: managerIds },
+            active: true,
+            ...companyWhere,
+        },
     });
-    return Boolean(manager);
+    return count === managerIds.length;
+}
+
+async function resolveClientIdFromManagers(req, managerIds) {
+    if (!managerIds.length) {
+        return resolveSiteClientId(req, null);
+    }
+    const mgr = await prisma.user.findUnique({
+        where: { id: managerIds[0] },
+        select: { clientId: true },
+    });
+    return resolveSiteClientId(req, mgr?.clientId || null);
+}
+
+async function syncSiteManagers(siteId, managerIds) {
+    await prisma.siteManager.deleteMany({ where: { siteId } });
+    if (managerIds.length) {
+        await prisma.siteManager.createMany({
+            data: managerIds.map((userId) => ({ siteId, userId })),
+            skipDuplicates: true,
+        });
+    }
+}
+
+function formatSiteResponse(site) {
+    const managers = (site.siteManagers || [])
+        .map((row) => row.user)
+        .filter(Boolean);
+    return {
+        ...site,
+        managers,
+        managerIds: managers.map((m) => m.id),
+    };
 }
 
 // Create a new site
@@ -51,47 +123,35 @@ exports.createSite = async (req, res) => {
             return res.status(denied.status).json({ error: denied.error });
         }
 
-        const { name, address, managerId } = req.body;
+        const { name, address } = req.body;
+        const managerIds = normalizeManagerIds(req.body);
 
         if (!name || !address) {
             return res.status(400).json({ error: "Name and Address are required." });
         }
 
-        let managerClientId = null;
-        if (managerId) {
-            if (!(await assertManagerInCompany(req, managerId))) {
-                return res.status(400).json({
-                    error: "Selected site manager is not valid for your company.",
-                });
-            }
-            const mgr = await prisma.user.findUnique({
-                where: { id: managerId },
-                select: { clientId: true },
+        if (!(await assertManagersInCompany(req, managerIds))) {
+            return res.status(400).json({
+                error: "One or more selected site managers are not valid for your company.",
             });
-            managerClientId = mgr?.clientId || null;
         }
 
-        const clientId = resolveSiteClientId(req, managerClientId);
+        const clientId = await resolveClientIdFromManagers(req, managerIds);
 
         const newSite = await prisma.site.create({
             data: {
                 name,
                 address,
-                managerId: managerId || null,
+                managerId: managerIds[0] || null,
                 clientId,
+                siteManagers: managerIds.length
+                    ? { create: managerIds.map((userId) => ({ userId })) }
+                    : undefined,
             },
-            include: {
-                manager: {
-                    select: {
-                        id: true,
-                        username: true,
-                        email: true,
-                    },
-                },
-            },
+            include: SITE_INCLUDE,
         });
 
-        res.status(201).json(newSite);
+        res.status(201).json(formatSiteResponse(newSite));
     } catch (error) {
         console.error("Error creating site:", error);
         res.status(500).json({ error: "Failed to create site." });
@@ -107,20 +167,11 @@ exports.getAllSites = async (req, res) => {
 
         const sites = await prisma.site.findMany({
             where,
-            include: {
-                manager: {
-                    select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        username: true,
-                    },
-                },
-            },
+            include: SITE_INCLUDE,
             orderBy: { createdAt: "desc" },
         });
 
-        res.json(sites);
+        res.json(sites.map(formatSiteResponse));
     } catch (error) {
         console.error("Error fetching sites:", error);
         res.status(500).json({ error: "Failed to fetch sites." });
@@ -131,50 +182,56 @@ exports.getAllSites = async (req, res) => {
 exports.updateSite = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, address, managerId, isActive } = req.body;
+        const { name, address, isActive } = req.body;
+        const hasManagerUpdate =
+            req.body.managerIds !== undefined || req.body.managerId !== undefined;
+        const managerIds = hasManagerUpdate ? normalizeManagerIds(req.body) : null;
 
         if (!(await userCanAccessSite(prisma, req.user, id))) {
             return res.status(403).json({ error: "You do not have access to this site." });
         }
 
-        if (managerId && !(await assertManagerInCompany(req, managerId))) {
+        if (managerIds && !(await assertManagersInCompany(req, managerIds))) {
             return res.status(400).json({
-                error: "Selected site manager is not valid for your company.",
+                error: "One or more selected site managers are not valid for your company.",
             });
         }
 
         const data = {};
         if (name !== undefined) data.name = name;
         if (address !== undefined) data.address = address;
-        if (managerId !== undefined) data.managerId = managerId || null;
         if (isActive !== undefined) data.isActive = isActive;
 
-        if (managerId !== undefined) {
-            if (managerId) {
-                const mgr = await prisma.user.findUnique({
-                    where: { id: managerId },
-                    select: { clientId: true },
-                });
-                data.clientId = resolveSiteClientId(req, mgr?.clientId || null);
-            }
+        if (managerIds !== null) {
+            data.managerId = managerIds[0] || null;
+            data.clientId = await resolveClientIdFromManagers(req, managerIds);
         }
 
-        const updatedSite = await prisma.site.update({
-            where: { id },
-            data,
-            include: {
-                manager: {
-                    select: {
-                        id: true,
-                        username: true,
-                        firstName: true,
-                        lastName: true,
-                    },
-                },
-            },
+        const updatedSite = await prisma.$transaction(async (tx) => {
+            const site = await tx.site.update({
+                where: { id },
+                data,
+                include: SITE_INCLUDE,
+            });
+
+            if (managerIds !== null) {
+                await tx.siteManager.deleteMany({ where: { siteId: id } });
+                if (managerIds.length) {
+                    await tx.siteManager.createMany({
+                        data: managerIds.map((userId) => ({ siteId: id, userId })),
+                        skipDuplicates: true,
+                    });
+                }
+                return tx.site.findUnique({
+                    where: { id },
+                    include: SITE_INCLUDE,
+                });
+            }
+
+            return site;
         });
 
-        res.json(updatedSite);
+        res.json(formatSiteResponse(updatedSite));
     } catch (error) {
         console.error("Error updating site:", error);
         res.status(500).json({ error: "Failed to update site." });

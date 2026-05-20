@@ -24,9 +24,10 @@ import {
     TablePagination,
     Menu,
     Divider,
+    Chip,
 } from "@mui/material";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
-import { formatUserDisplayName, formatUserDisplayNameWithEmail } from "../utils/plainName";
+import { formatUserDisplayName } from "../utils/plainName";
 import AddIcon from "@mui/icons-material/Add";
 import { Eye, Pencil, Trash2, UserX, UserCheck, X } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
@@ -66,7 +67,7 @@ export default function CreateSitesPage() {
     const [newSite, setNewSite] = useState({
         name: "",
         address: "",
-        managerId: "",
+        managerIds: [],
     });
     const [dialogMode, setDialogMode] = useState("create"); // create, edit, view
     const [selectedSiteId, setSelectedSiteId] = useState(null);
@@ -117,10 +118,33 @@ export default function CreateSitesPage() {
         }
     };
 
+    const getSiteManagerIds = (site) => {
+        if (Array.isArray(site?.managerIds) && site.managerIds.length) {
+            return site.managerIds;
+        }
+        if (Array.isArray(site?.managers) && site.managers.length) {
+            return site.managers.map((m) => m.id);
+        }
+        return site?.managerId ? [site.managerId] : [];
+    };
+
+    const formatManagersList = (site) => {
+        const ids = getSiteManagerIds(site);
+        if (!ids.length) return "N/A";
+        const labels = ids.map((id) => {
+            const fromSite = site?.managers?.find((m) => m.id === id);
+            if (fromSite) return formatUserDisplayName(fromSite);
+            const fromOptions = managers.find((m) => m.id === id);
+            if (fromOptions) return formatUserDisplayName(fromOptions);
+            return site?.manager?.id === id ? formatUserDisplayName(site.manager) : id;
+        });
+        return labels.join(", ");
+    };
+
     const handleOpenCreate = async () => {
         if (!allowCreateSites) return;
         setDialogMode("create");
-        setNewSite({ name: "", address: "", managerId: "" });
+        setNewSite({ name: "", address: "", managerIds: [] });
         setOpenDialog(true);
         fetchManagersIfNeeded();
     };
@@ -131,7 +155,7 @@ export default function CreateSitesPage() {
         setNewSite({
             name: site.name,
             address: site.address,
-            managerId: site.managerId || "",
+            managerIds: getSiteManagerIds(site),
         });
         setOpenDialog(true);
         fetchManagersIfNeeded();
@@ -139,10 +163,11 @@ export default function CreateSitesPage() {
 
     const handleOpenView = async (site) => {
         setDialogMode("view");
+        setSelectedSiteId(site.id);
         setNewSite({
             name: site.name,
             address: site.address,
-            managerId: site.managerId || "",
+            managerIds: getSiteManagerIds(site),
         });
         setOpenDialog(true);
         fetchManagersIfNeeded();
@@ -150,7 +175,7 @@ export default function CreateSitesPage() {
 
     const handleCloseDialog = () => {
         setOpenDialog(false);
-        setNewSite({ name: "", address: "", managerId: "" });
+        setNewSite({ name: "", address: "", managerIds: [] });
         setSelectedSiteId(null);
     };
 
@@ -166,10 +191,11 @@ export default function CreateSitesPage() {
         }
         setCreating(true);
         try {
-            const payload = { ...newSite };
-            if (!payload.managerId) {
-                delete payload.managerId;
-            }
+            const payload = {
+                name: newSite.name,
+                address: newSite.address,
+                managerIds: newSite.managerIds || [],
+            };
             if (dialogMode === "create") {
                 if (!allowCreateSites) {
                     alert("Only Super Admin or Company Admin can create sites.");
@@ -221,6 +247,8 @@ export default function CreateSitesPage() {
         setPage(0);
     };
 
+    const dialogSite = sites.find((s) => s.id === selectedSiteId);
+
     return (
         <Layout>
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 4, alignItems: "center" }}>
@@ -260,7 +288,7 @@ export default function CreateSitesPage() {
                                 <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Sl No</TableCell>
                                 <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Site Name</TableCell>
                                 <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Address</TableCell>
-                                <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Manager</TableCell>
+                                <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Managers</TableCell>
                                 <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Status</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Actions</TableCell>
                             </TableRow>
@@ -287,9 +315,7 @@ export default function CreateSitesPage() {
                                             <TableCell sx={{ fontWeight: 500, fontSize: "0.9rem", color: isDarkMode ? "#F9FAFB" : "#111827", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>{site.name}</TableCell>
                                             <TableCell sx={{ fontSize: "0.85rem", color: isDarkMode ? "#9CA3AF" : "#4B5563", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>{site.address}</TableCell>
                                             <TableCell sx={{ fontSize: "0.85rem", color: isDarkMode ? "#9CA3AF" : "#4B5563", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>
-                                                {site.manager
-                                                    ? formatUserDisplayName(site.manager)
-                                                    : "N/A"}
+                                                {formatManagersList(site)}
                                             </TableCell>
                                             <TableCell sx={{ borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>
                                                 <Box
@@ -490,28 +516,77 @@ export default function CreateSitesPage() {
 
                         <Box>
                             <Typography variant="subtitle2" sx={{ fontWeight: 500, mb: 0.5, color: isDarkMode ? "#E5E7EB" : "#1e293b" }}>
-                                Site Manager
+                                Site Managers
                             </Typography>
+                            {dialogMode === "view" ? (
+                                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, minHeight: 44, alignItems: "center" }}>
+                                    {newSite.managerIds?.length ? (
+                                        newSite.managerIds.map((id) => {
+                                            const mgr =
+                                                managers.find((m) => m.id === id) ||
+                                                dialogSite?.managers?.find((m) => m.id === id) ||
+                                                (dialogSite?.manager?.id === id ? dialogSite.manager : null);
+                                            return (
+                                                <Chip
+                                                    key={id}
+                                                    label={mgr ? formatUserDisplayName(mgr) : id}
+                                                    size="small"
+                                                    sx={{ bgcolor: isDarkMode ? "#374151" : "#E5E7EB" }}
+                                                />
+                                            );
+                                        })
+                                    ) : (
+                                        <Typography variant="body2" sx={{ color: isDarkMode ? "#9CA3AF" : "#64748b" }}>
+                                            None
+                                        </Typography>
+                                    )}
+                                </Box>
+                            ) : (
                             <TextField
                                 select
                                 fullWidth
                                 disabled={dialogMode === "view"}
-                                value={newSite.managerId || ""}
-                                onChange={(e) => setNewSite({ ...newSite, managerId: e.target.value })}
+                                value={newSite.managerIds || []}
+                                onChange={(e) =>
+                                    setNewSite({
+                                        ...newSite,
+                                        managerIds:
+                                            typeof e.target.value === "string"
+                                                ? e.target.value.split(",")
+                                                : e.target.value,
+                                    })
+                                }
                                 SelectProps={{
+                                    multiple: true,
+                                    displayEmpty: true,
                                     renderValue: (selected) => {
-                                        if (!selected) {
-                                            return <em>None</em>;
+                                        if (!selected?.length) {
+                                            return (
+                                                <Typography component="em" sx={{ color: isDarkMode ? "#9CA3AF" : "#64748b" }}>
+                                                    Select site managers
+                                                </Typography>
+                                            );
                                         }
-                                        const mgr = managers.find((m) => m.id === selected);
-                                        return mgr
-                                            ? formatUserDisplayNameWithEmail(mgr)
-                                            : selected;
+                                        return (
+                                            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                                                {selected.map((id) => {
+                                                    const mgr = managers.find((m) => m.id === id);
+                                                    return (
+                                                        <Chip
+                                                            key={id}
+                                                            label={mgr ? formatUserDisplayName(mgr) : id}
+                                                            size="small"
+                                                            sx={{ height: 24 }}
+                                                        />
+                                                    );
+                                                })}
+                                            </Box>
+                                        );
                                     },
                                 }}
                                 sx={{
                                     "& .MuiOutlinedInput-root": {
-                                        borderRadius: 50,
+                                        borderRadius: 3,
                                         bgcolor: isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.02)",
                                         px: 1,
                                         color: isDarkMode ? "#F9FAFB" : "inherit",
@@ -521,9 +596,6 @@ export default function CreateSitesPage() {
                                     "& .MuiInputBase-input": { py: 1.5, px: 2 },
                                 }}
                             >
-                                <MenuItem value="">
-                                    <em>None</em>
-                                </MenuItem>
                                 {managers.map((mgr) => (
                                     <MenuItem key={mgr.id} value={mgr.id}>
                                         <Box sx={{ display: "flex", flexDirection: "column", py: 0.25 }}>
@@ -550,6 +622,7 @@ export default function CreateSitesPage() {
                                     </MenuItem>
                                 ))}
                             </TextField>
+                            )}
                         </Box>
                     </Box>
 

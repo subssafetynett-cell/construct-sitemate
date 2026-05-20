@@ -13,6 +13,7 @@ import api from "../services/api";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
+import SignatureCapture from "../components/SignatureCapture";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import {
@@ -41,10 +42,13 @@ export default function SiteInductionForm() {
     });
 
     // Header Data
-    const [docInfo, setDocInfo] = useState({ date: "", docNo: "", approvedBy: "" ,
-        logo: ""
-,
-        logoRight: ""
+    const [docInfo, setDocInfo] = useState({
+        date: "",
+        docNo: "",
+        approvedBy: "",
+        logo: "",
+        logoRight: "",
+        signature: "",
     });
     const [headerData, setHeaderData] = useState({
         projectTitle: "",
@@ -61,7 +65,24 @@ export default function SiteInductionForm() {
         projectTitle: "Project title",
         scopeOfWork: "Scope of Work",
         location: "Location",
-        contractNo: "Contract no."
+        contractNo: "Contract no.",
+        confirmationText:
+            "I confirm that I have attended the site induction, understand the site rules and that I am not taking medication or drugs that could affect my concentration or safety on site",
+        attendeeDateLabel: "Date",
+        attendeeNameLabel: "Name",
+        attendeeNameSubLabel: "(capitals)",
+        attendeeSignatureLabel: "Signature",
+        attendeeEmployedByLabel: "Employed by",
+        attendeeEmployedBySubLabel:
+            "(this column to be completed by Subcontractors only)",
+        attendeeOccupationLabel: "Occupation",
+        competencyHeader: "Approved competency card/ cert",
+        competencySubLabel: "(i.e. CSCS/CPCS)",
+        competencyYesLabel: "Yes",
+        competencyNoLabel: "No",
+        cardTypeLabel: "Type of card held",
+        cardTypeSubLabel: "(Plus, Card number and Expiry Date)",
+        inductorLabel: "Person giving induction",
     });
     
     // Grid Data for Signatures (10 rows)
@@ -151,7 +172,7 @@ export default function SiteInductionForm() {
                     // Close the newly opened tab
                     window.close();
                 });
-            }, 800);
+            }, 300);
         }
     }, [loading, action, id]);
 
@@ -159,9 +180,9 @@ export default function SiteInductionForm() {
         setLoading(true);
         try {
             // Fetch responses user has submitted to populate this form
-            const res = await api.get('/forms/responses');
+            const res = await api.get(`/forms/responses/${submissionId}`);
             if (res.data?.success) {
-                const submission = res.data.data.find(r => r.id === submissionId || r._id === submissionId);
+                const submission = res.data.data;
                 if (submission && submission.answers) {
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);
                     if (submission.answers.headerData) setHeaderData(submission.answers.headerData);
@@ -382,7 +403,75 @@ export default function SiteInductionForm() {
                             </Box>
                         </Box>
 
-                        
+                        {/* Right Logo / Upload */}
+                        <Box
+                            sx={{
+                                width: { xs: '100%', md: '30%' },
+                                p: 2,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                        >
+                            {docInfo.logoRight ? (
+                                <>
+                                    <Box
+                                        component="img"
+                                        src={docInfo.logoRight}
+                                        alt="Uploaded Right Logo"
+                                        sx={{
+                                            width: { xs: '100%', md: '80%' },
+                                            maxHeight: '100px',
+                                            objectFit: 'contain',
+                                            mb: (action !== 'download') ? 1 : 0,
+                                        }}
+                                    />
+                                    {(action !== 'download') && (
+                                        <Button variant="text" size="small" component="label" sx={{ fontSize: '0.7rem' }}>
+                                            Change Logo
+                                            <input
+                                                type="file"
+                                                hidden
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                    const file = e.target.files[0];
+                                                    if (file) {
+                                                        const reader = new FileReader();
+                                                        reader.onload = (ev) =>
+                                                            setDocInfo({ ...docInfo, logoRight: ev.target.result });
+                                                        reader.readAsDataURL(file);
+                                                    }
+                                                }}
+                                            />
+                                        </Button>
+                                    )}
+                                </>
+                            ) : (
+                                (action !== 'download') ? (
+                                    <Button variant="outlined" component="label" size="small">
+                                        Upload Logo
+                                        <input
+                                            type="file"
+                                            hidden
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files[0];
+                                                if (file) {
+                                                    const reader = new FileReader();
+                                                    reader.onload = (ev) =>
+                                                        setDocInfo({ ...docInfo, logoRight: ev.target.result });
+                                                    reader.readAsDataURL(file);
+                                                }
+                                            }}
+                                        />
+                                    </Button>
+                                ) : (
+                                    <Typography variant="caption" color="text.secondary">No Logo</Typography>
+                                )
+                            )}
+                        </Box>
+
                     </Box>
 
                     {/* Briefing Info Header */}
@@ -453,28 +542,209 @@ export default function SiteInductionForm() {
                     </Box>
 
                     <Box sx={{ border: `1px solid ${borderColor}`, borderTop: 'none', borderBottom: 'none', p: 1, textAlign: 'center', fontWeight: 'bold', fontSize: '0.9rem', bgcolor: secondaryHeaderBgColor }}>
-                        I confirm that I have attended the site induction, understand the site rules and that I am not taking medication or drugs that could affect my concentration or safety on site
+                        {(downloading || action === 'download') ? (
+                            <Typography sx={{ fontWeight: 'bold' }}>{headerLabels.confirmationText}</Typography>
+                        ) : (
+                            <TextField
+                                fullWidth
+                                multiline
+                                variant="standard"
+                                InputProps={{
+                                    disableUnderline: true,
+                                    sx: { color: textColor, textAlign: "center", input: { textAlign: "center" }, fontWeight: "bold" },
+                                }}
+                                value={headerLabels.confirmationText}
+                                onChange={(e) => setHeaderLabels({ ...headerLabels, confirmationText: e.target.value })}
+                            />
+                        )}
                     </Box>
 
                     {/* Signatures Table */}
                     <Box sx={{ border: `1px solid ${borderColor}`, mb: 4 }}>
                         <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, borderBottom: `1px solid ${borderColor}`, fontWeight: 'bold', textAlign: 'center', fontSize: '0.8rem', bgcolor: headerBgColor }}>
-                            <Box sx={{ width: { xs: '100%', md: '10%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>Date</Box>
-                            <Box sx={{ width: { xs: '100%', md: '15%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>Name<br/>(capitals)</Box>
-                            <Box sx={{ width: { xs: '100%', md: '12%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>Signature</Box>
-                            <Box sx={{ width: { xs: '100%', md: '13%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>Employed by<br/><span style={{color: '#FF6B6B', fontSize: '0.7rem'}}>(this column to be completed by Subcontractors only)</span></Box>
-                            <Box sx={{ width: { xs: '100%', md: '15%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>Occupation</Box>
+                            <Box sx={{ width: { xs: '100%', md: '10%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>
+                                {(downloading || action === 'download') ? (
+                                    headerLabels.attendeeDateLabel
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", input: { textAlign: "center" }, fontWeight: "bold" } }}
+                                        value={headerLabels.attendeeDateLabel}
+                                        onChange={(e) => setHeaderLabels({ ...headerLabels, attendeeDateLabel: e.target.value })}
+                                    />
+                                )}
+                            </Box>
+                            <Box sx={{ width: { xs: '100%', md: '15%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>
+                                {(downloading || action === 'download') ? (
+                                    <>
+                                        {headerLabels.attendeeNameLabel}
+                                        <br />
+                                        {headerLabels.attendeeNameSubLabel}
+                                    </>
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        multiline
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", textarea: { textAlign: "center", fontWeight: "bold" } } }}
+                                        value={`${headerLabels.attendeeNameLabel}\n${headerLabels.attendeeNameSubLabel}`}
+                                        onChange={(e) => {
+                                            const [line1 = "", ...rest] = e.target.value.split("\n");
+                                            setHeaderLabels({
+                                                ...headerLabels,
+                                                attendeeNameLabel: line1,
+                                                attendeeNameSubLabel: rest.join(" ").trim() || headerLabels.attendeeNameSubLabel,
+                                            });
+                                        }}
+                                    />
+                                )}
+                            </Box>
+                            <Box sx={{ width: { xs: '100%', md: '12%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>
+                                {(downloading || action === 'download') ? (
+                                    headerLabels.attendeeSignatureLabel
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", input: { textAlign: "center" }, fontWeight: "bold" } }}
+                                        value={headerLabels.attendeeSignatureLabel}
+                                        onChange={(e) => setHeaderLabels({ ...headerLabels, attendeeSignatureLabel: e.target.value })}
+                                    />
+                                )}
+                            </Box>
+                            <Box sx={{ width: { xs: '100%', md: '13%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>
+                                {(downloading || action === 'download') ? (
+                                    <>
+                                        {headerLabels.attendeeEmployedByLabel}
+                                        <br />
+                                        <span style={{ color: '#FF6B6B', fontSize: '0.7rem' }}>
+                                            {headerLabels.attendeeEmployedBySubLabel}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        multiline
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", textarea: { textAlign: "center", fontWeight: "bold" } } }}
+                                        value={`${headerLabels.attendeeEmployedByLabel}\n${headerLabels.attendeeEmployedBySubLabel}`}
+                                        onChange={(e) => {
+                                            const [line1 = "", ...rest] = e.target.value.split("\n");
+                                            setHeaderLabels({
+                                                ...headerLabels,
+                                                attendeeEmployedByLabel: line1,
+                                                attendeeEmployedBySubLabel: rest.join(" ").trim() || headerLabels.attendeeEmployedBySubLabel,
+                                            });
+                                        }}
+                                    />
+                                )}
+                            </Box>
+                            <Box sx={{ width: { xs: '100%', md: '15%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>
+                                {(downloading || action === 'download') ? (
+                                    headerLabels.attendeeOccupationLabel
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", input: { textAlign: "center" }, fontWeight: "bold" } }}
+                                        value={headerLabels.attendeeOccupationLabel}
+                                        onChange={(e) => setHeaderLabels({ ...headerLabels, attendeeOccupationLabel: e.target.value })}
+                                    />
+                                )}
+                            </Box>
                             
                             <Box sx={{ width: { xs: '100%', md: '10%' }, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${borderColor}` }}>
-                                <Box sx={{ flex: 1, p: cellPadding, borderBottom: `1px solid ${borderColor}` }}>Approved<br/>competency<br/>card/ cert<br/><span style={{fontSize: '0.7rem', fontWeight: 'normal'}}>(i.e. CSCS/CPCS)</span></Box>
+                                <Box sx={{ flex: 1, p: cellPadding, borderBottom: `1px solid ${borderColor}` }}>
+                                    {(downloading || action === 'download') ? (
+                                        <>
+                                            {headerLabels.competencyHeader}
+                                            <br />
+                                            <span style={{ fontSize: '0.7rem', fontWeight: 'normal' }}>{headerLabels.competencySubLabel}</span>
+                                        </>
+                                    ) : (
+                                        <TextField
+                                            fullWidth
+                                            multiline
+                                            variant="standard"
+                                            InputProps={{ disableUnderline: true, sx: { textAlign: "center", textarea: { textAlign: "center", fontWeight: "bold" } } }}
+                                            value={`${headerLabels.competencyHeader}\n${headerLabels.competencySubLabel}`}
+                                            onChange={(e) => {
+                                                const [line1 = "", ...rest] = e.target.value.split("\n");
+                                                setHeaderLabels({
+                                                    ...headerLabels,
+                                                    competencyHeader: line1,
+                                                    competencySubLabel: rest.join(" ").trim() || headerLabels.competencySubLabel,
+                                                });
+                                            }}
+                                        />
+                                    )}
+                                </Box>
                                 <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, height: '25px' }}>
-                                    <Box sx={{ width: { xs: '100%', md: '50%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, alignItems: 'center', justifyContent: 'center', color: '#FF6B6B' }}>Yes</Box>
-                                    <Box sx={{ width: { xs: '100%', md: '50%' }, display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, alignItems: 'center', justifyContent: 'center', color: '#FF6B6B' }}>No</Box>
+                                    <Box sx={{ width: { xs: '100%', md: '50%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, alignItems: 'center', justifyContent: 'center', color: '#FF6B6B' }}>
+                                        {(downloading || action === 'download') ? headerLabels.competencyYesLabel : (
+                                            <TextField
+                                                fullWidth
+                                                variant="standard"
+                                                InputProps={{ disableUnderline: true, sx: { input: { textAlign: "center", color: '#FF6B6B', fontWeight: 700 } } }}
+                                                value={headerLabels.competencyYesLabel}
+                                                onChange={(e) => setHeaderLabels({ ...headerLabels, competencyYesLabel: e.target.value })}
+                                            />
+                                        )}
+                                    </Box>
+                                    <Box sx={{ width: { xs: '100%', md: '50%' }, display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, alignItems: 'center', justifyContent: 'center', color: '#FF6B6B' }}>
+                                        {(downloading || action === 'download') ? headerLabels.competencyNoLabel : (
+                                            <TextField
+                                                fullWidth
+                                                variant="standard"
+                                                InputProps={{ disableUnderline: true, sx: { input: { textAlign: "center", color: '#FF6B6B', fontWeight: 700 } } }}
+                                                value={headerLabels.competencyNoLabel}
+                                                onChange={(e) => setHeaderLabels({ ...headerLabels, competencyNoLabel: e.target.value })}
+                                            />
+                                        )}
+                                    </Box>
                                 </Box>
                             </Box>
 
-                            <Box sx={{ width: { xs: '100%', md: '15%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>Type of card held<br/><span style={{fontSize: '0.7rem', fontWeight: 'normal', fontStyle: 'italic'}}>(Plus, Card number and<br/>Expiry Date)</span></Box>
-                            <Box sx={{ width: { xs: '100%', md: '10%' }, p: cellPadding }}>Person giving induction</Box>
+                            <Box sx={{ width: { xs: '100%', md: '15%' }, p: cellPadding, borderRight: `1px solid ${borderColor}` }}>
+                                {(downloading || action === 'download') ? (
+                                    <>
+                                        {headerLabels.cardTypeLabel}
+                                        <br />
+                                        <span style={{ fontSize: '0.7rem', fontWeight: 'normal', fontStyle: 'italic' }}>{headerLabels.cardTypeSubLabel}</span>
+                                    </>
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        multiline
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", textarea: { textAlign: "center", fontWeight: "bold" } } }}
+                                        value={`${headerLabels.cardTypeLabel}\n${headerLabels.cardTypeSubLabel}`}
+                                        onChange={(e) => {
+                                            const [line1 = "", ...rest] = e.target.value.split("\n");
+                                            setHeaderLabels({
+                                                ...headerLabels,
+                                                cardTypeLabel: line1,
+                                                cardTypeSubLabel: rest.join(" ").trim() || headerLabels.cardTypeSubLabel,
+                                            });
+                                        }}
+                                    />
+                                )}
+                            </Box>
+                            <Box sx={{ width: { xs: '100%', md: '10%' }, p: cellPadding }}>
+                                {(downloading || action === 'download') ? (
+                                    headerLabels.inductorLabel
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        multiline
+                                        variant="standard"
+                                        InputProps={{ disableUnderline: true, sx: { textAlign: "center", textarea: { textAlign: "center", fontWeight: "bold" } } }}
+                                        value={headerLabels.inductorLabel}
+                                        onChange={(e) => setHeaderLabels({ ...headerLabels, inductorLabel: e.target.value })}
+                                    />
+                                )}
+                            </Box>
                         </Box>
                         
                         {attendees.map((att, index) => (
@@ -486,7 +756,7 @@ export default function SiteInductionForm() {
                                     {(downloading || action === 'download') ? (<Typography sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', px: 1, py: 1, minHeight: '1.5em', textAlign: 'inherit' }}>{att.name || ' '}</Typography>) : (<TextField fullWidth multiline variant="standard" InputProps={{ disableUnderline: true, sx: { color: textColor, px: 1, py: 0.5, height: '100%', fontSize: '0.85rem' } }} value={att.name} onChange={handleAttendeeChange(index, "name")} />)}
                                 </Box>
                                 <Box sx={{ width: { xs: '100%', md: '12%' }, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
-                                    {att.signature && (att.signature.startsWith('data:image/') || att.signature.startsWith('http')) ? (
+                                    {typeof att.signature === 'string' && att.signature && (att.signature.startsWith('data:image/') || att.signature.startsWith('http')) ? (
                                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', py: 0.5 }}>
                                             <Box component="img" src={att.signature} alt="Signature" sx={{ maxHeight: '40px', maxWidth: '100%', objectFit: 'contain' }} />
                                             {!(downloading || action === 'download') && (
@@ -500,22 +770,24 @@ export default function SiteInductionForm() {
                                         (downloading || action === 'download') ? (
                                             <Typography sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', px: 1, py: 1, minHeight: '1.5em', textAlign: 'inherit', flex: 1 }}>{att.signature || ' '}</Typography>
                                         ) : (
-                                            <Box sx={{ display: 'flex', width: '100%', alignItems: 'center', flexDirection: 'column' }}>
-                                                <TextField fullWidth multiline variant="standard" InputProps={{ disableUnderline: true, sx: { color: textColor, px: 1, py: 0.5, height: '100%', fontSize: '0.85rem' } }} value={att.signature} onChange={handleAttendeeChange(index, "signature")} placeholder="Sign..." />
-                                                <Button variant="outlined" component="label" size="small" sx={{ whiteSpace: 'nowrap', minWidth: 'auto', p: '2px 8px', fontSize: '0.65rem', textTransform: 'none', mt: 0.5 }}>
-                                                    Upload
-                                                    <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                        const file = e.target.files[0];
-                                                        if (file) {
-                                                            const reader = new FileReader();
-                                                            reader.onload = (ev) => {
-                                                                const newAttendees = attendees.map((a, i) => i === index ? { ...a, signature: ev.target.result } : a);
-                                                                setAttendees(newAttendees);
-                                                            };
-                                                            reader.readAsDataURL(file);
-                                                        }
-                                                    }} />
-                                                </Button>
+                                            <Box sx={{ width: '100%', px: 0.5, py: 0.5 }}>
+                                                <SignatureCapture
+                                                    value={
+                                                        typeof att.signature === 'string' &&
+                                                        att.signature &&
+                                                        (att.signature.startsWith('data:image/') || att.signature.startsWith('http'))
+                                                            ? att.signature
+                                                            : null
+                                                    }
+                                                    onChange={(url) => {
+                                                        const newAttendees = attendees.map((a, i) =>
+                                                            i === index ? { ...a, signature: url || "" } : a
+                                                        );
+                                                        setAttendees(newAttendees);
+                                                    }}
+                                                    readOnly={false}
+                                                    compact
+                                                />
                                             </Box>
                                         )
                                     )}
@@ -550,42 +822,13 @@ export default function SiteInductionForm() {
                                         {/* Signature Section */}
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 6, mb: 2 }}>
                             <Box sx={{ width: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                {docInfo.signature ? (
-                                    <>
-                                        <Box component="img" src={docInfo.signature} alt="Signature" sx={{ width: '100%', maxHeight: '80px', objectFit: 'contain', borderBottom: `1px solid ${borderColor}`, mb: 1 }} />
-                                        {(action !== 'download') && (
-                                            <Button variant="text" size="small" component="label" sx={{ fontSize: '0.7rem' }}>
-                                                Change Signature
-                                                <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = (ev) => setDocInfo({...docInfo, signature: ev.target.result});
-                                                        reader.readAsDataURL(file);
-                                                    }
-                                                }} />
-                                            </Button>
-                                        )}
-                                    </>
-                                ) : (
-                                    (action !== 'download') ? (
-                                        <Box sx={{ width: '100%', height: '60px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                                            <Button variant="outlined" component="label" size="small">
-                                                Upload Signature
-                                                <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = (ev) => setDocInfo({...docInfo, signature: ev.target.result});
-                                                        reader.readAsDataURL(file);
-                                                    }
-                                                }} />
-                                            </Button>
-                                        </Box>
-                                    ) : (
-                                        <Box sx={{ width: '100%', height: '60px', borderBottom: `1px solid ${borderColor}`, mb: 1 }} />
-                                    )
-                                )}
+                                <Box sx={{ width: '100%', borderBottom: `1px solid ${borderColor}`, mb: 1, pb: 1 }}>
+                                    <SignatureCapture
+                                        value={docInfo.signature || null}
+                                        onChange={(url) => setDocInfo({ ...docInfo, signature: url || "" })}
+                                        readOnly={downloading || action === 'download'}
+                                    />
+                                </Box>
                                 <Typography sx={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Signature</Typography>
                             </Box>
                         </Box>

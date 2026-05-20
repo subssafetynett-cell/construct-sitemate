@@ -60,10 +60,17 @@ function waitForChart(root, timeoutMs = 2000) {
     });
 }
 
-function waitForImages(root, timeoutMs = 8000) {
+function waitForImages(root, timeoutMs = 8000, options = {}) {
     if (!root) return Promise.resolve();
     const imgs = Array.from(root.querySelectorAll("img")).filter((img) => img.getAttribute("src"));
     if (imgs.length === 0) return Promise.resolve();
+
+    const effectiveTimeout = options.imageWaitTimeoutMs ?? timeoutMs;
+    const allDataUrls = imgs.every((img) => {
+        const src = img.getAttribute("src") || "";
+        return src.startsWith("data:") || src.startsWith("blob:");
+    });
+    if (allDataUrls) return Promise.resolve();
 
     const waitOne = (img) =>
         new Promise((resolve) => {
@@ -78,7 +85,7 @@ function waitForImages(root, timeoutMs = 8000) {
 
     return Promise.race([
         Promise.all(imgs.map(waitOne)),
-        new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+        new Promise((resolve) => setTimeout(resolve, effectiveTimeout)),
     ]);
 }
 
@@ -498,9 +505,11 @@ export const downloadPdfFromRef = async (printRef, fileName = "document", onComp
     }
 
     try {
-        await waitForImages(printRef.current);
-        await waitForChart(printRef.current);
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (!options.skipPreCaptureWaits) {
+            await waitForImages(printRef.current, 8000, options);
+            await waitForChart(printRef.current, options.chartWaitTimeoutMs ?? 2000);
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        }
 
         const root = printRef.current;
         const useBlocks =

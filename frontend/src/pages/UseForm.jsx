@@ -177,7 +177,7 @@ export default function UseForm() {
                 setDownloading(false);
                 window.close();
             });
-        }, 800);
+        }, 300);
     } else if (!loading && action === "download_word" && form) {
         setDownloading(true);
         downloadWordFromForm(form, values, `CustomForm_${form.title.replace(/\s+/g, '_')}`, () => {

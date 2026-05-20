@@ -585,6 +585,8 @@ export default function GenericReportPage({ pageTitle }) {
                                 {(viewMode === "filling" || viewMode === "editing") && (
                                     pageTitle === "Health & Safety concern" || 
                                     pageTitle === "Sustainability concern" || 
+                                    pageTitle === "Quality concern" ||
+                                    pageTitle === "Positive observation" ||
                                     pageTitle === "Weekly supervisor health & safety inspection" ||
                                     pageTitle === "Weekly supervisor reports"
                                 ) && (

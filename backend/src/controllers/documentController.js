@@ -1,5 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const path = require('path');
 const prisma = require("../prismaClient");
 const {
@@ -103,6 +105,68 @@ function resolveLocalFile(doc) {
     extensionFromName(filename) || extensionFromName(doc.title || '') || 'bin';
   const mime = mimeTypeFromExtension(ext);
   return { filePath, ext, mime };
+}
+
+function mimeForDocument(doc) {
+  const ext =
+    extensionFromName(doc.type || '') ||
+    extensionFromName(doc.title || '') ||
+    extensionFromName(doc.url || '') ||
+    'bin';
+  return mimeTypeFromExtension(ext);
+}
+
+/** Stream remote files through the API so previews/downloads get correct headers (no redirect/CORS issues). */
+function pipeRemoteUrl(sourceUrl, res, { disposition, filename, fallbackMime }) {
+  return new Promise((resolve, reject) => {
+    const follow = (url, redirectsLeft) => {
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      const lib = parsed.protocol === 'https:' ? https : http;
+      lib
+        .get(url, (upstream) => {
+          const code = upstream.statusCode || 0;
+          if (code >= 300 && code < 400 && upstream.headers.location && redirectsLeft > 0) {
+            upstream.resume();
+            try {
+              follow(new URL(upstream.headers.location, url).href, redirectsLeft - 1);
+            } catch (err) {
+              reject(err);
+            }
+            return;
+          }
+
+          if (code !== 200) {
+            upstream.resume();
+            const err = new Error(`Failed to fetch document (${code})`);
+            err.status = code === 404 ? 404 : 502;
+            reject(err);
+            return;
+          }
+
+          inlinePreviewHeaders(res);
+          const contentType =
+            upstream.headers['content-type']?.split(';')[0]?.trim() ||
+            fallbackMime ||
+            'application/octet-stream';
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Content-Disposition', contentDisposition(disposition, filename));
+          upstream.pipe(res);
+          res.on('finish', resolve);
+          upstream.on('error', reject);
+          res.on('error', reject);
+        })
+        .on('error', reject);
+    };
+
+    follow(sourceUrl, 5);
+  });
 }
 
 // Upload a document
@@ -256,10 +320,15 @@ exports.getModuleCounts = asyncHandler(async (req, res) => {
 /** Stream or redirect a stored document for inline preview in the app. */
 exports.viewDocument = asyncHandler(async (req, res) => {
     const doc = await getAuthorizedDocument(req, req.params.id);
+    const downloadName = buildDownloadFilename(doc);
 
     if (doc.url.startsWith('http://') || doc.url.startsWith('https://')) {
-        inlinePreviewHeaders(res);
-        return res.redirect(302, doc.url);
+        await pipeRemoteUrl(doc.url, res, {
+            disposition: 'inline',
+            filename: downloadName,
+            fallbackMime: mimeForDocument(doc),
+        });
+        return;
     }
 
     if (!doc.url.startsWith('/uploads/')) {
@@ -267,7 +336,6 @@ exports.viewDocument = asyncHandler(async (req, res) => {
     }
 
     const { filePath, mime } = resolveLocalFile(doc);
-    const downloadName = buildDownloadFilename(doc);
 
     inlinePreviewHeaders(res);
     res.setHeader('Content-Type', mime);
@@ -281,8 +349,12 @@ exports.downloadDocument = asyncHandler(async (req, res) => {
     const downloadName = buildDownloadFilename(doc);
 
     if (doc.url.startsWith('http://') || doc.url.startsWith('https://')) {
-        inlinePreviewHeaders(res);
-        return res.redirect(302, cloudinaryAttachmentUrl(doc.url, downloadName));
+        await pipeRemoteUrl(cloudinaryAttachmentUrl(doc.url, downloadName), res, {
+            disposition: 'attachment',
+            filename: downloadName,
+            fallbackMime: mimeForDocument(doc),
+        });
+        return;
     }
 
     if (!doc.url.startsWith('/uploads/')) {

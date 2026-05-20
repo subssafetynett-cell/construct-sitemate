@@ -19,6 +19,8 @@ function countCategory(categories, matchers) {
 }
 
 const SHEQ_CATEGORIES = ["SHEQ Installation", "SHEQ Inspection"];
+const DASHBOARD_RECENT_LIMIT = 300;
+const SHEQ_RECENT_LIMIT = 300;
 
 const SHEQ_STATUS_COLORS = {
   green: "#16a34a",
@@ -192,7 +194,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       AND: [responseWhere, { category: { in: SHEQ_CATEGORIES } }],
     };
 
-    const [totalSites, totalUsers, totalReports, submissionDates, allResponses, sheqResponses] =
+    const [totalSites, totalUsers, totalReports, submissionDates, allResponses, sheqResponses, formsByCompany] =
       await Promise.all([
       prisma.site.count({ where: siteWhere }),
       userCountWhere != null
@@ -206,20 +208,35 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       }),
       prisma.formResponse.findMany({
         where: responseWhere,
-        include: { form: { select: { title: true } } },
+        select: {
+          id: true,
+          category: true,
+          createdAt: true,
+          answers: true,
+          form: { select: { title: true } },
+        },
         orderBy: { createdAt: "desc" },
-        take: 500,
+        take: DASHBOARD_RECENT_LIMIT,
       }),
       prisma.formResponse.findMany({
         where: sheqResponseWhere,
-        include: {
+        select: {
+          id: true,
+          category: true,
+          createdAt: true,
+          answers: true,
+          submittedById: true,
           form: { select: { title: true } },
           submittedBy: {
             select: { id: true, firstName: true, lastName: true, email: true },
           },
         },
         orderBy: { createdAt: "desc" },
+        take: SHEQ_RECENT_LIMIT,
       }),
+      isGlobalSiteAccess(actor)
+        ? buildFormsByCompany(prisma)
+        : Promise.resolve([]),
     ]);
 
     const sheq = buildSheqDashboardData(sheqResponses);
@@ -276,10 +293,6 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     const envConcerns = countCategory(categories, ["sustainability", "environment"]);
     const qualityConcerns = countCategory(categories, ["quality"]);
     const positiveObs = countCategory(categories, ["positive"]);
-
-    const formsByCompany = isGlobalSiteAccess(actor)
-      ? await buildFormsByCompany(prisma)
-      : [];
 
     res.json({
       success: true,

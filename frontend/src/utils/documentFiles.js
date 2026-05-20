@@ -9,6 +9,30 @@ const OFFICE_TYPES = new Set(["DOC", "DOCX", "XLS", "XLSX", "XLSM", "CSV", "PPT"
 export const OFFICE_PREVIEW_TYPES = [...OFFICE_TYPES];
 const VIDEO_TYPES = new Set(["MP4", "MOV", "WEBM"]);
 
+const DOC_TYPE_MIME = {
+  PDF: "application/pdf",
+  DOC: "application/msword",
+  DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  XLS: "application/vnd.ms-excel",
+  XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  XLSM: "application/vnd.ms-excel.sheet.macroEnabled.12",
+  CSV: "text/csv",
+  TXT: "text/plain",
+  PPT: "application/vnd.ms-powerpoint",
+  PPTX: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  RTF: "application/rtf",
+  JPG: "image/jpeg",
+  JPEG: "image/jpeg",
+  PNG: "image/png",
+  GIF: "image/gif",
+  WEBP: "image/webp",
+  SVG: "image/svg+xml",
+  BMP: "image/bmp",
+  MP4: "video/mp4",
+  MOV: "video/quicktime",
+  WEBM: "video/webm",
+};
+
 const EXT_FROM_MIME = {
   "application/pdf": "PDF",
   "application/msword": "DOC",
@@ -147,6 +171,51 @@ export function getDocumentViewUrl(url, docType) {
   return resolved;
 }
 
+export function mimeTypeFromDocType(docType) {
+  return DOC_TYPE_MIME[(docType || "").toUpperCase()] || "application/octet-stream";
+}
+
+/** Use authenticated API preview for PDFs and server-stored files (Cloudinary raw PDFs fail in iframes). */
+export function shouldFetchPreviewViaApi(doc) {
+  const docId = doc?.id || doc?._id;
+  if (!docId) return false;
+
+  const docType = (doc?.type || "FILE").toUpperCase();
+  if (isLocalStoredDocument(doc.url)) return true;
+  if (docType === "PDF") return true;
+  if (IMAGE_TYPES.has(docType) || VIDEO_TYPES.has(docType) || docType === "TXT") {
+    return true;
+  }
+  return false;
+}
+
+export function createTypedBlob(data, docType, contentTypeHeader) {
+  const mime =
+    (contentTypeHeader || "").split(";")[0]?.trim() ||
+    mimeTypeFromDocType(docType) ||
+    data?.type ||
+    "application/octet-stream";
+  if (data instanceof Blob && data.type === mime) return data;
+  return new Blob([data], { type: mime });
+}
+
+export async function readBlobApiError(blob) {
+  if (!blob || blob.size > 65536) return null;
+  const type = blob.type || "";
+  if (!type.includes("json") && !type.includes("text") && blob.size > 512) {
+    return null;
+  }
+  try {
+    const text = await blob.text();
+    const json = JSON.parse(text);
+    if (json?.message) return json.message;
+    if (json?.error) return json.error;
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
 export function canPreviewInline(docType) {
   const type = (docType || "").toUpperCase();
   return (
@@ -209,19 +278,36 @@ export async function downloadSiteDocument(doc) {
   const filename = buildDownloadFilename(doc);
   const docId = doc.id || doc._id;
 
-  if (doc.url.includes("res.cloudinary.com")) {
-    window.open(getDocumentDownloadUrl(doc.url, filename), "_blank", "noopener,noreferrer");
-    return;
+  // Prefer API download endpoint when we have a document id.
+  // This keeps behavior consistent for both local/server files and cloud links.
+  if (docId) {
+    try {
+      const { fetchDocumentDownloadBlob } = await import("../services/api.js");
+      const response = await fetchDocumentDownloadBlob(docId);
+      const apiError = await readBlobApiError(response.data);
+      if (apiError) {
+        throw new Error(apiError);
+      }
+      const docType = (doc?.type || "FILE").toUpperCase();
+      const typedBlob = createTypedBlob(
+        response.data,
+        docType,
+        response.headers?.["content-type"]
+      );
+      const fromHeader = filenameFromContentDisposition(
+        response.headers?.["content-disposition"],
+        filename
+      );
+      triggerBlobDownload(typedBlob, fromHeader);
+      return;
+    } catch (err) {
+      // Fallback for environments where redirected blob downloads fail.
+      console.warn("API download failed, falling back to direct URL:", err?.message || err);
+    }
   }
 
-  if (docId && isLocalStoredDocument(doc.url)) {
-    const { fetchDocumentDownloadBlob } = await import("../services/api.js");
-    const response = await fetchDocumentDownloadBlob(docId);
-    const fromHeader = filenameFromContentDisposition(
-      response.headers?.["content-disposition"],
-      filename
-    );
-    triggerBlobDownload(response.data, fromHeader);
+  if (doc.url.includes("res.cloudinary.com")) {
+    window.open(getDocumentDownloadUrl(doc.url, filename), "_blank", "noopener,noreferrer");
     return;
   }
 

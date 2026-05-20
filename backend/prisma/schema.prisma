@@ -46,7 +46,8 @@ model User {
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
 
-  managedSites Site[]
+  managedSites Site[] @relation("SitePrimaryManager")
+  siteManagerAssignments SiteManager[]
   
   createdForms  Form[]
   submittedResponses FormResponse[]
@@ -93,9 +94,21 @@ model Site {
   client    Client?  @relation(fields: [clientId], references: [id])
 
   managerId String?
-  manager   User?   @relation(fields: [managerId], references: [id])
-  
+  manager   User?   @relation("SitePrimaryManager", fields: [managerId], references: [id])
+
+  siteManagers SiteManager[]
+
   documents SiteDocument[]
+}
+
+model SiteManager {
+  siteId String
+  userId String
+  site   Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([siteId, userId])
+  @@index([userId])
 }
 
 model Form {
@@ -125,6 +138,12 @@ model FormResponse {
 
   submittedById String?
   submittedBy   User?   @relation(fields: [submittedById], references: [id])
+
+  @@index([createdAt])
+  @@index([category])
+  @@index([submittedById])
+  @@index([formId])
+  @@index([submittedById, createdAt])
 }
 
 enum Role {

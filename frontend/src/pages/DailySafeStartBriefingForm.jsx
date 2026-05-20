@@ -213,16 +213,16 @@ export default function DailySafeStartBriefingForm() {
                     setDownloading(false);
                     window.close();
                 });
-            }, 800);
+            }, 300);
         }
     }, [loading, action, persistedResponseId, seedSubmissionId]);
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);
         try {
-            const res = await api.get('/forms/responses');
+            const res = await api.get(`/forms/responses/${submissionId}`);
             if (res.data?.success) {
-                const submission = res.data.data.find(r => r.id === submissionId || r._id === submissionId);
+                const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);

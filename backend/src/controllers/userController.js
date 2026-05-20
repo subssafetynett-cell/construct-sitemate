@@ -28,7 +28,7 @@ function toIsoOrNull(v) {
 // Roles a given role is allowed to assign
 const ASSIGNABLE_ROLES = {
   superadmin:    ["worker", "supervisor", "site_manager", "company_admin", "superadmin"],
-  company_admin: ["worker", "supervisor", "site_manager"],
+  company_admin: ["worker", "supervisor", "site_manager", "company_admin"],
   site_manager:  ["worker", "supervisor"],
   supervisor:    [],
   worker:        [],

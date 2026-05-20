@@ -129,18 +129,30 @@ export const fetchDocumentCounts = async (siteId) => {
   return response.data;
 };
 
+/** Large saved forms (SHEQ with images) can exceed the default JSON timeout. */
+export const FORM_RESPONSE_LOAD_TIMEOUT_MS = 2 * 60 * 1000;
+
+export const fetchFormResponseById = async (id, { timeout = FORM_RESPONSE_LOAD_TIMEOUT_MS } = {}) => {
+  const response = await api.get(`/forms/responses/${id}`, { timeout });
+  const payload = response?.data;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Invalid response from server");
+  }
+  return payload;
+};
+
 export const deleteDocument = async (id) => {
   const response = await api.delete(`/documents/${id}`);
   return response.data;
 };
 
-/** Fetch document bytes for inline preview (local /uploads/ files and API redirects). */
+/** Fetch document bytes for inline preview (proxied through API for reliable PDF viewing). */
 export const fetchDocumentPreviewBlob = async (id) => {
   const response = await api.get(`/documents/${id}/view`, {
     responseType: "blob",
     timeout: UPLOAD_TIMEOUT_MS,
   });
-  return response.data;
+  return response;
 };
 
 /** Fetch document bytes for download with correct filename from Content-Disposition. */

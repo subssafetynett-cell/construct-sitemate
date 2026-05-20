@@ -3,6 +3,12 @@ const GENERAL_FORM_VISIBILITY = {
   PRIVATE: "private",
 };
 
+const SHEQ_CATEGORIES = new Set(["SHEQ Installation", "SHEQ Inspection"]);
+
+function isSheqCategory(category) {
+  return SHEQ_CATEGORIES.has(category);
+}
+
 function normalizeVisibility(value) {
   return value === GENERAL_FORM_VISIBILITY.PRIVATE
     ? GENERAL_FORM_VISIBILITY.PRIVATE
@@ -23,19 +29,34 @@ function siteContextPresent(answers) {
 
 /**
  * Read access: own submissions always; others' only if public and same company.
+ * SHEQ reports are shared across the submitter's company even when linked to a site.
  */
-function canViewFormResponse(row, userId, clientId) {
+function canViewFormResponse(row, userId, clientId, options = {}) {
+  const { globalAccess = false } = options;
   if (!row) return false;
   if (row.submittedById === userId) return true;
-  if (siteContextPresent(row.answers)) {
-    return row.submittedById === userId;
-  }
+
   if (getVisibilityFromAnswers(row.answers) === GENERAL_FORM_VISIBILITY.PRIVATE) {
     return false;
   }
+
+  if (globalAccess) {
+    return true;
+  }
+
   const submitterClientId = row.submittedBy?.clientId;
+  const sameCompany =
+    Boolean(clientId && submitterClientId) && clientId === submitterClientId;
+
+  if (isSheqCategory(row.category)) {
+    return sameCompany;
+  }
+
+  if (siteContextPresent(row.answers)) {
+    return row.submittedById === userId;
+  }
   if (!clientId || !submitterClientId) return false;
-  return submitterClientId === clientId;
+  return sameCompany;
 }
 
 function sanitizeVisibilityOnSave(answers, body = {}) {
@@ -56,4 +77,5 @@ module.exports = {
   canViewFormResponse,
   sanitizeVisibilityOnSave,
   siteContextPresent,
+  isSheqCategory,
 };

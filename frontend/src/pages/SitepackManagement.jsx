@@ -82,6 +82,9 @@ import {
     canUseGoogleDocsViewer,
     OFFICE_PREVIEW_TYPES,
     downloadSiteDocument,
+    shouldFetchPreviewViaApi,
+    createTypedBlob,
+    readBlobApiError,
 } from "../utils/documentFiles";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
@@ -745,9 +748,18 @@ export default function SitepackManagement() {
         try {
             let previewUrl = getDocumentViewUrl(docToView.url, docType);
 
-            if (docId && (isLocalStoredDocument(docToView.url) || !previewUrl)) {
-                const blob = await fetchDocumentPreviewBlob(docId);
-                const blobUrl = URL.createObjectURL(blob);
+            if (shouldFetchPreviewViaApi(docToView)) {
+                const response = await fetchDocumentPreviewBlob(docId);
+                const apiError = await readBlobApiError(response.data);
+                if (apiError) {
+                    throw new Error(apiError);
+                }
+                const typedBlob = createTypedBlob(
+                    response.data,
+                    docType,
+                    response.headers?.["content-type"]
+                );
+                const blobUrl = URL.createObjectURL(typedBlob);
                 viewBlobUrlRef.current = blobUrl;
                 previewUrl = blobUrl;
             }
@@ -1271,9 +1283,9 @@ export default function SitepackManagement() {
                             {sites.length === 0 ? (
                                 <Grid item xs={12}>
                                     <Typography color="text.secondary" align="center">
-                                        {role === "site_manager"
-                                            ? "No sites assigned to you yet. Ask your company admin to create a site and select you as site manager."
-                                            : "No sites found."}
+                                        {search.trim() || role === "company_admin" || role === "superadmin"
+                                            ? "No sites found."
+                                            : "No sites assigned to you yet. Ask your company admin to create a site and select you as a site manager."}
                                     </Typography>
                                 </Grid>
                             ) : (
@@ -1498,7 +1510,7 @@ export default function SitepackManagement() {
                                     error={!!formErrors.validUntil}
                                     helperText={
                                         formErrors.validUntil ||
-                                        "The file is removed automatically after this date (including from Cloudinary)."
+                                        "The file is removed automatically after this date."
                                     }
                                     sx={{
                                         "& .MuiOutlinedInput-root": {
