@@ -54,15 +54,34 @@ function toClientSignature(row) {
   };
 }
 
+function respondToSavedSignatureDbError(res, err, action) {
+  if (err?.code === "P2002") {
+    return res.status(409).json({
+      success: false,
+      message: "Duplicate signature id. Refresh the page and try again.",
+    });
+  }
+  console.error(`Saved signature ${action} error:`, err);
+  const message =
+    action === "load"
+      ? "Could not load saved signatures. Please try again."
+      : "Could not save signatures. Please try again.";
+  return res.status(500).json({ success: false, message });
+}
+
 exports.listSavedSignatures = asyncHandler(async (req, res) => {
-  const rows = await prisma.savedSignature.findMany({
-    where: { userId: req.user.id },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
-  res.json({
-    success: true,
-    signatures: rows.map(toClientSignature),
-  });
+  try {
+    const rows = await prisma.savedSignature.findMany({
+      where: { userId: req.user.id },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    res.json({
+      success: true,
+      signatures: rows.map(toClientSignature),
+    });
+  } catch (err) {
+    return respondToSavedSignatureDbError(res, err, "load");
+  }
 });
 
 exports.syncSavedSignatures = asyncHandler(async (req, res) => {
@@ -97,23 +116,28 @@ exports.syncSavedSignatures = asyncHandler(async (req, res) => {
   }
 
   const userId = req.user.id;
-  await prisma.$transaction([
-    prisma.savedSignature.deleteMany({ where: { userId } }),
-    prisma.savedSignature.createMany({
-      data: normalized.map((entry) => ({
-        id: entry.id,
-        userId,
-        label: entry.label,
-        image: entry.image,
-        sortOrder: entry.sortOrder,
-      })),
-    }),
-  ]);
+  let rows;
+  try {
+    await prisma.$transaction([
+      prisma.savedSignature.deleteMany({ where: { userId } }),
+      prisma.savedSignature.createMany({
+        data: normalized.map((entry) => ({
+          id: entry.id,
+          userId,
+          label: entry.label,
+          image: entry.image,
+          sortOrder: entry.sortOrder,
+        })),
+      }),
+    ]);
 
-  const rows = await prisma.savedSignature.findMany({
-    where: { userId },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+    rows = await prisma.savedSignature.findMany({
+      where: { userId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+  } catch (err) {
+    return respondToSavedSignatureDbError(res, err, "save");
+  }
 
   res.json({
     success: true,
