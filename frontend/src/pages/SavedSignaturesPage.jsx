@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -9,13 +9,17 @@ import {
   Snackbar,
   Alert,
   Stack,
+  CircularProgress,
 } from "@mui/material";
 import { PenLine, Plus, Trash2, Save } from "lucide-react";
 import Layout from "../components/Layout";
 import SignatureCapture from "../components/SignatureCapture";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import { getSavedSignatureStorageKey } from "../utils/savedSignatureLibrary";
+import {
+  loadSavedSignaturesWithMigration,
+  syncSavedSignatures,
+} from "../utils/savedSignatureLibrary";
 
 const makeId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -26,51 +30,91 @@ export default function SavedSignaturesPage() {
   const { isDarkMode } = useTheme();
   const { currentUser } = useAuth();
   const userId = currentUser?.id || currentUser?._id || "me";
-  const lsKey = useMemo(() => getSavedSignatureStorageKey(userId), [userId]);
 
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [snack, setSnack] = useState({ open: false, message: "", severity: "success" });
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(lsKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const { signatures, migrated, offline } =
+          await loadSavedSignaturesWithMigration(userId);
+        if (cancelled) return;
+        if (signatures.length > 0) {
           setItems(
-            parsed.map((row) => ({
+            signatures.map((row) => ({
               id: row.id || makeId(),
               label: typeof row.label === "string" ? row.label : "",
-              image: typeof row.image === "string" && row.image ? row.image : null,
+              image:
+                typeof row.image === "string" && row.image ? row.image : null,
             }))
           );
-          return;
+          if (migrated) {
+            setSnack({
+              open: true,
+              message:
+                "Signatures from this browser were synced to your account.",
+              severity: "success",
+            });
+          } else if (offline) {
+            setSnack({
+              open: true,
+              message:
+                "Could not reach the server. Showing signatures saved on this device only.",
+              severity: "warning",
+            });
+          }
+        } else {
+          setItems([{ id: makeId(), label: "Signature 1", image: null }]);
         }
+      } catch {
+        if (!cancelled) {
+          setItems([{ id: makeId(), label: "Signature 1", image: null }]);
+          setSnack({
+            open: true,
+            message: "Could not load saved signatures. You can still add and save new ones.",
+            severity: "warning",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch {
-      /* ignore corrupt storage */
-    }
-    setItems([{ id: makeId(), label: "Signature 1", image: null }]);
-  }, [lsKey]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
-  const persist = useCallback(() => {
+  const persist = useCallback(async () => {
+    setSaving(true);
     try {
-      const payload = items.map(({ id, label, image }) => ({
-        id,
-        label: (label || "").trim(),
-        image: image || null,
-      }));
-      localStorage.setItem(lsKey, JSON.stringify(payload));
-      setSnack({ open: true, message: "Saved on this device. You can copy these into forms when needed.", severity: "success" });
-    } catch (e) {
-      console.error(e);
+      const saved = await syncSavedSignatures(items);
+      setItems(
+        saved.map((row) => ({
+          id: row.id || makeId(),
+          label: typeof row.label === "string" ? row.label : "",
+          image: typeof row.image === "string" && row.image ? row.image : null,
+        }))
+      );
       setSnack({
         open: true,
-        message: "Could not save (browser storage may be full). Remove a signature or use smaller images.",
-        severity: "error",
+        message: "Saved to your account. Available on any device when you sign in.",
+        severity: "success",
       });
+    } catch (e) {
+      console.error(e);
+      const message =
+        e?.response?.data?.message ||
+        "Could not save signatures. Check your connection and try again.";
+      setSnack({ open: true, message, severity: "error" });
+    } finally {
+      setSaving(false);
     }
-  }, [items, lsKey]);
+  }, [items]);
 
   const addRow = () => {
     setItems((prev) => [
@@ -89,6 +133,16 @@ export default function SavedSignaturesPage() {
 
   const headingColor = isDarkMode ? "#F9FAFB" : "#111827";
   const subColor = isDarkMode ? "#9CA3AF" : "#6B7280";
+
+  if (loading) {
+    return (
+      <Layout pageTitle="Saved signatures">
+        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+          <CircularProgress sx={{ color: "#E89F17" }} />
+        </Box>
+      </Layout>
+    );
+  }
 
   return (
     <Layout pageTitle="Saved signatures">
@@ -110,7 +164,7 @@ export default function SavedSignaturesPage() {
               Saved signatures
             </Typography>
             <Typography sx={{ color: subColor, fontSize: "0.95rem", mt: 0.5 }}>
-              Draw or upload each signature, give it a name, then save. Stored only on this browser for your account.
+              Draw or upload each signature, give it a name, then save. Stored in your account and available when filling in forms.
             </Typography>
           </Box>
         </Stack>
@@ -120,6 +174,7 @@ export default function SavedSignaturesPage() {
             variant="contained"
             startIcon={<Save size={18} />}
             onClick={persist}
+            disabled={loading || saving}
             sx={{
               bgcolor: "#E89F17",
               textTransform: "none",
@@ -127,12 +182,13 @@ export default function SavedSignaturesPage() {
               "&:hover": { bgcolor: "#cc8b14" },
             }}
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </Button>
           <Button
             variant="outlined"
             startIcon={<Plus size={18} />}
             onClick={addRow}
+            disabled={loading}
             sx={{ textTransform: "none", borderColor: isDarkMode ? "#4B5563" : "#E5E7EB", color: headingColor }}
           >
             Add signature
@@ -158,7 +214,7 @@ export default function SavedSignaturesPage() {
                 <IconButton
                   size="small"
                   aria-label="Remove signature"
-                  disabled={items.length <= 1}
+                  disabled={loading || items.length <= 1}
                   onClick={() => removeRow(row.id)}
                   sx={{ color: isDarkMode ? "#F87171" : "#DC2626" }}
                 >
@@ -170,6 +226,7 @@ export default function SavedSignaturesPage() {
                 fullWidth
                 size="small"
                 value={row.label}
+                disabled={loading}
                 onChange={(e) => updateRow(row.id, { label: e.target.value })}
                 sx={{ mb: 2 }}
                 InputProps={{ sx: { borderRadius: 2 } }}
@@ -177,7 +234,7 @@ export default function SavedSignaturesPage() {
               <SignatureCapture
                 value={row.image}
                 onChange={(url) => updateRow(row.id, { image: url })}
-                readOnly={false}
+                readOnly={loading}
                 savedLibraryEnabled={false}
               />
             </Paper>

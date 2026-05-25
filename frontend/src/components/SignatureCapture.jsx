@@ -12,10 +12,14 @@ import {
   ListItemButton,
   ListItemAvatar,
   ListItemText,
+  CircularProgress,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { readSavedSignaturesWithImages } from "../utils/savedSignatureLibrary";
+import {
+  fetchSavedSignaturesWithImages,
+  readSavedSignaturesFromLocalStorage,
+} from "../utils/savedSignatureLibrary";
 
 function getCanvasCoords(canvas, clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -165,18 +169,46 @@ function SignatureDrawingPad({ heightCss, onApply, strokeColor = "#111827" }) {
 
 function SavedSignaturePickerDialog({ open, onClose, onPick, userId }) {
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setItems(readSavedSignaturesWithImages(userId));
-    }
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    (async () => {
+      try {
+        const remote = await fetchSavedSignaturesWithImages();
+        if (!cancelled) setItems(remote);
+      } catch {
+        const local = readSavedSignaturesFromLocalStorage(userId);
+        if (!cancelled) {
+          setItems(local);
+          setLoadError(local.length === 0);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [open, userId]);
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle sx={{ fontWeight: 700 }}>Select saved signature</DialogTitle>
       <DialogContent dividers sx={{ maxHeight: "65vh" }}>
-        {items.length === 0 ? (
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+            <CircularProgress size={32} sx={{ color: "#E89F17" }} />
+          </Box>
+        ) : loadError ? (
+          <Typography color="text.secondary">
+            Could not load saved signatures. Check your connection or open the Saved signatures page to add some.
+          </Typography>
+        ) : items.length === 0 ? (
           <Box>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
               No saved signatures yet. Create them on the Saved signatures page, click Save there, then return here.
@@ -236,7 +268,7 @@ function SavedSignaturePickerDialog({ open, onClose, onPick, userId }) {
  * Shows a drawn signature (mouse / touch / pen) and optional image upload.
  * value: data URL or http(s) URL or empty
  * onChange: (dataUrl: string | null) => void
- * savedLibraryEnabled: show "Select saved signature" from Saved signatures page (localStorage).
+ * savedLibraryEnabled: show "Select saved signature" from the Saved signatures page (server-backed).
  */
 export default function SignatureCapture({
   value,
