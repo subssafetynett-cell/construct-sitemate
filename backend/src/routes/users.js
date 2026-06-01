@@ -3,11 +3,11 @@ const router = express.Router();
 const usersController = require("../controllers/userController");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
-// Check if user exists — superadmin only (Enable user access page)
+// Check if user exists — admin (legacy Enable user access page)
 router.post(
   "/check-user",
   requireAuth,
-  requireRole(["superadmin"]),
+  requireRole(["superadmin", "company_admin"]),
   usersController.checkUser
 );
 
@@ -25,6 +25,36 @@ router.post(
   requireAuth,
   requireRole(["superadmin", "company_admin"]),
   usersController.inviteUser
+);
+
+// Page access catalog for admin UI
+router.get(
+  "/page-access-catalog",
+  requireAuth,
+  requireRole(["superadmin", "company_admin"]),
+  usersController.getPageAccessCatalog
+);
+
+// View access: lookup by email (company from admin context, not the form)
+router.post(
+  "/lookup-by-email",
+  requireAuth,
+  requireRole(["superadmin", "company_admin"]),
+  usersController.lookupByEmail
+);
+
+router.post(
+  "/grant-view-access",
+  requireAuth,
+  requireRole(["superadmin", "company_admin"]),
+  usersController.grantViewAccess
+);
+
+router.post(
+  "/invite-view-access",
+  requireAuth,
+  requireRole(["superadmin", "company_admin"]),
+  usersController.inviteViewAccess
 );
 
 // List all users — superadmin and company_admin only (Users page)

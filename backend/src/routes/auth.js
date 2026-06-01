@@ -7,6 +7,7 @@ const {
   resetPasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  acceptViewInviteSchema,
   changePasswordSchema,
 } = require('../validators/authValidators');
 const validateReq = require('../middleware/validatereq');
@@ -30,6 +31,12 @@ router.post('/forgot-password', validateReq(forgotPasswordSchema), authControlle
 router.post('/reset-password', validateReq(resetPasswordSchema), authController.resetPassword);
 router.post('/verify-email', validateReq(verifyEmailSchema), authController.verifyEmail);
 router.post('/resend-verification', validateReq(resendVerificationSchema), authController.resendVerification);
+router.get('/view-invite/:token', authController.getViewInvite);
+router.post(
+  '/accept-view-invite',
+  validateReq(acceptViewInviteSchema),
+  authController.acceptViewInvite
+);
 
 module.exports = router;
 

@@ -3,6 +3,11 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../prismaClient');
 const { resolveTokenRole, loadSessionUserFromDb } = require('../utils/userAuthorization');
 const { attachActingClient } = require('../utils/actingClientScope');
+const {
+  isViewOnlyUser,
+  isMutatingMethod,
+  isViewOnlyWriteAllowed,
+} = require('../utils/pageAccess');
 
 /** Throttled DB write so listing "online" users does not update on every request. */
 const LAST_SEEN_THROTTLE_MS = 60 * 1000;
@@ -38,6 +43,19 @@ exports.requireAuth = async (req, res, next) => {
     }
     req.user = sessionUser;
     touchUserLastSeen(sessionUser.id);
+
+    if (
+      isViewOnlyUser(sessionUser) &&
+      isMutatingMethod(req.method) &&
+      !isViewOnlyWriteAllowed(req)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has view-only access. Changes are not permitted.',
+        code: 'VIEW_ONLY',
+      });
+    }
+
     await attachActingClient(req);
     next();
   } catch (err) {

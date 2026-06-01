@@ -10,14 +10,17 @@ function isSheqCategory(category) {
 }
 
 function normalizeVisibility(value) {
-  return value === GENERAL_FORM_VISIBILITY.PRIVATE
-    ? GENERAL_FORM_VISIBILITY.PRIVATE
-    : GENERAL_FORM_VISIBILITY.PUBLIC;
+  return value === GENERAL_FORM_VISIBILITY.PUBLIC
+    ? GENERAL_FORM_VISIBILITY.PUBLIC
+    : GENERAL_FORM_VISIBILITY.PRIVATE;
 }
 
 function getVisibilityFromAnswers(answers) {
   if (!answers || typeof answers !== "object") {
-    return GENERAL_FORM_VISIBILITY.PUBLIC;
+    return GENERAL_FORM_VISIBILITY.PRIVATE;
+  }
+  if (!hasExplicitGeneralFormVisibility(answers)) {
+    return GENERAL_FORM_VISIBILITY.PRIVATE;
   }
   return normalizeVisibility(answers.visibility);
 }
@@ -47,10 +50,9 @@ function isExplicitlyPublicGeneralForm(row) {
 
 /**
  * Read access: own submissions always.
- * globalAccess: Safetynett / platform superadmin — all non-private in scope.
- * companyWideRead: company_admin / acting superadmin — all non-private in same company,
- *   except site-pack fills (siteId in answers) which remain submitter-only.
- * Field roles: own + SHEQ same company + explicitly public general forms (same company).
+ * globalAccess: platform superadmin — non-private submissions when not acting as a client.
+ * companyWideRead: superadmin "View as company" — non-private same-company submissions;
+ *   site-pack fills (siteId in answers) remain submitter-only.
  */
 function canViewFormResponse(row, userId, clientId, options = {}) {
   const { globalAccess = false, companyWideRead = false } = options;
@@ -69,20 +71,12 @@ function canViewFormResponse(row, userId, clientId, options = {}) {
   const sameCompany =
     Boolean(clientId && submitterClientId) && clientId === submitterClientId;
 
-  if (isSheqCategory(row.category)) {
-    return sameCompany;
-  }
-
-  // Site-pack fills are personal even for company_admin / companyWideRead.
+  // Site-pack fills are personal even for company-wide read.
   if (siteContextPresent(row.answers)) {
     return false;
   }
 
   if (companyWideRead) {
-    return sameCompany;
-  }
-
-  if (isExplicitlyPublicGeneralForm(row)) {
     return sameCompany;
   }
 

@@ -32,6 +32,8 @@ model User {
   mobile      String
   password    String
   role        Role     @default(worker)
+  accessMode  AccessMode @default(standard)
+  allowedPages Json?
   active      Boolean  @default(true)
   emailVerified Boolean @default(false)
   createdAt   DateTime @default(now())
@@ -73,16 +75,20 @@ model SavedSignature {
 }
 
 model EmailVerificationToken {
-  id        String    @id @default(uuid())
-  tokenHash String    @unique
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  id           String    @id @default(uuid())
+  tokenHash    String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  usedAt       DateTime?
+  otpHash      String?
+  otpExpiresAt DateTime?
+  kind         String    @default("standard")
+  createdAt    DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([kind])
 }
 
 model PasswordResetToken {
@@ -168,6 +174,11 @@ enum Role {
   site_manager
   supervisor
   worker
+}
+
+enum AccessMode {
+  standard
+  view_only
 }
 
 model SiteDocument {

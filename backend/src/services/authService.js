@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { validatePlainName } = require("../utils/plainTextName");
 const { resolveTokenRole } = require("../utils/userAuthorization");
+const { formatUserAccessFields } = require("../utils/pageAccess");
 
 /** Generic login failure — do not reveal whether the email/username exists. */
 const INVALID_CREDENTIALS_MESSAGE = "Invalid credentials.";
@@ -130,7 +131,10 @@ exports.signup = async (payload) => {
   );
   console.log("Signup Complete: Token generated");
 
-  return { user: { ...user, role: effectiveRole }, token };
+  return {
+    user: { ...user, role: effectiveRole, ...formatUserAccessFields(user) },
+    token,
+  };
 };
 
 
@@ -223,7 +227,11 @@ exports.login = async ({ email, password }) => {
     { expiresIn: '7d' }
   );
 
-  const u = { ...refreshed, role: effectiveRole };
+  const u = {
+    ...refreshed,
+    role: effectiveRole,
+    ...formatUserAccessFields(refreshed),
+  };
   delete u.password;
   delete u.twoFactorSecret;
   return { user: u, token };

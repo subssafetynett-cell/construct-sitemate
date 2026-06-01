@@ -8,7 +8,7 @@ import {
 import { FileText, Search, Edit3, Trash2, Eye } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
-import { formatSubmitterDisplay } from "../utils/submitterDisplay";
+import { formatSubmitterDisplay, showSubmissionCreatorColumn } from "../utils/submitterDisplay";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -88,6 +88,7 @@ export default function GeneralFormsList() {
     const { role, currentUser } = useAuth();
     const navigate = useNavigate();
     const canManageTemplates = canEditGeneralFormTemplatesList(role);
+    const showCreatorColumn = showSubmissionCreatorColumn(role);
 
     const userCanOpenSubmissionEditor = (sub) =>
         canManageTemplates || submissionHasSiteContext(sub);
@@ -284,7 +285,9 @@ export default function GeneralFormsList() {
                                     <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827" }}>Form Title</TableCell>
                                     <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827" }}>Visibility</TableCell>
                                     <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827" }}>Submitted Date</TableCell>
+                                    {showCreatorColumn && (
                                     <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827" }}>Created by</TableCell>
+                                    )}
                                     <TableCell align="right" sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827" }}>Actions</TableCell>
                                 </TableRow>
                             </TableHead>
@@ -364,9 +367,11 @@ export default function GeneralFormsList() {
                                                 minute: "2-digit",
                                             })}
                                         </TableCell>
+                                        {showCreatorColumn && (
                                         <TableCell sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.8rem" }}>
                                             {formatSubmitterDisplay(sub.submittedBy)}
                                         </TableCell>
+                                        )}
                                         <TableCell align="right">
                                             <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
                                                 {userCanOpenSubmissionEditor(sub) &&

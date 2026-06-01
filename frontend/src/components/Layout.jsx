@@ -3,6 +3,7 @@ import { Box, Drawer } from "@mui/material";
 import Sidebar from "./Sidebar";
 import TopNav from "./TopNav";
 import ActingCompanyBanner from "./ActingCompanyBanner";
+import ViewOnlyBanner from "./ViewOnlyBanner";
 import { useTheme } from "../context/ThemeContext";
 import { useLocation } from "react-router-dom";
 
@@ -94,6 +95,7 @@ const Layout = ({ children, pageTitle, disablePadding = false }) => {
                     }}
                 >
                     {!disablePadding && <ActingCompanyBanner />}
+                    {!disablePadding && <ViewOnlyBanner />}
                     {children}
                 </Box>
             </Box>

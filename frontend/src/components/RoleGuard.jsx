@@ -3,6 +3,7 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getStoredRole, resolveEffectiveRole } from "../utils/resolveEffectiveRole";
+import { canAccessPath, isViewOnlyUser } from "../utils/pageAccess";
 
 /**
  * Wraps a route and allows only users whose role is in `allowedRoles`.
@@ -24,11 +25,18 @@ export default function RoleGuard({ allowedRoles = [], children, matchStoredRole
     String(r).toLowerCase()
   );
 
-  const permitted = allowed.length === 0 || allowed.includes(roleForCheck);
+  const rolePermitted = allowed.length === 0 || allowed.includes(roleForCheck);
 
-  if (permitted) {
-    return children;
+  if (!rolePermitted) {
+    return <Navigate to="/unauthorized" state={{ from: location }} replace />;
   }
 
-  return <Navigate to="/unauthorized" state={{ from: location }} replace />;
+  if (isViewOnlyUser(currentUser)) {
+    if (canAccessPath(currentUser, location.pathname)) {
+      return children;
+    }
+    return <Navigate to="/unauthorized" state={{ from: location }} replace />;
+  }
+
+  return children;
 }

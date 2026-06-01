@@ -5,7 +5,7 @@
 const { PrismaClient } = require("@prisma/client");
 
 function printFallback() {
-  console.log("client=0 lastLogin=0 siteClientId=0 passwordReset=0 emailVerified=0");
+  console.log("client=0 lastLogin=0 siteClientId=0 passwordReset=0 emailVerified=0 viewInviteOtp=0");
 }
 
 async function columnExists(prisma, tableName, columnName) {
@@ -38,9 +38,10 @@ async function main() {
     const siteClientId = await columnExists(prisma, "Site", "clientId");
     const passwordReset = await tableExists(prisma, "PasswordResetToken");
     const emailVerified = await columnExists(prisma, "User", "emailVerified");
+    const viewInviteOtp = await columnExists(prisma, "EmailVerificationToken", "kind");
 
     console.log(
-      `client=${client ? "1" : "0"} lastLogin=${lastLogin ? "1" : "0"} siteClientId=${siteClientId ? "1" : "0"} passwordReset=${passwordReset ? "1" : "0"} emailVerified=${emailVerified ? "1" : "0"}`
+      `client=${client ? "1" : "0"} lastLogin=${lastLogin ? "1" : "0"} siteClientId=${siteClientId ? "1" : "0"} passwordReset=${passwordReset ? "1" : "0"} emailVerified=${emailVerified ? "1" : "0"} viewInviteOtp=${viewInviteOtp ? "1" : "0"}`
     );
   } catch (err) {
     console.error("prisma-baseline:", err?.message || err);

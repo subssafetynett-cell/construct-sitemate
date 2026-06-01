@@ -30,7 +30,7 @@ case "$STATE" in
   client=0*|client=1*) ;;
   *)
     echo "Warning: prisma-baseline returned unexpected output; using safe default."
-    STATE="client=0 lastLogin=0 siteClientId=0 passwordReset=0 emailVerified=0"
+    STATE="client=0 lastLogin=0 siteClientId=0 passwordReset=0 emailVerified=0 viewInviteOtp=0"
     ;;
 esac
 echo "Database state: $STATE"
@@ -66,6 +66,11 @@ baseline_from_state() {
     echo "Existing User.emailVerified column detected. Baselining email_verification migration..."
     baseline_migration "20260519120000_email_verification"
   fi
+
+  if echo "$STATE" | grep -q 'viewInviteOtp=1'; then
+    echo "Existing EmailVerificationToken view-invite columns detected. Baselining view_access_invite_otp migration..."
+    baseline_migration "20260601120000_view_access_invite_otp"
+  fi
 }
 
 baseline_from_state
@@ -97,3 +102,6 @@ if [ "$MIGRATION_EXIT_CODE" -ne 0 ]; then
     exit "$MIGRATION_EXIT_CODE"
   fi
 fi
+
+echo "Regenerating Prisma client..."
+npx prisma generate

@@ -1,4 +1,5 @@
 const asyncHandler = require("express-async-handler");
+const crypto = require("crypto");
 const prisma = require("../prismaClient");
 const bcrypt = require("bcryptjs");
 const { validatePlainName } = require("../utils/plainTextName");
@@ -16,6 +17,15 @@ const {
   isPlatformSuperadminEmail,
   assertRoleAllowedForCompany,
 } = require("../utils/company");
+const { APP_PAGES, VIEW_ONLY_FORBIDDEN_PAGE_KEYS } = require("../constants/pageAccess");
+const {
+  normalizeAllowedPages,
+  mergeWithAlwaysOn,
+  formatUserAccessFields,
+} = require("../utils/pageAccess");
+const {
+  sendViewAccessInviteEmailWithTimeout,
+} = require("../services/viewAccessInviteService");
 
 // Role hierarchy — higher index = higher privilege
 const ROLE_HIERARCHY = ["worker", "supervisor", "site_manager", "company_admin", "superadmin"];
@@ -92,6 +102,8 @@ exports.listAllUsers = asyncHandler(async (req, res) => {
         companyname: true,
         mobile: true,
         role: true,
+        accessMode: true,
+        allowedPages: true,
         active: true,
         clientId: true,
         createdAt: true,
@@ -110,6 +122,7 @@ exports.listAllUsers = asyncHandler(async (req, res) => {
       companyname: u.companyname || "",
       clientId: u.clientId,
       role: u.role || "worker",
+      ...formatUserAccessFields(u),
       active: typeof u.active === "boolean" ? u.active : true,
       createdAt: toIsoOrNull(u.createdAt),
       lastLoginAt: toIsoOrNull(u.lastLoginAt),
@@ -125,7 +138,18 @@ exports.listAllUsers = asyncHandler(async (req, res) => {
 
 exports.updateUser = asyncHandler(async (req, res) => {
   const { id: targetId } = req.params;
-  const { firstName, lastName, email, password, role, jobTitle, companyname, mobile } = req.body;
+  const {
+    firstName,
+    lastName,
+    email,
+    password,
+    role,
+    jobTitle,
+    companyname,
+    mobile,
+    accessMode,
+    allowedPages,
+  } = req.body;
 
   if (password !== undefined && password !== null && String(password).trim() !== "") {
     return res.status(400).json({
@@ -146,6 +170,8 @@ exports.updateUser = asyncHandler(async (req, res) => {
       id: true,
       clientId: true,
       role: true,
+      accessMode: true,
+      allowedPages: true,
       companyname: true,
       email: true,
       client: { select: { name: true } },
@@ -228,6 +254,48 @@ exports.updateUser = asyncHandler(async (req, res) => {
     });
   }
 
+  if (accessMode !== undefined) {
+    const mode = String(accessMode).toLowerCase();
+    if (!["standard", "view_only"].includes(mode)) {
+      return res.status(400).json({
+        success: false,
+        message: "accessMode must be 'standard' or 'view_only'",
+      });
+    }
+    if (mode === "view_only" && target.role === "superadmin" && !isPlatformSuperadminEmail(target.email)) {
+      return res.status(400).json({
+        success: false,
+        message: "View-only page access cannot be applied to superadmin accounts.",
+      });
+    }
+    data.accessMode = mode;
+    if (mode === "standard") {
+      data.allowedPages = null;
+    }
+  }
+
+  if (allowedPages !== undefined) {
+    const effectiveMode = data.accessMode ?? target.accessMode ?? "standard";
+    const pages = normalizeAllowedPages(allowedPages, {
+      forViewOnly: effectiveMode === "view_only",
+    });
+    if (effectiveMode === "view_only" && pages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Select at least one page for view-only access.",
+      });
+    }
+    data.allowedPages =
+      effectiveMode === "view_only"
+        ? mergeWithAlwaysOn(pages, { forViewOnly: true })
+        : null;
+  } else if (data.accessMode === "view_only") {
+    const existing = normalizeAllowedPages(target.allowedPages, { forViewOnly: true });
+    if (existing.length === 0) {
+      data.allowedPages = mergeWithAlwaysOn(["dashboard"], { forViewOnly: true });
+    }
+  }
+
   const updated = await prisma.user.update({
     where: { id: targetId },
     data,
@@ -237,6 +305,8 @@ exports.updateUser = asyncHandler(async (req, res) => {
       lastName: true,
       email: true,
       role: true,
+      accessMode: true,
+      allowedPages: true,
       jobTitle: true,
       companyname: true,
       mobile: true,
@@ -250,8 +320,436 @@ exports.updateUser = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "User updated successfully",
-    user: { ...updated, _id: updated.id },
+    user: { ...updated, _id: updated.id, ...formatUserAccessFields(updated) },
     roleChanged: Boolean(role && String(role).toLowerCase() !== target.role),
+  });
+});
+
+/** Company scope inferred from admin role / existing user — never from the form. */
+async function resolveClientScopeForEmail(prisma, req, actor, email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (actor.effectiveRole === "company_admin") {
+    if (!actor.clientId) {
+      return {
+        ok: false,
+        status: 400,
+        message: "Your account is not linked to a company",
+      };
+    }
+    return { ok: true, clientId: actor.clientId };
+  }
+
+  if (actor.effectiveRole === "superadmin") {
+    if (normalizedEmail) {
+      const existing = await prisma.user.findFirst({
+        where: { email: normalizedEmail },
+        select: { clientId: true },
+      });
+      if (existing?.clientId) {
+        return { ok: true, clientId: existing.clientId };
+      }
+    }
+    const clientId = req.actingClient?.id || actor.clientId || null;
+    if (!clientId) {
+      return {
+        ok: false,
+        status: 400,
+        message: "Unable to determine company for a new user. Use “View as company” on the Clients page, or add the user under an existing company email domain.",
+      };
+    }
+    return { ok: true, clientId };
+  }
+
+  return { ok: false, status: 403, message: "Insufficient permissions" };
+}
+
+function namesFromEmail(email) {
+  const local = String(email || "").split("@")[0] || "user";
+  const parts = local.replace(/[._+-]/g, " ").trim().split(/\s+/).filter(Boolean);
+  const firstName = parts[0] ? parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase() : "User";
+  const lastName =
+    parts.length > 1
+      ? parts
+          .slice(1)
+          .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+          .join(" ")
+      : "User";
+  return { firstName, lastName };
+}
+
+exports.lookupByEmail = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email || !/^\S+@\S+\.\S+$/.test(String(email).trim())) {
+    return res.status(400).json({ success: false, message: "Enter a valid email address" });
+  }
+
+  const gate = await loadAdminActor(prisma, req);
+  if (!gate.ok) {
+    return res.status(gate.status).json({ success: false, message: gate.message });
+  }
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const scope = await resolveClientScopeForEmail(prisma, req, gate.actor, normalizedEmail);
+  if (!scope.ok) {
+    return res.status(scope.status).json({ success: false, message: scope.message });
+  }
+
+  const userWhere =
+    gate.actor.effectiveRole === "superadmin"
+      ? { email: normalizedEmail }
+      : { email: normalizedEmail, clientId: scope.clientId };
+
+  const user = await prisma.user.findFirst({
+    where: userWhere,
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      accessMode: true,
+      allowedPages: true,
+      active: true,
+    },
+  });
+
+  if (user) {
+    return res.json({
+      success: true,
+      exists: true,
+      user: {
+        id: user.id,
+        _id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        active: user.active,
+        ...formatUserAccessFields(user),
+      },
+    });
+  }
+
+  const elsewhere = await prisma.user.findFirst({
+    where: { email: normalizedEmail },
+    select: { id: true },
+  });
+  if (elsewhere) {
+    return res.json({
+      success: true,
+      exists: false,
+      message: "This email is registered under a different company.",
+    });
+  }
+
+  res.json({ success: true, exists: false, message: "No account yet — set a password and choose pages to create access." });
+});
+
+exports.grantViewAccess = asyncHandler(async (req, res) => {
+  const { email, password, allowedPages, accessMode } = req.body;
+
+  if (!email || !/^\S+@\S+\.\S+$/.test(String(email).trim())) {
+    return res.status(400).json({ success: false, message: "Enter a valid email address" });
+  }
+
+  const pwdCheck = validateNewPassword(password);
+  if (!pwdCheck.ok) {
+    return res.status(400).json({ success: false, message: pwdCheck.message });
+  }
+
+  const mode = String(accessMode || "view_only").toLowerCase();
+  if (!["standard", "view_only"].includes(mode)) {
+    return res.status(400).json({ success: false, message: "Invalid access mode" });
+  }
+
+  const pages = normalizeAllowedPages(allowedPages, { forViewOnly: mode === "view_only" });
+  if (mode === "view_only" && pages.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Select at least one page for view-only access",
+    });
+  }
+
+  const gate = await loadAdminActor(prisma, req);
+  if (!gate.ok) {
+    return res.status(gate.status).json({ success: false, message: gate.message });
+  }
+  const { actor } = gate;
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const scope = await resolveClientScopeForEmail(prisma, req, actor, normalizedEmail);
+  if (!scope.ok) {
+    return res.status(scope.status).json({ success: false, message: scope.message });
+  }
+
+  const client = await prisma.client.findUnique({
+    where: { id: scope.clientId },
+    select: { id: true, name: true },
+  });
+  if (!client) {
+    return res.status(400).json({ success: false, message: "Company not found" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const mergedPages =
+    mode === "view_only" ? mergeWithAlwaysOn(pages, { forViewOnly: true }) : null;
+
+  const targetWhere =
+    actor.effectiveRole === "superadmin"
+      ? { email: normalizedEmail }
+      : { email: normalizedEmail, clientId: scope.clientId };
+
+  let target = await prisma.user.findFirst({
+    where: targetWhere,
+  });
+
+  if (!target) {
+    const elsewhere = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true, clientId: true },
+    });
+    if (elsewhere) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already used by another company",
+      });
+    }
+
+    const { firstName, lastName } = namesFromEmail(normalizedEmail);
+    const username =
+      normalizedEmail.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "") +
+      "_" +
+      Date.now();
+
+    target = await prisma.user.create({
+      data: {
+        username,
+        firstName,
+        lastName,
+        email: normalizedEmail,
+        mobile: "",
+        password: hashedPassword,
+        companyname: client.name,
+        role: "worker",
+        active: true,
+        emailVerified: true,
+        clientId: client.id,
+        accessMode: mode,
+        allowedPages: mergedPages,
+      },
+    });
+
+    invalidateSessionUserCache(target.id);
+
+    return res.status(201).json({
+      success: true,
+      message: "User created with view access. They can sign in with this email and password.",
+      created: true,
+      user: {
+        id: target.id,
+        _id: target.id,
+        email: target.email,
+        firstName: target.firstName,
+        lastName: target.lastName,
+        role: target.role,
+        ...formatUserAccessFields(target),
+      },
+    });
+  }
+
+  if (!canManageTargetUser(actor, target, actor.effectiveRole)) {
+    return res.status(403).json({ success: false, message: "Insufficient permissions" });
+  }
+  if (target.role === "superadmin") {
+    return res.status(400).json({
+      success: false,
+      message: "Cannot change access for superadmin accounts here",
+    });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: target.id },
+    data: {
+      password: hashedPassword,
+      accessMode: mode,
+      allowedPages: mergedPages,
+      emailVerified: true,
+      active: true,
+    },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      accessMode: true,
+      allowedPages: true,
+    },
+  });
+
+  invalidateSessionUserCache(target.id);
+
+  res.json({
+    success: true,
+    message: "View access updated. The user can sign in with this email and password.",
+    created: false,
+    user: {
+      ...updated,
+      _id: updated.id,
+      ...formatUserAccessFields(updated),
+    },
+  });
+});
+
+exports.inviteViewAccess = asyncHandler(async (req, res) => {
+  const { email, allowedPages } = req.body;
+
+  if (!email || !/^\S+@\S+\.\S+$/.test(String(email).trim())) {
+    return res.status(400).json({ success: false, message: "Enter a valid email address" });
+  }
+
+  const pages = normalizeAllowedPages(allowedPages, { forViewOnly: true });
+  if (pages.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Select at least one page for view-only access",
+    });
+  }
+
+  const gate = await loadAdminActor(prisma, req);
+  if (!gate.ok) {
+    return res.status(gate.status).json({ success: false, message: gate.message });
+  }
+  const { actor } = gate;
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const scope = await resolveClientScopeForEmail(prisma, req, actor, normalizedEmail);
+  if (!scope.ok) {
+    return res.status(scope.status).json({ success: false, message: scope.message });
+  }
+
+  const client = await prisma.client.findUnique({
+    where: { id: scope.clientId },
+    select: { id: true, name: true },
+  });
+  if (!client) {
+    return res.status(400).json({ success: false, message: "Company not found" });
+  }
+
+  const mergedPages = mergeWithAlwaysOn(pages, { forViewOnly: true });
+  const pageLabels = pages
+    .map((key) => APP_PAGES.find((p) => p.key === key)?.label)
+    .filter(Boolean);
+
+  const targetWhere =
+    actor.effectiveRole === "superadmin"
+      ? { email: normalizedEmail }
+      : { email: normalizedEmail, clientId: scope.clientId };
+
+  let target = await prisma.user.findFirst({ where: targetWhere });
+  let created = false;
+
+  if (!target) {
+    const elsewhere = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+    if (elsewhere) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already used by another company",
+      });
+    }
+
+    const { firstName, lastName } = namesFromEmail(normalizedEmail);
+    const username =
+      normalizedEmail.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "") +
+      "_" +
+      Date.now();
+    const placeholderPassword = await bcrypt.hash(
+      crypto.randomBytes(32).toString("hex"),
+      10
+    );
+
+    target = await prisma.user.create({
+      data: {
+        username,
+        firstName,
+        lastName,
+        email: normalizedEmail,
+        mobile: "",
+        password: placeholderPassword,
+        companyname: client.name,
+        role: "worker",
+        active: true,
+        emailVerified: false,
+        clientId: client.id,
+        accessMode: "view_only",
+        allowedPages: mergedPages,
+      },
+    });
+    created = true;
+  } else {
+    if (!canManageTargetUser(actor, target, actor.effectiveRole)) {
+      return res.status(403).json({ success: false, message: "Insufficient permissions" });
+    }
+    if (target.role === "superadmin") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot invite superadmin accounts for view-only access",
+      });
+    }
+
+    target = await prisma.user.update({
+      where: { id: target.id },
+      data: {
+        accessMode: "view_only",
+        allowedPages: mergedPages,
+        emailVerified: false,
+        active: true,
+        companyname: client.name,
+      },
+    });
+  }
+
+  invalidateSessionUserCache(target.id);
+
+  const emailResult = await sendViewAccessInviteEmailWithTimeout(target, {
+    companyName: client.name,
+    pageLabels,
+  });
+
+  const emailSent = Boolean(emailResult?.success);
+
+  res.status(created ? 201 : 200).json({
+    success: true,
+    emailSent,
+    emailError: emailSent ? null : emailResult?.error || "Email delivery failed",
+    message: emailSent
+      ? "Invitation sent. They must open the link, enter the verification code, and set a password."
+      : "User saved, but the invitation email could not be sent. Try again.",
+    created,
+    user: {
+      id: target.id,
+      _id: target.id,
+      email: target.email,
+      firstName: target.firstName,
+      lastName: target.lastName,
+      ...formatUserAccessFields(target),
+    },
+  });
+});
+
+exports.getPageAccessCatalog = asyncHandler(async (req, res) => {
+  const gate = await loadAdminActor(prisma, req);
+  if (!gate.ok) {
+    return res.status(gate.status).json({ success: false, message: gate.message });
+  }
+  res.json({
+    success: true,
+    pages: APP_PAGES.filter(
+      (p) => !p.alwaysOn && !VIEW_ONLY_FORBIDDEN_PAGE_KEYS.has(p.key)
+    ).map(({ key, label }) => ({ key, label })),
   });
 });
 exports.updateStatus = asyncHandler(async (req, res) => {
@@ -320,6 +818,7 @@ exports.getUserById = asyncHandler(async (req, res) => {
     mobile: user.mobile ?? null,
     companyname: user.companyname ?? user.company ?? "",
     role: user.role ?? "worker",
+    ...formatUserAccessFields(user),
     active: typeof user.active === "boolean" ? user.active : true,
     avatar: user.avatar ?? null,
     createdAt: toIsoOrNull(user.createdAt),
@@ -370,15 +869,48 @@ exports.checkUser = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: "Email and Company ID required" });
   }
 
+  const gate = await loadAdminActor(prisma, req);
+  if (!gate.ok) {
+    return res.status(gate.status).json({ success: false, message: gate.message });
+  }
+  const { actor } = gate;
+
+  if (actor.effectiveRole === "company_admin" && actor.clientId !== companyId) {
+    return res.status(403).json({ success: false, message: "You can only manage users in your company" });
+  }
+
   const user = await prisma.user.findFirst({
     where: {
       email: { equals: email, mode: 'insensitive' },
       clientId: companyId
-    }
+    },
+    select: {
+      id: true,
+      username: true,
+      role: true,
+      accessMode: true,
+      allowedPages: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+    },
   });
 
   if (user) {
-    res.json({ success: true, exists: true, user: { id: user.id, username: user.username, role: user.role } });
+    res.json({
+      success: true,
+      exists: true,
+      user: {
+        id: user.id,
+        _id: user.id,
+        username: user.username,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        ...formatUserAccessFields(user),
+      },
+    });
   } else {
     // Check if user exists but in different company (optional hint)
     const other = await prisma.user.findUnique({ where: { email } });

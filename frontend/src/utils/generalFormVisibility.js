@@ -4,9 +4,9 @@ export const GENERAL_FORM_VISIBILITY = {
 };
 
 export function normalizeGeneralFormVisibility(value) {
-  return value === GENERAL_FORM_VISIBILITY.PRIVATE
-    ? GENERAL_FORM_VISIBILITY.PRIVATE
-    : GENERAL_FORM_VISIBILITY.PUBLIC;
+  return value === GENERAL_FORM_VISIBILITY.PUBLIC
+    ? GENERAL_FORM_VISIBILITY.PUBLIC
+    : GENERAL_FORM_VISIBILITY.PRIVATE;
 }
 
 export function getSubmissionVisibility(submission) {
@@ -21,16 +21,11 @@ export function hasExplicitGeneralFormVisibility(answers) {
   );
 }
 
-/** Who can see this saved general-form template in lists and site pack picker. */
-export function isGeneralFormVisibleToUser(submission, currentUserId, currentClientId) {
+/** Who can see this submission in client-side lists (server enforces the same rules). */
+export function isGeneralFormVisibleToUser(submission, currentUserId) {
   if (!submission) return false;
   const submitterId = submission.submittedById || submission.submittedBy?.id;
-  if (submitterId && submitterId === currentUserId) return true;
-  if (!hasExplicitGeneralFormVisibility(submission?.answers)) return false;
-  if (getSubmissionVisibility(submission) === GENERAL_FORM_VISIBILITY.PRIVATE) return false;
-  const submitterClientId = submission.submittedBy?.clientId;
-  if (!currentClientId || !submitterClientId) return false;
-  return submitterClientId === currentClientId;
+  return Boolean(submitterId && submitterId === currentUserId);
 }
 
 export function visibilityLabel(visibility) {

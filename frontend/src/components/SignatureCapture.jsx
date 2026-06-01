@@ -29,7 +29,13 @@ function getCanvasCoords(canvas, clientX, clientY) {
   };
 }
 
-function SignatureDrawingPad({ heightCss, onApply, strokeColor = "#111827" }) {
+function SignatureDrawingPad({
+  heightCss,
+  onApply,
+  strokeColor = "#111827",
+  autoApply = false,
+  hideUseButton = false,
+}) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const lastRef = useRef(null);
@@ -108,6 +114,16 @@ function SignatureDrawingPad({ heightCss, onApply, strokeColor = "#111827" }) {
     drawSegment(x, y);
   };
 
+  const applyPad = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasInkRef.current) return;
+    onApply(canvas.toDataURL("image/png"));
+  };
+
+  const tryAutoApply = () => {
+    if (autoApply && hasInkRef.current) applyPad();
+  };
+
   const endStroke = (e) => {
     if (!drawingRef.current) return;
     drawingRef.current = false;
@@ -119,16 +135,12 @@ function SignatureDrawingPad({ heightCss, onApply, strokeColor = "#111827" }) {
         /* ignore */
       }
     }
+    tryAutoApply();
   };
 
   const clearPad = () => {
     resizeCanvas();
-  };
-
-  const applyPad = () => {
-    const canvas = canvasRef.current;
-    if (!canvas || !hasInkRef.current) return;
-    onApply(canvas.toDataURL("image/png"));
+    if (autoApply) onApply(null);
   };
 
   return (
@@ -159,9 +171,11 @@ function SignatureDrawingPad({ heightCss, onApply, strokeColor = "#111827" }) {
         <Button size="small" variant="outlined" onClick={clearPad} sx={{ textTransform: "none" }}>
           Clear
         </Button>
+        {!hideUseButton && !autoApply && (
         <Button size="small" variant="contained" onClick={applyPad} sx={{ textTransform: "none", bgcolor: "#E89F17", "&:hover": { bgcolor: "#cc8b14" } }}>
           Use signature
         </Button>
+        )}
       </Stack>
     </Box>
   );
@@ -278,11 +292,25 @@ export default function SignatureCapture({
   helperText = "Draw with your mouse or finger, then tap “Use signature”. You can upload an image, or use “Select saved signature” if you saved some on the Saved signatures page.",
   strokeColor = "#111827",
   savedLibraryEnabled = true,
+  autoApplyDrawing = false,
 }) {
   const { currentUser } = useAuth();
   const userId = currentUser?.id || currentUser?._id || "me";
   const [pickerOpen, setPickerOpen] = useState(false);
   const heightCss = compact ? 72 : 120;
+
+  const hasImageValue = (v) =>
+    v &&
+    typeof v === "string" &&
+    (v.startsWith("data:image/") ||
+      v.startsWith("http://") ||
+      v.startsWith("https://") ||
+      v.startsWith("blob:"));
+
+  /** Saved-signatures page: show stored/uploaded image once; pad only while drawing. */
+  const [showDrawingPad, setShowDrawingPad] = useState(
+    () => !autoApplyDrawing || !hasImageValue(value)
+  );
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -290,6 +318,7 @@ export default function SignatureCapture({
     const reader = new FileReader();
     reader.onload = () => {
       onChange(typeof reader.result === "string" ? reader.result : null);
+      if (autoApplyDrawing) setShowDrawingPad(false);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -322,15 +351,61 @@ export default function SignatureCapture({
     );
   }
 
-  const hasImage =
-    value &&
-    typeof value === "string" &&
-    (value.startsWith("data:image/") ||
-      value.startsWith("http://") ||
-      value.startsWith("https://") ||
-      value.startsWith("blob:"));
+  const hasImage = hasImageValue(value);
 
-  if (hasImage) {
+  if (autoApplyDrawing && hasImage && !showDrawingPad) {
+    return (
+      <Box sx={{ width: "100%" }}>
+        {!compact && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            {helperText}
+          </Typography>
+        )}
+        <Box
+          component="img"
+          src={value}
+          alt="Signature"
+          sx={{
+            width: "100%",
+            maxHeight: compact ? 56 : 120,
+            objectFit: "contain",
+            mb: 1,
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            bgcolor: "#fff",
+          }}
+        />
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => {
+              onChange(null);
+              setShowDrawingPad(true);
+            }}
+            sx={{ textTransform: "none" }}
+          >
+            Remove
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setShowDrawingPad(true)}
+            sx={{ textTransform: "none" }}
+          >
+            Draw again
+          </Button>
+          <Button size="small" variant="outlined" component="label" sx={{ textTransform: "none" }}>
+            Replace with image
+            <input type="file" hidden accept="image/*" onChange={handleFile} />
+          </Button>
+        </Stack>
+      </Box>
+    );
+  }
+
+  if (hasImage && !autoApplyDrawing) {
     return (
       <Box sx={{ width: "100%" }}>
         <Box component="img" src={value} alt="Signature" sx={{ width: "100%", maxHeight: compact ? 56 : 80, objectFit: "contain", mb: 0.5 }} />
@@ -362,7 +437,13 @@ export default function SignatureCapture({
           {helperText}
         </Typography>
       )}
-      <SignatureDrawingPad heightCss={heightCss} strokeColor={strokeColor} onApply={onChange} />
+      <SignatureDrawingPad
+        heightCss={heightCss}
+        strokeColor={strokeColor}
+        onApply={onChange}
+        autoApply={autoApplyDrawing}
+        hideUseButton={autoApplyDrawing}
+      />
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center" sx={{ mt: 0.5 }}>
         <Button size="small" variant="text" component="label" sx={{ textTransform: "none" }}>
           Upload image instead

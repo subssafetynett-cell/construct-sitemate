@@ -51,6 +51,7 @@ export default function SavedSignaturesPage() {
               label: typeof row.label === "string" ? row.label : "",
               image:
                 typeof row.image === "string" && row.image ? row.image : null,
+              confirmed: Boolean(row.image),
             }))
           );
           if (migrated) {
@@ -69,11 +70,11 @@ export default function SavedSignaturesPage() {
             });
           }
         } else {
-          setItems([{ id: makeId(), label: "Signature 1", image: null }]);
+          setItems([{ id: makeId(), label: "Signature 1", image: null, confirmed: false }]);
         }
       } catch {
         if (!cancelled) {
-          setItems([{ id: makeId(), label: "Signature 1", image: null }]);
+          setItems([{ id: makeId(), label: "Signature 1", image: null, confirmed: false }]);
           setSnack({
             open: true,
             message: "Could not load saved signatures. You can still add and save new ones.",
@@ -98,6 +99,7 @@ export default function SavedSignaturesPage() {
           id: row.id || makeId(),
           label: typeof row.label === "string" ? row.label : "",
           image: typeof row.image === "string" && row.image ? row.image : null,
+          confirmed: Boolean(row.image),
         }))
       );
       setSnack({
@@ -119,7 +121,7 @@ export default function SavedSignaturesPage() {
   const addRow = () => {
     setItems((prev) => [
       ...prev,
-      { id: makeId(), label: `Signature ${prev.length + 1}`, image: null },
+      { id: makeId(), label: `Signature ${prev.length + 1}`, image: null, confirmed: false },
     ]);
   };
 
@@ -128,8 +130,43 @@ export default function SavedSignaturesPage() {
   };
 
   const updateRow = (id, patch) => {
-    setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    setItems((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, ...patch, confirmed: false } : r
+      )
+    );
   };
+
+  const deleteSavedSignature = async (id) => {
+    const next = items.map((r) =>
+      r.id === id ? { ...r, image: null, confirmed: false } : r
+    );
+    setItems(next);
+    setSaving(true);
+    try {
+      const saved = await syncSavedSignatures(next);
+      setItems(
+        saved.map((row) => ({
+          id: row.id || makeId(),
+          label: typeof row.label === "string" ? row.label : "",
+          image: typeof row.image === "string" && row.image ? row.image : null,
+          confirmed: Boolean(row.image),
+        }))
+      );
+      setSnack({ open: true, message: "Signature deleted.", severity: "success" });
+    } catch (e) {
+      console.error(e);
+      setSnack({
+        open: true,
+        message: e?.response?.data?.message || "Could not delete signature.",
+        severity: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isSavedView = (row) => Boolean(row.confirmed && row.image);
 
   const headingColor = isDarkMode ? "#F9FAFB" : "#111827";
   const subColor = isDarkMode ? "#9CA3AF" : "#6B7280";
@@ -146,7 +183,7 @@ export default function SavedSignaturesPage() {
 
   return (
     <Layout pageTitle="Saved signatures">
-      <Box sx={{ maxWidth: 720, mx: "auto", py: 2, px: { xs: 2, md: 0 } }}>
+      <Box sx={{ width: "100%", minWidth: 0, py: 2 }}>
         <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
           <Box
             sx={{
@@ -170,6 +207,7 @@ export default function SavedSignaturesPage() {
         </Stack>
 
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 3 }}>
+          {items.some((r) => !r.confirmed) && (
           <Button
             variant="contained"
             startIcon={<Save size={18} />}
@@ -184,6 +222,7 @@ export default function SavedSignaturesPage() {
           >
             {saving ? "Saving…" : "Save"}
           </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<Plus size={18} />}
@@ -207,36 +246,73 @@ export default function SavedSignaturesPage() {
                 bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
               }}
             >
-              <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1} sx={{ mb: 2 }}>
+              <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1} sx={{ mb: isSavedView(row) ? 1.5 : 2 }}>
                 <Typography sx={{ fontWeight: 600, color: headingColor }}>
-                  Signature {index + 1}
+                  {row.label?.trim() || `Signature ${index + 1}`}
                 </Typography>
-                <IconButton
-                  size="small"
-                  aria-label="Remove signature"
-                  disabled={loading || items.length <= 1}
-                  onClick={() => removeRow(row.id)}
-                  sx={{ color: isDarkMode ? "#F87171" : "#DC2626" }}
-                >
-                  <Trash2 size={18} />
-                </IconButton>
+                {!isSavedView(row) && (
+                  <IconButton
+                    size="small"
+                    aria-label="Remove slot"
+                    disabled={loading || items.length <= 1}
+                    onClick={() => removeRow(row.id)}
+                    sx={{ color: isDarkMode ? "#F87171" : "#DC2626" }}
+                  >
+                    <Trash2 size={18} />
+                  </IconButton>
+                )}
               </Stack>
-              <TextField
-                label="Name (e.g. Site manager, Visitor)"
-                fullWidth
-                size="small"
-                value={row.label}
-                disabled={loading}
-                onChange={(e) => updateRow(row.id, { label: e.target.value })}
-                sx={{ mb: 2 }}
-                InputProps={{ sx: { borderRadius: 2 } }}
-              />
-              <SignatureCapture
-                value={row.image}
-                onChange={(url) => updateRow(row.id, { image: url })}
-                readOnly={loading}
-                savedLibraryEnabled={false}
-              />
+              {isSavedView(row) ? (
+                <Box>
+                  <Box
+                    component="img"
+                    src={row.image}
+                    alt={row.label || "Signature"}
+                    sx={{
+                      width: "100%",
+                      maxHeight: 140,
+                      objectFit: "contain",
+                      mb: 2,
+                      border: `1px solid ${isDarkMode ? "#374151" : "#E5E7EB"}`,
+                      borderRadius: 2,
+                      bgcolor: "#fff",
+                      p: 1,
+                    }}
+                  />
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    startIcon={<Trash2 size={18} />}
+                    disabled={loading || saving}
+                    onClick={() => deleteSavedSignature(row.id)}
+                    sx={{ textTransform: "none", fontWeight: 600 }}
+                  >
+                    Delete
+                  </Button>
+                </Box>
+              ) : (
+                <>
+                  <TextField
+                    label="Name (e.g. Site manager, Visitor)"
+                    fullWidth
+                    size="small"
+                    value={row.label}
+                    disabled={loading}
+                    onChange={(e) => updateRow(row.id, { label: e.target.value })}
+                    sx={{ mb: 2 }}
+                    InputProps={{ sx: { borderRadius: 2 } }}
+                  />
+                  <SignatureCapture
+                    key={`${row.id}-${row.confirmed ? "saved" : "edit"}`}
+                    value={row.image}
+                    onChange={(url) => updateRow(row.id, { image: url })}
+                    readOnly={loading}
+                    savedLibraryEnabled={false}
+                    autoApplyDrawing
+                    helperText="Draw with your mouse or finger, or upload an image. When finished, click Save at the top."
+                  />
+                </>
+              )}
             </Paper>
           ))}
         </Stack>

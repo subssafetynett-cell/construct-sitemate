@@ -64,6 +64,8 @@ import { plainNameError } from "../utils/plainName";
 import { plainCompanyError } from "../utils/plainCompany";
 import { newPasswordError } from "../utils/passwordPolicy";
 import { useAuth, ASSIGNABLE_ROLES } from "../context/AuthContext";
+import UserPageAccessFields from "../components/UserPageAccessFields";
+import { APP_PAGES } from "../constants/pageAccess";
 import { formatLastSignIn, isUserOnline, ONLINE_WINDOW_MS } from "../utils/userPresence";
 import { getBackendOrigin } from "../utils/backendOrigin.js";
 
@@ -225,6 +227,9 @@ export default function UsersPage() {
   // Access Management State
   const [accessDialogOpen, setAccessDialogOpen] = useState(false);
   const [accessUser, setAccessUser] = useState(null);
+  const [accessViewOnly, setAccessViewOnly] = useState(false);
+  const [accessPages, setAccessPages] = useState([]);
+  const [pageCatalog, setPageCatalog] = useState(APP_PAGES);
   const [selectedRole, setSelectedRole] = useState("user");
 
   // Invite User State
@@ -414,25 +419,64 @@ export default function UsersPage() {
     setAccessUser(user);
     const current = user.role || "worker";
     setSelectedRole(assignableRoles.includes(current) ? current : assignableRoles[0] || "worker");
+    const viewOnly =
+      user.viewOnly === true || String(user.accessMode || "").toLowerCase() === "view_only";
+    setAccessViewOnly(viewOnly);
+    const pages = Array.isArray(user.allowedPages) ? user.allowedPages.filter((k) => k !== "profile" && k !== "account-settings") : [];
+    setAccessPages(pages.length ? pages : ["dashboard"]);
     setAccessDialogOpen(true);
+    api.get("/users/page-access-catalog").then((res) => {
+      if (res.data?.pages?.length) setPageCatalog(res.data.pages);
+    }).catch(() => {});
     closeMenu();
+  };
+
+  const toggleAccessPage = (key) => {
+    setAccessPages((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   const handleSaveAccess = async () => {
     if (!accessUser) return;
+    if (accessViewOnly && accessPages.length === 0) {
+      setSnack({ open: true, msg: "Select at least one page for view-only access.", severity: "warning" });
+      return;
+    }
     try {
-      const res = await api.put(`/users/${accessUser._id ?? accessUser.id}`, { role: selectedRole });
+      const res = await api.put(`/users/${accessUser._id ?? accessUser.id}`, {
+        role: selectedRole,
+        accessMode: accessViewOnly ? "view_only" : "standard",
+        allowedPages: accessViewOnly ? accessPages : [],
+      });
       if (res?.data?.success) {
-        setSnack({ open: true, msg: "User role updated", severity: "success" });
-        setUsers(prev => prev.map(u => (u._id ?? u.id) === (accessUser._id ?? accessUser.id) ? { ...u, role: selectedRole } : u));
+        const updated = res.data.user || {};
+        setSnack({ open: true, msg: "User access updated", severity: "success" });
+        setUsers((prev) =>
+          prev.map((u) =>
+            (u._id ?? u.id) === (accessUser._id ?? accessUser.id)
+              ? {
+                  ...u,
+                  role: selectedRole,
+                  accessMode: updated.accessMode ?? (accessViewOnly ? "view_only" : "standard"),
+                  viewOnly: accessViewOnly,
+                  allowedPages: accessViewOnly ? accessPages : null,
+                }
+              : u
+          )
+        );
         setAccessDialogOpen(false);
         setAccessUser(null);
       } else {
         throw new Error(res?.data?.message || "Failed");
       }
     } catch (err) {
-      console.error("Update role error:", err);
-      setSnack({ open: true, msg: "Failed to update role", severity: "error" });
+      console.error("Update access error:", err);
+      setSnack({
+        open: true,
+        msg: err?.response?.data?.message || "Failed to update access",
+        severity: "error",
+      });
     }
   };
 
@@ -820,6 +864,9 @@ export default function UsersPage() {
                             }}
                           >
                             {(user.role || 'worker').replace('_', ' ')}
+                            {(user.viewOnly || user.accessMode === 'view_only') && (
+                              <Chip label="View only" size="small" sx={{ ml: 1, height: 20, fontSize: '0.65rem' }} />
+                            )}
                           </Box>
                         </TableCell>
 
@@ -1362,10 +1409,13 @@ export default function UsersPage() {
       </Dialog>
 
       {/* Access Dialog */}
-      <Dialog open={accessDialogOpen} onClose={() => setAccessDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4, bgcolor: isDarkMode ? "#111827" : "#FFFFFF", color: isDarkMode ? "#F9FAFB" : "inherit" } }}>
+      <Dialog open={accessDialogOpen} onClose={() => setAccessDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 4, bgcolor: isDarkMode ? "#111827" : "#FFFFFF", color: isDarkMode ? "#F9FAFB" : "inherit" } }}>
         <DialogTitle sx={{ fontWeight: 700, borderBottom: isDarkMode ? "1px solid #374151" : "none" }}>Manage Access</DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'grid', gap: 1.5, mt: 1 }}>
+          <Typography variant="body2" sx={{ mt: 1, mb: 2, color: isDarkMode ? "#9CA3AF" : "#6B7280" }}>
+            Set role and optionally restrict this user to view-only access on selected pages.
+          </Typography>
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
             {assignableRoles.map((role) => (
               <Paper
                 key={role}
@@ -1393,6 +1443,15 @@ export default function UsersPage() {
               </Paper>
             ))}
           </Box>
+          <UserPageAccessFields
+            viewOnly={accessViewOnly}
+            onViewOnlyChange={setAccessViewOnly}
+            selectedPages={accessPages}
+            onTogglePage={toggleAccessPage}
+            pageCatalog={pageCatalog}
+            isDarkMode={isDarkMode}
+            disabled={accessUser?.role === "superadmin"}
+          />
         </DialogContent>
         <DialogActions sx={{ p: 2.5, borderTop: isDarkMode ? "1px solid #374151" : "none" }}>
           <Button onClick={() => setAccessDialogOpen(false)} sx={{ borderRadius: 50, px: 3, textTransform: "none", color: isDarkMode ? "#9CA3AF" : "inherit" }}>Cancel</Button>

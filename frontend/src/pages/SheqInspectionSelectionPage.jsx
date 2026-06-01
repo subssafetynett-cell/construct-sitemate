@@ -11,8 +11,9 @@ import {
     Download, Eye, Search, Plus
 } from "lucide-react";
 import Layout from "../components/Layout";
-import { formatSubmitterDisplay } from "../utils/submitterDisplay";
+import { formatSubmitterDisplay, showSubmissionCreatorColumn } from "../utils/submitterDisplay";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import FormSelectionDialog from "../components/FormSelectionDialog";
@@ -20,6 +21,8 @@ import FormSelectionDialog from "../components/FormSelectionDialog";
 const SheqInspectionSelectionPage = () => {
     const navigate = useNavigate();
     const { isDarkMode } = useTheme();
+    const { role } = useAuth();
+    const showCreatorColumn = showSubmissionCreatorColumn(role);
 
     const [submissions, setSubmissions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -211,7 +214,9 @@ const SheqInspectionSelectionPage = () => {
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Date</TableCell>
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Client / Form name</TableCell>
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Site address</TableCell>
+                                            {showCreatorColumn && (
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Created by</TableCell>
+                                            )}
                                             <TableCell align="right" sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Actions</TableCell>
                                         </TableRow>
                                     </TableHead>
@@ -234,9 +239,11 @@ const SheqInspectionSelectionPage = () => {
                                                 </Typography>
                                             </TableCell>
                                             <TableCell sx={{ color: subTextColor }}>{site}</TableCell>
+                                            {showCreatorColumn && (
                                             <TableCell sx={{ color: subTextColor, fontSize: "0.8rem" }}>
                                                 {formatSubmitterDisplay(sub.submittedBy)}
                                             </TableCell>
+                                            )}
                                             <TableCell align="right">
                                                 <IconButton 
                                                     size="small" 

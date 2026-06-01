@@ -88,6 +88,32 @@ const resendVerificationSchema = Joi.object({
   }),
 });
 
+const acceptViewInviteSchema = Joi.object({
+  token: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'Invitation token is required',
+  }),
+  otp: Joi.string().trim().pattern(/^\d{6}$/).required().messages({
+    'string.empty': 'Verification code is required',
+    'string.pattern.base': 'Enter the 6-digit code from your email',
+  }),
+  password: Joi.string()
+    .pattern(NEW_PASSWORD_PATTERN)
+    .required()
+    .messages({
+      'string.empty': 'Password is required',
+      'string.pattern.base':
+        'Password must be 8–128 characters and include one uppercase letter, one number, and one special character (not a space)',
+    }),
+  passwordConfirm: Joi.any().valid(Joi.ref('password')).required().messages({
+    'any.only': 'Passwords do not match',
+    'any.required': 'Please confirm password',
+  }),
+});
+
+const viewInviteTokenParamSchema = Joi.object({
+  token: Joi.string().trim().min(1).required(),
+});
+
 const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().required().messages({
     'string.empty': 'Current password is required',
@@ -108,5 +134,7 @@ module.exports = {
   resetPasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  acceptViewInviteSchema,
+  viewInviteTokenParamSchema,
   changePasswordSchema,
 };

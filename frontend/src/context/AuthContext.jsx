@@ -9,6 +9,12 @@ import {
 } from "../utils/authSession";
 import { applyActingClientToUser } from "../utils/actingClient";
 import { isSafetynettCompanyName, resolveEffectiveRole } from "../utils/resolveEffectiveRole";
+import {
+  canAccessPageKey,
+  canAccessPath,
+  isViewOnlyUser,
+  getAllowedPageKeys,
+} from "../utils/pageAccess";
 
 // ─── Role helpers ──────────────────────────────────────────────────────────────
 export const ROLES = {
@@ -125,9 +131,26 @@ export function AuthProvider({ children }) {
     return roles.includes(role);
   }, [role]);
 
+  const isViewOnly = isViewOnlyUser(currentUser);
+  const allowedPages = getAllowedPageKeys(currentUser);
+
+  const canAccessPage = useCallback(
+    (pageKey) => canAccessPageKey(currentUser, pageKey),
+    [currentUser]
+  );
+
+  const canAccessRoute = useCallback(
+    (pathname) => canAccessPath(currentUser, pathname),
+    [currentUser]
+  );
+
   const value = {
     currentUser,
     role,
+    isViewOnly,
+    allowedPages,
+    canAccessPage,
+    canAccessRoute,
     isSafetyNett,
     isSuperAdmin: role === ROLES.SUPERADMIN,
     isCompanyAdmin:  hasMinRole(ROLES.COMPANY_ADMIN),

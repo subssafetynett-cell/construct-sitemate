@@ -19,7 +19,7 @@ function buildActingClientFormResponseWhere(actingClientId) {
 /**
  * Read scope for form response lists and detail views.
  * - globalAccess: Safetynett / platform superadmin (all orgs when not acting as a client)
- * - companyWideRead: company_admin or superadmin scoped to one client
+ * - companyWideRead: company_admin (own org), or superadmin while "View as company"
  */
 function getFormResponseReadScope(user, actingClientId = null) {
   if (!user) return { globalAccess: false, companyWideRead: false };
@@ -28,19 +28,12 @@ function getFormResponseReadScope(user, actingClientId = null) {
     return { globalAccess: true, companyWideRead: false };
   }
 
-  if (actingClientId) {
-    return {
-      globalAccess: false,
-      companyWideRead: resolveTokenRole(user) === "superadmin",
-    };
+  if (actingClientId && resolveTokenRole(user) === "superadmin") {
+    return { globalAccess: false, companyWideRead: true };
   }
 
   const dbRole = user.role || "worker";
   if (dbRole === "company_admin" && user.clientId) {
-    return { globalAccess: false, companyWideRead: true };
-  }
-
-  if (resolveTokenRole(user) === "superadmin" && user.clientId) {
     return { globalAccess: false, companyWideRead: true };
   }
 
@@ -53,7 +46,7 @@ function hasCompanyWideFormRead(user, actingClientId = null) {
   return scope.globalAccess || scope.companyWideRead;
 }
 
-/** List query — scoped by role; field roles also fetch same-company rows for in-memory filtering. */
+/** List query — own submissions for field roles; company-wide for company_admin / acting superadmin. */
 function buildCompanyFormResponseWhere(
   userId,
   clientId,
@@ -62,16 +55,15 @@ function buildCompanyFormResponseWhere(
 ) {
   const { globalAccess = false, companyWideRead = false } = readScope;
   if (!userId) return { id: { in: [] } };
-  if (actingClientId) return buildActingClientFormResponseWhere(actingClientId);
+  if (actingClientId && companyWideRead) {
+    return buildActingClientFormResponseWhere(actingClientId);
+  }
   if (globalAccess) return {};
   if (companyWideRead) {
     if (!clientId) return {};
     return { submittedBy: { clientId } };
   }
-  if (!clientId) return { submittedById: userId };
-  return {
-    OR: [{ submittedById: userId }, { submittedBy: { clientId } }],
-  };
+  return { submittedById: userId };
 }
 
 /**

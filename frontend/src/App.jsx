@@ -7,7 +7,8 @@ import LoginPage from './pages/Login';
 import RequireAuth from './components/RequireAuth';
 import RoleGuard from './components/RoleGuard';
 import ClientsPage from './pages/Clients';
-import EnableUserAccessPage from './pages/EnableUserAccess';
+import UserViewAccessPage from './pages/UserViewAccess';
+import AcceptViewInvite from './pages/AcceptViewInvite';
 import FormBuilderPage from './pages/FormBuilderPage';
 import UserClients from './pages/UserClients';
 import ViewForms from './pages/ViewForms';
@@ -67,6 +68,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/verify-email/:token" element={<VerifyEmail />} />
+          <Route path="/view-invite/:token" element={<AcceptViewInvite />} />
           <Route path="/setup-2fa" element={<Setup2FA />} />
           <Route path="/unauthorized" element={<RequireAuth><UnauthorizedPage /></RequireAuth>} />
 
@@ -94,14 +96,14 @@ function App() {
               </RoleGuard>
             </RequireAuth>
           } />
-          <Route path="/enable-user" element={
+          <Route path="/user-view-access" element={
             <RequireAuth>
-              <RoleGuard allowedRoles={["superadmin"]}>
-                <EnableUserAccessPage />
+              <RoleGuard allowedRoles={ADMIN_PLUS} matchStoredRoleOnly>
+                <UserViewAccessPage />
               </RoleGuard>
             </RequireAuth>
           } />
-
+          <Route path="/enable-user" element={<Navigate to="/user-view-access" replace />} />
           {/* ── Manager+ (superadmin, company_admin, site_manager) ── */}
           <Route path="/forms" element={
             <RequireAuth>

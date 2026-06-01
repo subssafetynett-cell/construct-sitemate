@@ -10,10 +10,15 @@ const {
   verifyEmailWithToken,
   resendVerificationEmail,
 } = require('../services/emailVerificationService');
+const {
+  getViewInvitePreview,
+  acceptViewInviteWithOtp,
+} = require('../services/viewAccessInviteService');
 const prisma = require('../prismaClient');
 const asyncHandler = require('express-async-handler');
 const { validateNewPassword } = require('../utils/passwordPolicy');
 const { reqUserDbId, resolveTokenRole } = require('../utils/userAuthorization');
+const { formatUserAccessFields } = require('../utils/pageAccess');
 
 // Existing signup...
 exports.signup = asyncHandler(async (req, res) => {
@@ -58,6 +63,8 @@ exports.me = asyncHandler(async (req, res) => {
             companyname: true,
             mobile: true,
             role: true,
+            accessMode: true,
+            allowedPages: true,
             active: true,
             clientId: true,
             avatar: true,
@@ -79,6 +86,7 @@ exports.me = asyncHandler(async (req, res) => {
             ...user,
             _id: user.id,
             role: resolveTokenRole(user),
+            ...formatUserAccessFields(user),
         },
     });
 });
@@ -265,6 +273,33 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
         res.status(err.status || 500).json({
             success: false,
             message: err.message || 'Could not verify email',
+        });
+    }
+});
+
+exports.getViewInvite = asyncHandler(async (req, res) => {
+    try {
+        const preview = await getViewInvitePreview(req.params.token);
+        res.json({ success: true, invite: preview });
+    } catch (err) {
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Invalid invitation',
+        });
+    }
+});
+
+exports.acceptViewInvite = asyncHandler(async (req, res) => {
+    try {
+        await acceptViewInviteWithOtp(req.body);
+        res.json({
+            success: true,
+            message: 'Your account is ready. Sign in with your email and the password you just created.',
+        });
+    } catch (err) {
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Could not complete invitation',
         });
     }
 });

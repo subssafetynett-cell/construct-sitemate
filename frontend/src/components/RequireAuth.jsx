@@ -2,6 +2,7 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { getStoredToken, isTokenExpired, clearAuthStorage } from "../utils/authSession";
+import PageAccessGuard from "./PageAccessGuard";
 
 export default function RequireAuth({ children }) {
   const location = useLocation();
@@ -21,6 +22,6 @@ export default function RequireAuth({ children }) {
     );
   }
 
-  return children;
+  return <PageAccessGuard>{children}</PageAccessGuard>;
 }
 

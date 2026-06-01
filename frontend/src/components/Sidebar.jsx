@@ -47,6 +47,7 @@ const SUPERVISOR_PLUS = ["superadmin", "company_admin", "site_manager", "supervi
 const MENU_GROUPS = [
   {
     id: "dashboard",
+    pageKey: "dashboard",
     heading: "Dashboard",
     icon: <LayoutDashboard size={20} />,
     to: "/dashboard",
@@ -54,6 +55,7 @@ const MENU_GROUPS = [
   },
   {
     id: "clients",
+    pageKey: "clients",
     heading: "Clients",
     icon: <Users size={20} />,
     to: "/clients",
@@ -61,19 +63,19 @@ const MENU_GROUPS = [
   },
   {
     id: "users",
+    pageKey: "users",
     heading: "Users",
     icon: <Users size={20} />,
     to: "/users",
     roles: COMPANY_ADMINS,
   },
   {
-    id: "user-access",
-    heading: "User access",
+    id: "user-view-access",
+    pageKey: "user-view-access",
+    heading: "View access",
     icon: <UserCog size={20} />,
-    roles: ["superadmin"],
-    items: [
-      { id: "enable-user", label: "Enable user access", to: "/enable-user" },
-    ],
+    to: "/user-view-access",
+    roles: COMPANY_ADMINS,
   },
   {
     id: "sites",
@@ -81,12 +83,13 @@ const MENU_GROUPS = [
     icon: <Building2 size={20} />,
     roles: ALL_ROLES,
     items: [
-      { id: "create-sites", label: "Create Sites", to: "/create-sites", roles: COMPANY_ADMINS },
-      { id: "sitepack-management", label: "Sitepack Management", to: "/sitepack-management", roles: ALL_ROLES },
+      { id: "create-sites", pageKey: "create-sites", label: "Create Sites", to: "/create-sites", roles: COMPANY_ADMINS },
+      { id: "sitepack-management", pageKey: "sitepack-management", label: "Sitepack Management", to: "/sitepack-management", roles: ALL_ROLES },
     ],
   },
   {
     id: "general-forms",
+    pageKey: "general-forms",
     heading: "General forms",
     icon: <FileText size={20} />,
     to: "/general-forms",
@@ -94,6 +97,7 @@ const MENU_GROUPS = [
   },
   {
     id: "saved-signatures",
+    pageKey: "saved-signatures",
     heading: "Saved signatures",
     icon: <PenLine size={20} />,
     to: "/saved-signatures",
@@ -101,6 +105,7 @@ const MENU_GROUPS = [
   },
   {
     id: "form-build",
+    pageKey: "forms",
     heading: "Form Builder",
     icon: <FileText size={20} />,
     to: "/forms",
@@ -112,11 +117,10 @@ const MENU_GROUPS = [
     icon: <AlertTriangle size={20} />,
     roles: ALL_ROLES,
     items: [
-      { id: "health-safety", label: "Health and Safety concern", to: "/report-health-safety" },
-      { id: "sustainability", label: "Sustainability concern", to: "/report-environmental" },
-      { id: "quality", label: "Quality concern", to: "/report-quality" },
-      { id: "positive", label: "Positive observation", to: "/report-positive" },
-     
+      { id: "health-safety", pageKey: "report-health-safety", label: "Health and Safety concern", to: "/report-health-safety" },
+      { id: "sustainability", pageKey: "report-environmental", label: "Sustainability concern", to: "/report-environmental" },
+      { id: "quality", pageKey: "report-quality", label: "Quality concern", to: "/report-quality" },
+      { id: "positive", pageKey: "report-positive", label: "Positive observation", to: "/report-positive" },
     ],
   },
   {
@@ -127,10 +131,10 @@ const MENU_GROUPS = [
     items: [
       {
         id: "weekly-supervisor",
+        pageKey: "weekly-supervisor",
         label: "Weekly supervisor health & safety inspection",
         to: "/weekly-supervisor",
       },
-    
     ],
   },
   {
@@ -139,11 +143,10 @@ const MENU_GROUPS = [
     icon: <Shield size={20} />,
     roles: ALL_ROLES,
     items: [
-      { id: "sheq-inspection", label: "SHEQ service", to: "/sheq-inspection" },
-      { id: "shq-installation", label: "SHEQ Installation", to: "/shq-installation" },
+      { id: "sheq-inspection", pageKey: "sheq", label: "SHEQ service", to: "/sheq-inspection" },
+      { id: "shq-installation", pageKey: "shq-installation", label: "SHEQ Installation", to: "/shq-installation" },
     ],
   },
-  
 ];
 
 let globalCachedStats = { userCount: 0, clientCount: 0 };
@@ -153,7 +156,7 @@ export default function Sidebar({ sx = {} }) {
   const { isDarkMode, toggleTheme } = useTheme();
   const location = useLocation();
   const [openGroup, setOpenGroup] = useState(null);
-  const { role, currentUser } = useAuth();
+  const { role, currentUser, isViewOnly, canAccessPage } = useAuth();
   const [stats, setStats] = useState(globalCachedStats);
 
   useEffect(() => {
@@ -189,6 +192,11 @@ export default function Sidebar({ sx = {} }) {
   };
 
   const canSeeGroup = (group) => {
+    if (isViewOnly) {
+      if (group.pageKey && canAccessPage(group.pageKey)) return true;
+      if (group.items?.some((item) => canAccessPage(item.pageKey))) return true;
+      return false;
+    }
     if (group.id === "users") {
       const stored = (currentUser?.role || "").toString().toLowerCase();
       return stored === "superadmin" || stored === "company_admin";
@@ -198,6 +206,9 @@ export default function Sidebar({ sx = {} }) {
   };
 
   const canSeeItem = (item) => {
+    if (isViewOnly) {
+      return item.pageKey ? canAccessPage(item.pageKey) : true;
+    }
     if (!item.roles) return true;
     return item.roles.includes(role);
   };
