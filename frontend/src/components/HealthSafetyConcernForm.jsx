@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import SignatureCapture from "./SignatureCapture";
+import { resolveFormLogoSrc } from "../utils/formLogoUrl";
 
 // --- STABLE HELPER COMPONENTS (Defined outside to prevent focus loss) ---
 
@@ -17,7 +18,7 @@ const PhotoUpload = ({ fieldId, readOnly, values, handleChange, previewImg, styl
   if (readOnly && !preview) return <p style={{fontSize: 14, color: "#cbd5e1", fontStyle: "italic", marginTop: 10}}>No photo provided</p>;
 
   return (
-    <div style={styles.photoBox}>
+    <div className="pdf-upload-photo" style={styles.photoBox}>
       {preview ? (
         <>
           <img src={preview} alt="preview" style={styles.photoBoxImg} />
@@ -48,18 +49,33 @@ const PhotoUpload = ({ fieldId, readOnly, values, handleChange, previewImg, styl
   );
 };
 
-const LogoUpload = ({ readOnly, values, logoUrl, handleChange, previewImg, styles }) => {
-  const preview =
-    values["company_logo_preview"] ||
-    (typeof values["company_logo"] === "string" ? values["company_logo"] : null) ||
-    logoUrl;
+const LogoUpload = ({ readOnly, values, logoUrl, handleChange, previewImg, styles, pdfLayout }) => {
+  const preview = resolveFormLogoSrc(
+    {
+      company_logo: values.company_logo,
+      company_logo_preview: values.company_logo_preview,
+    },
+    logoUrl
+  );
   if (readOnly && !preview) return null;
 
   return (
-    <div style={styles.logoBox}>
+    <div className="pdf-logo-box" style={styles.logoBox}>
       {preview ? (
         <>
-          <img src={preview} alt="Company Logo" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }} />
+          <img
+            className="pdf-header-logo"
+            src={preview}
+            alt="Company Logo"
+            crossOrigin={/^https?:\/\//i.test(preview) ? "anonymous" : undefined}
+            style={{
+              maxHeight: pdfLayout || readOnly ? 80 : "100%",
+              maxWidth: pdfLayout || readOnly ? 200 : "100%",
+              width: "auto",
+              height: "auto",
+              objectFit: "contain",
+            }}
+          />
           {!readOnly && (
             <button
               style={{ ...styles.removeBtn, top: 2, right: 2, padding: "2px 6px", fontSize: 10 }}
@@ -150,7 +166,14 @@ const FieldWrapper = ({ sectionId, field, children, readOnly, onUpdateLabel, onR
 
 // --- MAIN COMPONENT ---
 
-const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = false, formType = "health_safety", logoUrl = null }) => {
+const HealthSafetyConcernForm = ({
+  values: externalValues,
+  onChange,
+  readOnly = false,
+  formType = "health_safety",
+  logoUrl = null,
+  pdfLayout = false,
+}) => {
   const [internalValues, setInternalValues] = useState({});
   const values = externalValues ?? internalValues;
 
@@ -259,8 +282,9 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
       marginTop: 0,
     },
     logoBox: {
-      width: 140,
-      height: 64,
+      width: pdfLayout || readOnly ? 200 : 140,
+      minWidth: pdfLayout || readOnly ? 180 : undefined,
+      height: pdfLayout || readOnly ? 80 : 64,
       border: readOnly ? "1px solid transparent" : "2px dashed #e2e8f0",
       borderRadius: 12,
       display: "flex",
@@ -268,24 +292,19 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
       justifyContent: "center",
       background: readOnly ? "transparent" : "#f8fafc",
       position: "relative",
-      overflow: "hidden",
+      overflow: pdfLayout || readOnly ? "visible" : "hidden",
+      padding: pdfLayout || readOnly ? "4px 8px" : 0,
+      boxSizing: "border-box",
       transition: "all 0.2s ease",
     },
     title: {
       fontSize: 28,
-      fontWeight: 800,
+      fontWeight: pdfLayout ? 600 : 800,
       color: "#0f172a",
       margin: 0,
       letterSpacing: "-0.02em",
       textTransform: "none",
       width: "100%",
-    },
-    subtitle: {
-      fontSize: 14,
-      color: "#64748b",
-      marginTop: 8,
-      fontWeight: 400,
-      display: "block",
     },
     section: { 
       marginBottom: "2.5rem",
@@ -296,7 +315,7 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
     },
     sectionLabel: {
       fontSize: 13,
-      fontWeight: 700,
+      fontWeight: pdfLayout ? 600 : 700,
       letterSpacing: "0.05em",
       textTransform: "uppercase",
       color: "#ffffff",
@@ -317,7 +336,7 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
     label: { 
       fontSize: 12, 
       color: "#475569", 
-      fontWeight: 700, 
+      fontWeight: pdfLayout ? 500 : 700, 
       textTransform: "uppercase", 
       letterSpacing: "0.025em", 
       marginBottom: 2,
@@ -330,6 +349,7 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
     },
     input: {
       fontSize: 14,
+      fontWeight: pdfLayout ? 400 : undefined,
       color: "#1e293b",
       background: readOnly ? "transparent" : "#ffffff",
       border: readOnly ? "none" : "1px solid #e2e8f0",
@@ -408,18 +428,14 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
     divider: { height: "2px", background: "#f1f5f9", margin: "4rem 0" },
     sigBox: {
       border: readOnly ? "none" : "2px dashed #e2e8f0",
-      borderBottom: readOnly ? "2px solid #1e3a8a" : "2px dashed #e2e8f0",
       borderRadius: readOnly ? 0 : 12,
-      height: 96,
-      width: 320,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
+      width: "100%",
+      maxWidth: 520,
+      padding: readOnly ? 0 : 12,
       color: "#64748b",
       fontSize: 13,
       background: readOnly ? "transparent" : "#f8fafc",
       position: "relative",
-      overflow: "hidden",
       transition: "all 0.2s ease",
     },
     footerRow: { display: "flex", alignItems: "flex-end", gap: 32, justifyContent: "flex-end" },
@@ -750,13 +766,19 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
     );
   };
 
+  const rootClassName = pdfLayout ? "pdf-export-root concern-pdf-export" : undefined;
+
   return (
-    <div style={styles.wrap}>
+    <div
+      className={rootClassName}
+      style={styles.wrap}
+      data-pdf-form-title={pdfLayout ? resolvedTitle : undefined}
+    >
       <ConfirmationModal />
       
       {/* Top Admin Toolbar */}
       {!readOnly && (
-        <div style={{ 
+        <div className="pdf-hide-on-export" style={{ 
           display: "flex", 
           justifyContent: "flex-end", 
           paddingBottom: 15, 
@@ -797,7 +819,7 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
       )}
 
       {/* Header with Title and Logo */}
-      <div style={styles.header}>
+      <div className="pdf-header" data-pdf-block style={styles.header}>
         <div>
           {readOnly ? (
             <h1 style={styles.title}>{resolvedTitle}</h1>
@@ -818,7 +840,6 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
               onChange={(e) => handleChange("report_heading", e.target.value)}
             />
           )}
-          <p style={styles.subtitle}>Official record of safety and environmental concerns.</p>
         </div>
         <div style={styles.logoWrapper}>
           <LogoUpload 
@@ -827,14 +848,15 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
             logoUrl={logoUrl} 
             handleChange={handleChange} 
             previewImg={previewImg}
-            styles={styles} 
+            styles={styles}
+            pdfLayout={pdfLayout}
           />
         </div>
       </div>
 
       {/* Dynamic Sections */}
       {schema.map((section) => (
-        <div key={section.id} style={styles.section}>
+        <div key={section.id} data-pdf-block style={styles.section}>
           <SectionHeading 
             section={section} 
             readOnly={readOnly} 
@@ -927,7 +949,7 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
                       style={{ marginTop: 4, flexShrink: 0, accentColor: "#1e3a8a" }}
                     />
                     {readOnly ? (
-                      <label htmlFor={`chk-${idx}`} style={{...styles.checkLabel, fontWeight: values.incidents?.includes(opt) ? 700 : 400}}>{opt}</label>
+                      <label htmlFor={`chk-${idx}`} style={{...styles.checkLabel, fontWeight: values.incidents?.includes(opt) ? (pdfLayout ? 500 : 700) : 400}}>{opt}</label>
                     ) : (
                       <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
                         <input
@@ -991,7 +1013,8 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
       ))}
 
       {!readOnly && (
-        <button 
+        <button
+          className="pdf-hide-on-export"
           onClick={addSection}
           style={{ 
             width: "100%", padding: "12px", background: "#1e3a8a", color: "#fff", border: "none", 
@@ -1003,39 +1026,42 @@ const HealthSafetyConcernForm = ({ values: externalValues, onChange, readOnly = 
       )}
 
       {/* Signature */}
-      <div style={{ ...styles.footerRow, marginTop: "3rem" }}>
-        <div style={{ width: 320 }}>
+      <div data-pdf-block style={{ ...styles.footerRow, marginTop: "3rem", width: "100%" }}>
+        <div style={{ width: "100%", maxWidth: 520 }}>
           <div style={styles.label}>Signature</div>
           <div style={styles.sigBox}>
-          <SignatureCapture
-            value={
-              values.signature_preview ||
-              (typeof values.signature === "string" ? values.signature : null) ||
-              null
-            }
-            onChange={(url) => {
-              if (url == null) {
-                handleChange("signature", null);
-                handleChange("signature_preview", null);
-              } else {
-                handleChange("signature", url);
-                handleChange("signature_preview", null);
+            <SignatureCapture
+              value={
+                values.signature_preview ||
+                (typeof values.signature === "string" ? values.signature : null) ||
+                null
               }
-            }}
-            readOnly={readOnly}
-            compact
-          />
+              onChange={(url) => {
+                if (url == null) {
+                  handleChange("signature", null);
+                  handleChange("signature_preview", null);
+                } else {
+                  handleChange("signature", url);
+                  handleChange("signature_preview", null);
+                }
+              }}
+              readOnly={readOnly}
+              savedLibraryEnabled
+              imageClassName={pdfLayout ? "pdf-signature-img" : undefined}
+            />
           </div>
         </div>
       </div>
 
       {/* Footer with Date and Page Number */}
-      <div style={styles.formFooter}>
-        <span>Date: {values.report_date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-        <span>Page 1 of 1</span>
-      </div>
+      {!pdfLayout && (
+        <div style={styles.formFooter}>
+          <span>Date: {values.report_date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          <span>Page 1 of 1</span>
+        </div>
+      )}
 
-      <p style={styles.note}>Review all information carefully before submitting this form.</p>
+      <p className="pdf-hide-on-export" style={styles.note}>Review all information carefully before submitting this form.</p>
     </div>
   );
 };

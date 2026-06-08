@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { 
     Box, Typography, Button, Paper, Table, TableBody, TableCell, 
     TableContainer, TableHead, TableRow, TablePagination, IconButton, 
@@ -17,6 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import FormSelectionDialog from "../components/FormSelectionDialog";
+import SheqInstallationForm from "./SheqInstallationForm";
 
 const ShqInstallationSelectionPage = () => {
     const navigate = useNavigate();
@@ -32,6 +34,7 @@ const ShqInstallationSelectionPage = () => {
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedItem, setSelectedItem] = useState(null);
     const [formDialogOpen, setFormDialogOpen] = useState(false);
+    const [downloadTarget, setDownloadTarget] = useState(null);
 
     const customBlue = "#0284c7";
     const textColor = isDarkMode ? "#F9FAFB" : "#111827";
@@ -90,7 +93,7 @@ const ShqInstallationSelectionPage = () => {
             }
         } else if (actionType === "download") {
             if (isStandard) {
-                navigate(`/sheq-install-form/${id}?category=${encodeURIComponent(category)}&action=download`);
+                setDownloadTarget({ id, category });
             } else {
                 navigate(`/forms/${sub.formId}/use?responseId=${id}&view=true`);
             }
@@ -339,6 +342,50 @@ const ShqInstallationSelectionPage = () => {
                     <ListItemText primary="Delete" />
                 </MenuItem>
             </Menu>
+
+            {downloadTarget &&
+                createPortal(
+                    <>
+                        <Box
+                            sx={{
+                                position: "fixed",
+                                inset: 0,
+                                zIndex: 1500,
+                                bgcolor: "rgba(255,255,255,0.95)",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 2,
+                            }}
+                        >
+                            <CircularProgress />
+                            <Typography color="text.secondary">Generating PDF...</Typography>
+                        </Box>
+                        <Box
+                            aria-hidden
+                            sx={{
+                                position: "fixed",
+                                left: 0,
+                                top: 0,
+                                width: 1100,
+                                zIndex: 1499,
+                                pointerEvents: "none",
+                                opacity: 0.01,
+                                overflow: "visible",
+                            }}
+                        >
+                            <SheqInstallationForm
+                                submissionId={downloadTarget.id}
+                                category={downloadTarget.category}
+                                isModal
+                                autoDownload
+                                onClose={() => setDownloadTarget(null)}
+                            />
+                        </Box>
+                    </>,
+                    document.body
+                )}
         </Layout>
     );
 };

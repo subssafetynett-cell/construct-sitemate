@@ -6,7 +6,7 @@ export const APP_PAGES = [
   { key: "user-view-access", label: "View access" },
   { key: "create-sites", label: "Create sites" },
   { key: "sitepack-management", label: "Sitepack management" },
-  { key: "general-forms", label: "General forms" },
+  { key: "general-forms", label: "Templates" },
   { key: "saved-signatures", label: "Saved signatures" },
   { key: "forms", label: "Form builder" },
   { key: "company", label: "Company" },

@@ -18,13 +18,17 @@ function normalizeSiteId(value) {
 export function useGeneralFormTemplateAccess(
   action,
   downloading = false,
-  persistedSiteId = null
+  persistedSiteId = null,
+  persistedSubfolderId = null
 ) {
   const [searchParams] = useSearchParams();
   const { role } = useAuth();
   const siteId =
     normalizeSiteId(searchParams.get("siteId")) ||
     normalizeSiteId(persistedSiteId);
+  const subfolderId =
+    normalizeSiteId(searchParams.get("subfolderId")) ||
+    normalizeSiteId(persistedSubfolderId);
   const canEdit = canEditGeneralFormTemplate(role, { siteId });
   const isSitePackContext = Boolean(siteId && String(siteId).trim() !== "");
   const isDownloadAction = String(action || "").toLowerCase() === "download";
@@ -33,6 +37,7 @@ export function useGeneralFormTemplateAccess(
   return {
     canEdit,
     siteId,
+    subfolderId,
     isSitePackContext,
     pdfLayout,
     contentReadOnly,

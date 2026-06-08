@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import {
@@ -41,8 +42,14 @@ import WeeklySupervisorInspectionForm from "../components/WeeklySupervisorInspec
 import api from "../services/api";
 import { useCompanyLogo } from "../hooks/useCompanyLogo";
 import { withLogoPreviewFields } from "../utils/formLogoUrl";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { prepareConcernWeeklyPdfAssets } from "../utils/prepareFormPdfAssets";
+import {
+    appendSitepackToAnswers,
+    matchesSitepackScope,
+    sitepackNavState,
+} from "../utils/sitepackContext";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 
 const getSubheading = (title) => {
     switch (title) {
@@ -95,6 +102,13 @@ function inferFormDisplayKind(form, pageTitle) {
     return "builder";
 }
 
+function concernDefaultTitle(pageTitle) {
+    if (pageTitle === "Sustainability concern") return "Environmental & Sustainability Concern";
+    if (pageTitle === "Quality concern") return "Quality Concern";
+    if (pageTitle === "Positive observation") return "Positive Observation";
+    return "Health & Safety Concern";
+}
+
 function concernFormTypeFromPageTitle(pageTitle) {
     if (pageTitle === "Sustainability concern") return "sustainability";
     if (pageTitle === "Quality concern") return "quality";
@@ -122,6 +136,11 @@ export default function GenericReportPage({ pageTitle }) {
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [searchParams] = useSearchParams();
     const search = searchParams.get("search") || "";
+    const siteId = searchParams.get("siteId");
+    const subfolderId = searchParams.get("subfolderId");
+    const urlResponseId = searchParams.get("responseId");
+    const shouldAutoCreate = searchParams.get("create") === "true";
+    const isSitepackContext = Boolean(siteId);
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleChangePage = (event, newPage) => {
@@ -167,6 +186,8 @@ export default function GenericReportPage({ pageTitle }) {
 
     // PDF Ref
     const printRef = useRef();
+    const [downloading, setDownloading] = useState(false);
+    const [pdfExportValues, setPdfExportValues] = useState(null);
 
     // Email State
     const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -186,12 +207,28 @@ export default function GenericReportPage({ pageTitle }) {
                 params: { category: pageTitle }
             });
             if (res.data?.success) {
-                setSubmissions(res.data.data);
+                let list = res.data.data || [];
+                if (isSitepackContext) {
+                    list = list.filter((row) =>
+                        matchesSitepackScope(row, { siteId, subfolderId })
+                    );
+                }
+                setSubmissions(list);
             }
         } catch (err) {
             console.error("Failed to fetch submissions", err);
         }
-    }, [pageTitle]);
+    }, [pageTitle, isSitepackContext, siteId, subfolderId]);
+
+    const navigateBackToSitepack = useCallback(() => {
+        navigate("/sitepack-management", {
+            state: sitepackNavState({
+                siteId,
+                subfolderId,
+                moduleTitle: pageTitle,
+            }),
+        });
+    }, [navigate, siteId, subfolderId, pageTitle]);
 
     // Reset state when title changes (e.g. navigating between sidebar items)
     useEffect(() => {
@@ -199,6 +236,7 @@ export default function GenericReportPage({ pageTitle }) {
         setSelectedForm(null);
         setActiveFormKind(null);
         setFormValues({});
+        setEditingId(null);
         fetchSubmissions();
     }, [pageTitle, fetchSubmissions]);
 
@@ -209,12 +247,13 @@ export default function GenericReportPage({ pageTitle }) {
                 ? "weekly"
                 : "concern";
         setActiveFormKind(kind);
+        const defaultTitle = kind === "weekly" ? pageTitle : concernDefaultTitle(pageTitle);
         setSelectedForm({
             id: STATIC_CONCERN_FORM_ID,
-            title: kind === "weekly" ? pageTitle : "Concern Form",
+            title: defaultTitle,
             fields: [],
         });
-        setFormValues({});
+        setFormValues(kind === "concern" ? { report_heading: defaultTitle } : {});
         setEditingId(null);
         setViewMode("filling");
     };
@@ -281,20 +320,22 @@ export default function GenericReportPage({ pageTitle }) {
                 }
             }
 
+            const answersWithSitepack = appendSitepackToAnswers(processedAnswers, {
+                siteId,
+                subfolderId,
+            });
+
             let res;
             if (viewMode === "editing" && editingId) {
-                // Update existing
                 res = await api.put(`/forms/responses/${editingId}`, {
-                    answers: processedAnswers
+                    answers: answersWithSitepack,
                 });
             } else {
-                // Create new
-                // Check for id or _id to support both during migration, but prefer id
                 const formId = selectedForm.id || selectedForm._id;
                 res = await api.post(`/forms/${formId}/responses`, {
                     formId: formId,
-                    answers: processedAnswers,
-                    category: pageTitle
+                    answers: answersWithSitepack,
+                    category: pageTitle,
                 });
             }
 
@@ -407,7 +448,7 @@ export default function GenericReportPage({ pageTitle }) {
                     pageTitle === "Weekly supervisor reports";
                 loadedForm = {
                     id: STATIC_CONCERN_FORM_ID,
-                    title: isWeekly ? pageTitle : "Concern Form",
+                    title: isWeekly ? pageTitle : concernDefaultTitle(pageTitle),
                     fields: [],
                 };
             }
@@ -427,6 +468,43 @@ export default function GenericReportPage({ pageTitle }) {
         }
     };
 
+    useEffect(() => {
+        if (!urlResponseId) return;
+        let cancelled = false;
+        const load = async () => {
+            try {
+                const res = await api.get(`/forms/responses/${urlResponseId}`);
+                const body = res.data;
+                if (cancelled || !body?.success || !body?.data) return;
+                const sub = body.data;
+                if (
+                    isSitepackContext &&
+                    !matchesSitepackScope(sub, { siteId, subfolderId })
+                ) {
+                    return;
+                }
+                await openSubmissionView(sub, "viewed");
+            } catch (e) {
+                console.error("Failed to open report from link", e);
+            }
+        };
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [urlResponseId, pageTitle, isSitepackContext, siteId, subfolderId]);
+
+    const autoCreateDoneRef = useRef(false);
+    useEffect(() => {
+        autoCreateDoneRef.current = false;
+    }, [pageTitle]);
+
+    useEffect(() => {
+        if (!shouldAutoCreate || autoCreateDoneRef.current) return;
+        autoCreateDoneRef.current = true;
+        handleOpenConcernForm();
+    }, [shouldAutoCreate, pageTitle]);
+
     const handleDeleteConfirm = async () => {
         if (!itemToDelete) return;
         try {
@@ -442,116 +520,58 @@ export default function GenericReportPage({ pageTitle }) {
     };
 
     const handleDownloadPdf = async () => {
-        if (!printRef.current) return;
+        if (!printRef.current || downloading) return;
+
+        const safeTitle = (selectedForm?.title || pageTitle || "report")
+            .replace(/[^\w\s-]/g, "")
+            .trim()
+            .replace(/\s+/g, "-") || "report";
+        const fileName = `report-${safeTitle}`;
+        const isBuiltIn = activeFormKind === "concern" || activeFormKind === "weekly";
+
+        setDownloading(true);
         try {
-            const pdf = new jsPDF("p", "mm", "a4");
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            const margin = 10;
-            const footerSpace = 20;
-            const contentWidth = pdfWidth - (margin * 2);
-            
-            let currentY = margin;
-            const sections = printRef.current.querySelectorAll(".pdf-section");
-            const today = new Date().toLocaleDateString();
-
-            const addFooter = (pNum, total) => {
-                pdf.setPage(pNum);
-                // Draw white background for footer to hide any overflow
-                pdf.setFillColor(255, 255, 255);
-                pdf.rect(0, pdfHeight - footerSpace + 5, pdfWidth, footerSpace, "F");
-                
-                pdf.setDrawColor(230);
-                pdf.line(margin, pdfHeight - 15, pdfWidth - margin, pdfHeight - 15);
-                pdf.setFontSize(9);
-                pdf.setTextColor(100);
-                pdf.text(`Date: ${today}`, margin + 5, pdfHeight - 10);
-                const pageText = `Page ${pNum} of ${total}`;
-                const textWidth = pdf.getStringUnitWidth(pageText) * pdf.internal.getFontSize() / pdf.internal.scaleFactor;
-                pdf.text(pageText, pdfWidth - textWidth - margin - 5, pdfHeight - 10);
-            };
-
-            // Fallback for forms that don't define .pdf-section blocks
-            // (e.g. concern forms) so we still capture visible content.
-            if (!sections.length) {
-                const fullCanvas = await html2canvas(printRef.current, {
-                    useCORS: true,
-                    scale: 2,
-                    logging: false,
-                    backgroundColor: "#ffffff",
-                });
-
-                const imgData = fullCanvas.toDataURL("image/jpeg", 1.0);
-                const imgHeight = (fullCanvas.height * contentWidth) / fullCanvas.width;
-                const usablePageHeight = pdfHeight - margin - footerSpace;
-                // Force concern-form fallback export to a single page by scaling to fit.
-                let drawWidth = contentWidth;
-                let drawHeight = imgHeight;
-                if (drawHeight > usablePageHeight) {
-                    const fitScale = usablePageHeight / drawHeight;
-                    drawHeight = usablePageHeight;
-                    drawWidth = contentWidth * fitScale;
-                }
-
-                const x = margin + (contentWidth - drawWidth) / 2;
-                pdf.addImage(imgData, "JPEG", x, margin, drawWidth, drawHeight);
-                
-                // Built-in concern/weekly forms include their own footer in the capture
-                if (activeFormKind === "builder") {
-                    addFooter(1, 1);
-                }
-
-                pdf.save(`report-${selectedForm?.title || "download"}.pdf`);
-                return;
+            let exportValues = formValues;
+            if (isBuiltIn) {
+                exportValues = await prepareConcernWeeklyPdfAssets(
+                    formValues,
+                    logoUrl,
+                    activeFormKind
+                );
             }
 
-            // Capture the header (title + logo) separately if it's not a section
-            const header =
-                printRef.current.querySelector(".pdf-header") ||
-                printRef.current.querySelector("div[style*='header']");
-            if (header) {
-                const hCanvas = await html2canvas(header, {
-                    useCORS: true,
-                    allowTaint: true,
-                    scale: 2,
-                    logging: false,
-                    backgroundColor: "#ffffff",
-                });
-                const hHeight = (hCanvas.height * contentWidth) / hCanvas.width;
-                pdf.addImage(hCanvas.toDataURL("image/jpeg", 1.0), "JPEG", margin, currentY, contentWidth, hHeight);
-                currentY += hHeight + 5;
-            }
+            flushSync(() => setPdfExportValues(exportValues));
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
-            for (let i = 0; i < sections.length; i++) {
-                const section = sections[i];
-                const canvas = await html2canvas(section, { 
-                    useCORS: true, 
-                    scale: 2,
-                    logging: false
-                });
-                
-                const sHeight = (canvas.height * contentWidth) / canvas.width;
-
-                // Check if this section fits on current page
-                if (currentY + sHeight > pdfHeight - footerSpace) {
-                    pdf.addPage();
-                    currentY = margin;
-                }
-
-                pdf.addImage(canvas.toDataURL("image/jpeg", 1.0), "JPEG", margin, currentY, contentWidth, sHeight);
-                currentY += sHeight + 5; // Gap between sections
-            }
-
-            const totalPages = pdf.internal.getNumberOfPages();
-            if (activeFormKind === "builder") {
-                for (let j = 1; j <= totalPages; j++) {
-                    addFooter(j, totalPages);
-                }
-            }
-
-            pdf.save(`report-${selectedForm?.title || "download"}.pdf`);
+            await new Promise((resolve) => {
+                downloadPdfFromRef(
+                    printRef,
+                    fileName,
+                    (err) => {
+                        setDownloading(false);
+                        setPdfExportValues(null);
+                        if (err) {
+                            alert("Could not generate PDF. Please try again.");
+                        }
+                        resolve();
+                    },
+                    {
+                        paginateBlocks: isBuiltIn,
+                        blockScale: 1.75,
+                        jpegQuality: 0.82,
+                        minJpegQuality: 0.55,
+                        maxOutputBytes: 5 * 1024 * 1024,
+                        targetMaxBytes: 320_000,
+                        skipBuiltInFooter: false,
+                        useRunningHeader: isBuiltIn,
+                        imageCompression: "FAST",
+                    }
+                );
+            });
         } catch (err) {
             console.error("PDF generation failed", err);
+            setDownloading(false);
+            setPdfExportValues(null);
             alert("Could not generate PDF. Please try again.");
         }
     };
@@ -579,13 +599,26 @@ export default function GenericReportPage({ pageTitle }) {
             <Box sx={{ flex: 1, p: 3, height: "100%", overflowY: "auto" }}>
                 <Box>
                     <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, justifyContent: "space-between", mb: 4, alignItems: { xs: "flex-start", sm: "center" }, gap: { xs: 2.5, sm: 0 } }}>
-                        <Box>
-                            <Typography variant="h6" sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827", }}>
-                                All Reports - {pageTitle}
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", mt: 0.5 }}>
-                                {getSubheading(pageTitle)}
-                            </Typography>
+                        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+                            {isSitepackContext && viewMode === "initial" && (
+                                <IconButton
+                                    onClick={navigateBackToSitepack}
+                                    sx={{ mt: -0.5, color: isDarkMode ? "#9CA3AF" : "#6B7280" }}
+                                    aria-label="Back to site pack"
+                                >
+                                    <ArrowBackIcon />
+                                </IconButton>
+                            )}
+                            <Box>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: isDarkMode ? "#F9FAFB" : "#111827", }}>
+                                    {isSitepackContext ? pageTitle : `All Reports - ${pageTitle}`}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", mt: 0.5 }}>
+                                    {isSitepackContext
+                                        ? "Saved reports for this site subfolder."
+                                        : getSubheading(pageTitle)}
+                                </Typography>
+                            </Box>
                         </Box>
                         {(viewMode !== "initial") && (
                             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -594,6 +627,7 @@ export default function GenericReportPage({ pageTitle }) {
                                         startIcon={<Download size={18} />} 
                                         variant="contained" 
                                         onClick={handleDownloadPdf}
+                                        disabled={downloading}
                                         sx={{
                                             textTransform: "none",
                                             borderRadius: 4,
@@ -606,7 +640,7 @@ export default function GenericReportPage({ pageTitle }) {
                                             "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" }
                                         }}
                                     >
-                                        Download PDF
+                                        {downloading ? "Preparing PDF..." : "Download PDF"}
                                     </Button>
                                 )}
                                 {(viewMode === "filling" || viewMode === "editing") && (
@@ -640,6 +674,10 @@ export default function GenericReportPage({ pageTitle }) {
                                 <Button 
                                     variant="outlined" 
                                     onClick={() => {
+                                        if (isSitepackContext && viewMode === "viewed") {
+                                            navigateBackToSitepack();
+                                            return;
+                                        }
                                         if (viewMode === "filling" || viewMode === "editing") {
                                             setViewMode("initial");
                                         } else if (viewMode === "viewed") {
@@ -848,16 +886,18 @@ export default function GenericReportPage({ pageTitle }) {
                                 <Box sx={{ flex: 1, position: 'relative' }}>
                                     {activeFormKind === "weekly" ? (
                                         <WeeklySupervisorInspectionForm
-                                            values={formValues}
+                                            values={pdfExportValues ?? formValues}
                                             readOnly={true}
                                             logoUrl={logoUrl}
+                                            pdfLayout={downloading}
                                         />
                                     ) : activeFormKind === "concern" ? (
                                         <HealthSafetyConcernForm 
-                                            values={formValues}
+                                            values={pdfExportValues ?? formValues}
                                             readOnly={true}
                                             logoUrl={logoUrl}
                                             formType={concernFormTypeFromPageTitle(pageTitle)}
+                                            pdfLayout={downloading}
                                         />
                                     ) : (
                                         <>

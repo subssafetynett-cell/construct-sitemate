@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { 
     Box, Typography, Grid, Card, CardContent, CardActionArea, 
     Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper, 
-    Button, CircularProgress, IconButton, TextField, InputAdornment, Chip,
+    Button, CircularProgress, TextField, InputAdornment, Chip,
     Dialog, DialogTitle, DialogContent, DialogActions, Alert
 } from "@mui/material";
 import { FileText, Search, Edit3, Trash2, Eye } from "lucide-react";
@@ -18,6 +18,7 @@ import {
 import {
     isGeneralFormsPageSubmission,
     submissionHasSiteContext,
+    userOwnsFormSubmission,
 } from "../utils/generalFormSubmissions";
 import {
     getSubmissionVisibility,
@@ -92,6 +93,9 @@ export default function GeneralFormsList() {
 
     const userCanOpenSubmissionEditor = (sub) =>
         canManageTemplates || submissionHasSiteContext(sub);
+
+    const userCanEditListSubmission = (sub) =>
+        userCanOpenSubmissionEditor(sub) && userOwnsFormSubmission(sub, currentUser?.id);
 
     const [searchParams] = useSearchParams();
     const search = searchParams.get("search") || "";
@@ -172,10 +176,10 @@ export default function GeneralFormsList() {
             <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Box>
                     <Typography variant="h4" sx={{ fontWeight: 700, color: isDarkMode ? "#F9FAFB" : "#111827", mb: 1 }}>
-                        General Forms
+                        Templates
                     </Typography>
                     <Typography sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280" }}>
-                        View and manage your submitted general forms.
+                        View and manage your submitted templates.
                     </Typography>
                 </Box>
             </Box>
@@ -373,21 +377,38 @@ export default function GeneralFormsList() {
                                         </TableCell>
                                         )}
                                         <TableCell align="right">
-                                            <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
-                                                {userCanOpenSubmissionEditor(sub) &&
-                                                (sub.submittedById || sub.submittedBy?.id) === currentUser?.id ? (
-                                                    <Button
-                                                        size="small"
-                                                        startIcon={<Edit3 size={16} />}
-                                                        onClick={() => navigate(getEditPath(sub))}
-                                                        sx={{
-                                                            color: "#E89F17",
-                                                            textTransform: "none",
-                                                            "&:hover": { bgcolor: "rgba(232, 159, 23, 0.1)" },
-                                                        }}
-                                                    >
-                                                        Edit
-                                                    </Button>
+                                            <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap" }}>
+                                                {userCanEditListSubmission(sub) ? (
+                                                    <>
+                                                        <Button
+                                                            size="small"
+                                                            startIcon={<Edit3 size={16} />}
+                                                            onClick={() => navigate(getEditPath(sub))}
+                                                            sx={{
+                                                                color: "#E89F17",
+                                                                textTransform: "none",
+                                                                "&:hover": { bgcolor: "rgba(232, 159, 23, 0.1)" },
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                        <Button
+                                                            size="small"
+                                                            startIcon={<Trash2 size={16} />}
+                                                            onClick={() => handleDeleteConfirm(sub.id || sub._id)}
+                                                            sx={{
+                                                                color: isDarkMode ? "#EF4444" : "#DC2626",
+                                                                textTransform: "none",
+                                                                "&:hover": {
+                                                                    bgcolor: isDarkMode
+                                                                        ? "rgba(239, 68, 68, 0.12)"
+                                                                        : "rgba(220, 38, 38, 0.06)",
+                                                                },
+                                                            }}
+                                                        >
+                                                            Delete
+                                                        </Button>
+                                                    </>
                                                 ) : (
                                                     <Button
                                                         size="small"
@@ -406,18 +427,6 @@ export default function GeneralFormsList() {
                                                         View
                                                     </Button>
                                                 )}
-                                                {(sub.submittedById || sub.submittedBy?.id) === currentUser?.id &&
-                                                    canManageTemplates && (
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() =>
-                                                                handleDeleteConfirm(sub.id || sub._id)
-                                                            }
-                                                            sx={{ color: isDarkMode ? "#EF4444" : "#DC2626" }}
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </IconButton>
-                                                    )}
                                             </Box>
                                         </TableCell>
                                     </TableRow>

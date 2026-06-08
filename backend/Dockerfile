@@ -1,5 +1,6 @@
-# Use Node.js 20 Alpine as base image
-FROM node:20-alpine
+# AWS ECR Public Gallery mirror (avoids Docker Hub TLS timeouts on some networks).
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine
+FROM ${NODE_IMAGE}
 
 # Prisma on Alpine needs OpenSSL
 RUN apk add --no-cache openssl libc6-compat

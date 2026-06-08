@@ -6,7 +6,7 @@ import { resolveFormLogoSrc } from "../utils/formLogoUrl";
 const REPORT_TITLE = "Weekly Health & Safety Supervisor Report";
 const SECTION_PERSONNEL_AND_CONTACTS = "Personnel and Contacts";
 
-const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, readOnly = false, logoUrl }) => {
+const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, readOnly = false, logoUrl, pdfLayout = false }) => {
   const [internalValues, setInternalValues] = useState({});
   const values = externalValues ?? internalValues;
   const displayLogo = resolveFormLogoSrc(values, logoUrl);
@@ -71,7 +71,7 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
     if (!readOnly) return null;
 
     return (
-      <div className="pdf-section" style={{ marginBottom: "3rem" }}>
+      <div className="pdf-section" data-pdf-block style={{ marginBottom: "3rem" }}>
         <div style={styles.sectionLabel}>{sectionTitle}</div>
         
         {/* Results Table */}
@@ -360,7 +360,7 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
     const percentage = ((totalActual / totalPossible) * 100).toFixed(1);
 
     return (
-      <div className="pdf-section" style={{ marginTop: "4rem", marginBottom: "4rem" }}>
+      <div className="pdf-section" data-pdf-block style={{ marginTop: "4rem", marginBottom: "4rem" }}>
         <div style={styles.sectionLabel}>OVERALL SUMMARY</div>
         
         <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 40 }}>
@@ -579,8 +579,12 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
   );
 
   return (
-    <div style={styles.wrap}>
-      <div className="pdf-header" style={styles.header}>
+    <div
+      className={pdfLayout ? "pdf-export-root weekly-pdf-export" : undefined}
+      style={styles.wrap}
+      data-pdf-form-title={pdfLayout ? REPORT_TITLE : undefined}
+    >
+      <div className="pdf-header" data-pdf-block style={styles.header}>
         {!readOnly && <h1 style={styles.title}>{REPORT_TITLE}</h1>}
         <div style={styles.logoWrapper}>
           {!readOnly && (
@@ -599,6 +603,7 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
             {logoSrc ? (
               <>
                 <img
+                  className="pdf-header-logo"
                   src={logoSrc}
                   alt="Company Logo"
                   crossOrigin={/^https?:\/\//i.test(logoSrc) ? "anonymous" : undefined}
@@ -674,7 +679,7 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
       </div>
 
       {/* 1. Personnel & Contacts */}
-      <div className="pdf-section" style={styles.section}>
+      <div className="pdf-section" data-pdf-block style={styles.section}>
         <div style={styles.sectionLabel}>{SECTION_PERSONNEL_AND_CONTACTS}</div>
         <div style={{ ...styles.row, ...styles.col2 }}>
           <div style={styles.field}>
@@ -828,9 +833,11 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
 
       {renderOverallSummary()}
 
-      <div style={styles.footerRow}>
-        <span>Date: {new Date().toLocaleDateString()}</span>
-      </div>
+      {!pdfLayout && (
+        <div style={styles.footerRow}>
+          <span>Date: {new Date().toLocaleDateString()}</span>
+        </div>
+      )}
     </div>
   );
 };

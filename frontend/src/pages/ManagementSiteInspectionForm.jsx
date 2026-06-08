@@ -15,6 +15,7 @@ import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSu
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
 import api from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
@@ -24,6 +25,7 @@ import {
     withGeneralFormVisibility,
     GENERAL_FORM_VISIBILITY,
 } from "../utils/generalFormVisibility";
+import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import FormDocumentHeader from "../components/FormDocumentHeader";
 import FormHeaderApprovedRow from "../components/FormHeaderApprovedRow";
 
@@ -109,12 +111,9 @@ export default function ManagementSiteInspectionForm() {
         Array.from({ length: 6 }, () => ({ ...EMPTY_ACTION }))
     );
     const [persistedSiteId, setPersistedSiteId] = useState(null);
+    const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
-    const { canEdit, siteId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(
-        action,
-        downloading,
-        persistedSiteId
-    );
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
 
     const performSave = async (
         asNew = false,
@@ -134,7 +133,7 @@ export default function ManagementSiteInspectionForm() {
                 name: name || formMetadata.name,
                 tags: tags || formMetadata.tags,
             };
-            if (siteId) payload.siteId = siteId;
+            payload = appendSitepackToAnswers(payload, { siteId, subfolderId });
             payload = withGeneralFormVisibility(payload, visibility, {
                 hasSiteContext: Boolean(siteId),
             });
@@ -174,6 +173,8 @@ export default function ManagementSiteInspectionForm() {
         loading,
         watchDeps: [docInfo, headerData, headerLabels, statusData, measures, actions],
         siteId,
+
+        subfolderId,
         category,
         saving,
         canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
@@ -183,7 +184,10 @@ export default function ManagementSiteInspectionForm() {
     });
 
     useEffect(() => {
-        if (!persistedResponseId && !fromTemplateId) setPersistedSiteId(null);
+        if (!persistedResponseId && !fromTemplateId) {
+            setPersistedSiteId(null);
+            setPersistedSubfolderId(null);
+        }
     }, [persistedResponseId, fromTemplateId]);
 
     useEffect(() => {
@@ -214,6 +218,7 @@ export default function ManagementSiteInspectionForm() {
                 const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
+                    setPersistedSubfolderId(submission.answers.subfolderId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);
                     if (submission.answers.headerData) setHeaderData(submission.answers.headerData);
                     if (submission.answers.headerLabels) setHeaderLabels(submission.answers.headerLabels);
@@ -303,21 +308,29 @@ export default function ManagementSiteInspectionForm() {
                     </IconButton>
                 </Box>
                 {canEdit && (
-                <Button 
-                    variant="contained" 
-                    onClick={handleSaveClick}
-                    disabled={saving || !canEdit || downloading}
-                    sx={{ 
-                        bgcolor: "#E89F17", 
-                        color: "#FFFFFF", 
-                        fontWeight: 600, 
-                        borderRadius: "8px",
-                        boxShadow: "none",
-                        "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
-                    }}
-                >
-                    {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
-                </Button>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                    <GeneralFormSubmissionDeleteButton
+                        responseId={persistedResponseId}
+                        canEdit={canEdit}
+                        isSitePackContext={Boolean(siteId)}
+                        disabled={saving || downloading}
+                    />
+                    <Button 
+                        variant="contained" 
+                        onClick={handleSaveClick}
+                        disabled={saving || !canEdit || downloading}
+                        sx={{ 
+                            bgcolor: "#E89F17", 
+                            color: "#FFFFFF", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            boxShadow: "none",
+                            "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
+                        }}
+                    >
+                        {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
+                    </Button>
+                </Box>
                 )}
             </Box>
 

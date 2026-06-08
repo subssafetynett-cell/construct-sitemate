@@ -15,6 +15,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import api from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
@@ -27,6 +28,7 @@ import {
 import FormDocumentHeader from "../components/FormDocumentHeader";
 import FormHeaderApprovedRow from "../components/FormHeaderApprovedRow";
 import FormTableCellTextField from "../components/FormTableCellTextField";
+import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import FormEditableParagraph from "../components/FormEditableParagraph";
 
 const DEFAULT_BRIEFING_LABELS = {
@@ -102,12 +104,9 @@ export default function RamsBriefingForm() {
         Array.from({ length: 15 }, () => ({ ...EMPTY_SIG_ROW }))
     );
     const [persistedSiteId, setPersistedSiteId] = useState(null);
+    const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
-    const { canEdit, siteId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(
-        action,
-        downloading,
-        persistedSiteId
-    );
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
     /** Site pack / template fill: always allow typing in data cells (not label-only template edit). */
     const canFillFields = !pdfLayout && (canEdit || isSitePackContext || Boolean(fromTemplateId));
     /** General Forms template edit: editable boilerplate sentences and labels. */
@@ -129,7 +128,7 @@ export default function RamsBriefingForm() {
                 name: name || formMetadata.name,
                 tags: tags || formMetadata.tags,
             };
-            if (siteId) payload.siteId = siteId;
+            payload = appendSitepackToAnswers(payload, { siteId, subfolderId });
             payload = withGeneralFormVisibility(payload, visibility, {
                 hasSiteContext: Boolean(siteId),
             });
@@ -164,6 +163,8 @@ export default function RamsBriefingForm() {
         loading,
         watchDeps: [docInfo, briefingData, briefingLabels, signatures],
         siteId,
+
+        subfolderId,
         category,
         saving,
         canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
@@ -173,7 +174,10 @@ export default function RamsBriefingForm() {
     });
 
     useEffect(() => {
-        if (!persistedResponseId && !fromTemplateId) setPersistedSiteId(null);
+        if (!persistedResponseId && !fromTemplateId) {
+            setPersistedSiteId(null);
+            setPersistedSubfolderId(null);
+        }
     }, [persistedResponseId, fromTemplateId]);
 
     useEffect(() => {
@@ -203,6 +207,7 @@ export default function RamsBriefingForm() {
                 const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
+                    setPersistedSubfolderId(submission.answers.subfolderId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);
                     if (submission.answers.briefingData) setBriefingData(submission.answers.briefingData);
                     if (submission.answers.briefingLabels) {
@@ -281,21 +286,29 @@ export default function RamsBriefingForm() {
                     </Typography>
                 </Box>
                 {canEdit && (
-                <Button 
-                    variant="contained" 
-                    onClick={handleSaveClick}
-                    disabled={saving || !canEdit || downloading}
-                    sx={{ 
-                        bgcolor: "#E89F17", 
-                        color: "#FFFFFF", 
-                        fontWeight: 600, 
-                        borderRadius: "8px",
-                        boxShadow: "none",
-                        "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
-                    }}
-                >
-                    {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
-                </Button>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                    <GeneralFormSubmissionDeleteButton
+                        responseId={persistedResponseId}
+                        canEdit={canEdit}
+                        isSitePackContext={isSitePackContext}
+                        disabled={saving || downloading}
+                    />
+                    <Button 
+                        variant="contained" 
+                        onClick={handleSaveClick}
+                        disabled={saving || !canEdit || downloading}
+                        sx={{ 
+                            bgcolor: "#E89F17", 
+                            color: "#FFFFFF", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            boxShadow: "none",
+                            "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
+                        }}
+                    >
+                        {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
+                    </Button>
+                </Box>
                 )}
             </Box>
 

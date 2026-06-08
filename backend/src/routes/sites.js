@@ -23,6 +23,23 @@ router.post(
   siteController.createSite
 );
 
+// Site subfolders — site_manager and above with site access
+router.get(
+  "/:siteId/subfolders",
+  requireRole(["superadmin", "company_admin", "site_manager"]),
+  siteController.getSiteSubfolders
+);
+router.post(
+  "/:siteId/subfolders",
+  requireRole(["superadmin", "company_admin", "site_manager"]),
+  siteController.createSiteSubfolder
+);
+router.delete(
+  "/:siteId/subfolders/:subfolderId",
+  requireRole(["superadmin", "company_admin", "site_manager"]),
+  siteController.deleteSiteSubfolder
+);
+
 // Update site — company_admin and above
 router.put(
   "/:id",

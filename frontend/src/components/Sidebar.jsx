@@ -90,7 +90,7 @@ const MENU_GROUPS = [
   {
     id: "general-forms",
     pageKey: "general-forms",
-    heading: "General forms",
+    heading: "Templates",
     icon: <FileText size={20} />,
     to: "/general-forms",
     roles: ALL_ROLES,

@@ -22,13 +22,14 @@ import {
     InputLabel,
     Menu,
     MenuItem,
-    ListItemText
+    ListItemText,
+    Collapse
 } from "@mui/material";
 
 import { 
     Building2, ClipboardList, FileText, DraftingCompass, BookOpen, 
     Award, ShieldCheck, UploadCloud, Eye, Download, Trash2, X,
-    AlertTriangle, AlertOctagon, UserCheck
+    AlertTriangle, AlertOctagon, UserCheck, Folder, ChevronDown, ChevronUp
 } from "lucide-react";
 import SearchIcon from "@mui/icons-material/Search";
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
@@ -65,10 +66,20 @@ import api, {
   uploadDocument,
   fetchDocuments,
   fetchDocumentCounts,
+  fetchSiteSubfolders,
+  createSiteSubfolder,
   deleteDocument,
   fetchDocumentPreviewBlob,
   formatUploadError,
 } from "../services/api";
+import { matchesSitepackScope, sitepackSearchParams } from "../utils/sitepackContext";
+import {
+    SITEPACK_FORM_GROUPS,
+    SITEPACK_REPORT_MODULES,
+    getSitepackReportRoute,
+    isSitepackReportModule,
+    reportModulesForGroup,
+} from "../constants/sitepackFormCatalog";
 import { isSavedGeneralFormTemplate } from "../utils/generalFormSubmissions";
 import {
     DOCUMENT_UPLOAD_ACCEPT,
@@ -318,6 +329,17 @@ function pathWithSearchParams(path, params) {
     return path.includes("?") ? `${path}&${qs}` : `${path}?${qs}`;
 }
 
+function getSitepackReportFormPath(menuDoc, responseId, sitepackQuery) {
+    const category = menuDoc?.rawResponse?.category;
+    const route = getSitepackReportRoute(category);
+    if (!route) return null;
+    return pathWithSearchParams(route, {
+        ...sitepackQuery,
+        category,
+        responseId,
+    });
+}
+
 export default function SitepackManagement() {
     const { isDarkMode } = useTheme();
     const { role } = useAuth();
@@ -334,9 +356,30 @@ export default function SitepackManagement() {
     const navigate = useNavigate();
     const search = searchParams.get("search") || "";
     const [selectedSite, setSelectedSite] = useState(null);
+    const [selectedSubfolder, setSelectedSubfolder] = useState(null);
     const [selectedModule, setSelectedModule] = useState(null);
+    const [subfolders, setSubfolders] = useState([]);
+    const [subfoldersLoading, setSubfoldersLoading] = useState(false);
+    const [createSubfolderOpen, setCreateSubfolderOpen] = useState(false);
+    const [newSubfolderName, setNewSubfolderName] = useState("");
+    const [subfolderError, setSubfolderError] = useState("");
+    const [creatingSubfolder, setCreatingSubfolder] = useState(false);
     const [modules, setModules] = useState(activeConfig.map(m => ({ ...m, count: '0 documents', id: m.title })));
+    const [reportCounts, setReportCounts] = useState(
+        () => Object.fromEntries(SITEPACK_REPORT_MODULES.map((m) => [m.title, "0 documents"]))
+    );
+    const [openFormGroup, setOpenFormGroup] = useState("report-concern");
     const location = useLocation();
+
+    const getSiteId = () => selectedSite?._id || selectedSite?.id;
+    const getSubfolderId = () => selectedSubfolder?.id;
+    const sitepackParams = (extra = {}) =>
+        sitepackSearchParams({
+            siteId: getSiteId(),
+            subfolderId: getSubfolderId(),
+            category: selectedModule?.title,
+            extra,
+        });
 
     // Persist View State
     useEffect(() => {
@@ -344,6 +387,9 @@ export default function SitepackManagement() {
             const site = sites.find(s => (s._id || s.id) === location.state.siteId);
             if (site) {
                 setSelectedSite(site);
+                if (location.state.subfolderId) {
+                    setSelectedSubfolder({ id: location.state.subfolderId, name: location.state.subfolderName || "Subfolder" });
+                }
                 if (location.state.moduleTitle) {
                     const mod = modules.find(m => m.title === location.state.moduleTitle);
                     if (mod) setSelectedModule(mod);
@@ -407,23 +453,47 @@ export default function SitepackManagement() {
         loadSites();
     }, [search]);
 
-    // Load Counts when site selected
+    // Load subfolders when a site is selected
     useEffect(() => {
-        if (selectedSite) {
+        if (!selectedSite) {
+            setSubfolders([]);
+            return;
+        }
+        const loadSubfolders = async () => {
+            setSubfoldersLoading(true);
+            try {
+                const { subfolders: list } = await fetchSiteSubfolders(getSiteId());
+                setSubfolders(list || []);
+                if (location.state?.subfolderId && !selectedSubfolder?.name) {
+                    const match = (list || []).find((sf) => sf.id === location.state.subfolderId);
+                    if (match) setSelectedSubfolder(match);
+                }
+            } catch (error) {
+                console.error("Error loading subfolders:", error);
+            } finally {
+                setSubfoldersLoading(false);
+            }
+        };
+        loadSubfolders();
+    }, [selectedSite]);
+
+    // Load module counts when inside a subfolder
+    useEffect(() => {
+        if (selectedSite && selectedSubfolder) {
             const loadCounts = async () => {
                 try {
-                    const { counts } = await fetchDocumentCounts(selectedSite._id || selectedSite.id);
+                    const siteId = getSiteId();
+                    const subfolderId = getSubfolderId();
+                    const { counts } = await fetchDocumentCounts(siteId, subfolderId);
 
-                    // Fetch all form responses for this site to aggregate counts
                     let formCountsByCategory = {};
                     try {
                         const res = await api.get('/forms/responses');
                         if (res.data?.success) {
-                            const siteResponses = res.data.data.filter(r => 
-                                r.answers?.siteId === (selectedSite._id || selectedSite.id) || 
-                                r.siteId === (selectedSite._id || selectedSite.id)
+                            const siteResponses = res.data.data.filter((r) =>
+                                matchesSitepackScope(r, { siteId, subfolderId })
                             );
-                            
+
                             siteResponses.forEach(r => {
                                 const cat = r.category || "General";
                                 formCountsByCategory[cat] = (formCountsByCategory[cat] || 0) + 1;
@@ -433,7 +503,6 @@ export default function SitepackManagement() {
                         console.error("Failed to load form counts", e);
                     }
 
-                    // Update modules with counts (docs + forms)
                     setModules(prev => prev.map(m => {
                         const docTotal = counts[m.title] || 0;
                         const formTotal = formCountsByCategory[m.title] || 0;
@@ -443,34 +512,42 @@ export default function SitepackManagement() {
                             count: `${docTotal + formTotal} documents`
                         };
                     }));
+
+                    const nextReportCounts = {};
+                    SITEPACK_REPORT_MODULES.forEach((mod) => {
+                        const docTotal = counts[mod.title] || 0;
+                        const formTotal = formCountsByCategory[mod.title] || 0;
+                        nextReportCounts[mod.title] = `${docTotal + formTotal} documents`;
+                    });
+                    setReportCounts(nextReportCounts);
                 } catch (error) {
                     console.error("Error loading counts:", error);
                 }
             };
             loadCounts();
         }
-    }, [selectedSite]);
+    }, [selectedSite, selectedSubfolder]);
 
-    // Load Documents when module selected
+    // Load Documents when module selected inside a subfolder
     useEffect(() => {
-        if (selectedSite && selectedModule) {
+        if (selectedSite && selectedSubfolder && selectedModule) {
             const loadDocs = async () => {
                 try {
                     let allItems = [];
-                    const { documents } = await fetchDocuments(selectedSite._id || selectedSite.id, selectedModule.title);
+                    const siteId = getSiteId();
+                    const subfolderId = getSubfolderId();
+                    const { documents } = await fetchDocuments(siteId, selectedModule.title, subfolderId);
                     if (documents) allItems = [...allItems, ...documents];
 
                     // Also fetch Form Responses for the current category
                     try {
                         const res = await api.get(`/forms/responses?category=${encodeURIComponent(selectedModule.title)}`);
                         if (res.data?.success) {
-                            const siteResponses = res.data.data.filter(r => 
-                                r.answers?.siteId === (selectedSite._id || selectedSite.id) ||
-                                r.siteId === (selectedSite._id || selectedSite.id)
+                            const siteResponses = res.data.data.filter((r) =>
+                                matchesSitepackScope(r, { siteId, subfolderId })
                             );
                             const mappedForms = siteResponses.map(r => {
-                                // Prefer custom name given in modal, then fall back to template title or category
-                                const customName = r.name || r.answers?.name || r.answers?.formMetadata?.name;
+                                const customName = r.name || r.answers?.name || r.answers?.formMetadata?.name || r.answers?.report_heading;
                                 const templateTitle = r.form?.title || r.title || r.category || 'Form Response';
                                 const title = customName || templateTitle;
 
@@ -510,7 +587,7 @@ export default function SitepackManagement() {
             };
             loadDocs();
         }
-    }, [selectedSite, selectedModule]);
+    }, [selectedSite, selectedSubfolder, selectedModule]);
 
     const generalFormTitleToPath = useMemo(() => {
         const m = Object.fromEntries(TEMPLATES.map((t) => [t.title, t.path]));
@@ -552,19 +629,131 @@ export default function SitepackManagement() {
     // Handlers
     const handleSiteClick = (site) => {
         setSelectedSite(site);
+        setSelectedSubfolder(null);
         setSelectedModule(null);
     };
 
     const handleBackToSites = () => {
         if (selectedModule) {
             setSelectedModule(null);
+        } else if (selectedSubfolder) {
+            setSelectedSubfolder(null);
         } else {
             setSelectedSite(null);
         }
     };
 
+    const handleSubfolderClick = (subfolder) => {
+        setSelectedSubfolder(subfolder);
+        setSelectedModule(null);
+    };
+
+    const handleOpenCreateSubfolder = () => {
+        setNewSubfolderName("");
+        setSubfolderError("");
+        setCreateSubfolderOpen(true);
+    };
+
+    const handleCloseCreateSubfolder = () => {
+        if (creatingSubfolder) return;
+        setCreateSubfolderOpen(false);
+        setNewSubfolderName("");
+        setSubfolderError("");
+    };
+
+    const handleCreateSubfolder = async () => {
+        const name = newSubfolderName.trim();
+        if (!name) {
+            setSubfolderError("Folder name is required");
+            return;
+        }
+        setCreatingSubfolder(true);
+        setSubfolderError("");
+        try {
+            const { subfolder } = await createSiteSubfolder(getSiteId(), name);
+            setSubfolders((prev) => [subfolder, ...prev]);
+            setCreateSubfolderOpen(false);
+            setNewSubfolderName("");
+            setSelectedSubfolder(subfolder);
+            setSelectedModule(null);
+        } catch (error) {
+            console.error("Failed to create subfolder", error);
+            setSubfolderError(error.response?.data?.message || "Failed to create subfolder");
+        } finally {
+            setCreatingSubfolder(false);
+        }
+    };
+
     const handleModuleClick = (module) => {
         setSelectedModule(module);
+    };
+
+    const handleReportModuleClick = (reportModule) => {
+        setSelectedModule({
+            title: reportModule.title,
+            icon: <FileText size={32} />,
+            count: reportCounts[reportModule.title] || "0 documents",
+            isReport: true,
+        });
+    };
+
+    const reloadModuleDocuments = async () => {
+        if (!selectedSite || !selectedSubfolder || !selectedModule) return;
+        const siteId = getSiteId();
+        const subfolderId = getSubfolderId();
+        let allItems = [];
+        const { documents } = await fetchDocuments(siteId, selectedModule.title, subfolderId);
+        if (documents) allItems = [...allItems, ...documents];
+
+        try {
+            const res = await api.get(`/forms/responses?category=${encodeURIComponent(selectedModule.title)}`);
+            if (res.data?.success) {
+                const siteResponses = res.data.data.filter((r) =>
+                    matchesSitepackScope(r, { siteId, subfolderId })
+                );
+                const mappedForms = siteResponses.map((r) => {
+                    const customName = r.name || r.answers?.name || r.answers?.formMetadata?.name || r.answers?.report_heading;
+                    const templateTitle = r.form?.title || r.title || r.category || "Form Response";
+                    const title = customName || templateTitle;
+
+                    let rawTags = r.tags || r.answers?.tags || r.answers?.formMetadata?.tags || [];
+                    let tags = [];
+                    if (typeof rawTags === "string" && rawTags.trim().length > 0) {
+                        tags = rawTags.split(",").map((t) => t.trim());
+                    } else if (Array.isArray(rawTags)) {
+                        tags = rawTags.filter(Boolean);
+                    }
+
+                    return {
+                        id: r.id || r._id,
+                        title,
+                        templateTitle: customName ? templateTitle : null,
+                        type: "FORM",
+                        version: "1.0",
+                        size: customName ? templateTitle : "Digital Form",
+                        tags,
+                        createdAt: r.createdAt,
+                        isFormBase: true,
+                        rawResponse: r,
+                    };
+                });
+                allItems = [...allItems, ...mappedForms];
+            }
+        } catch (e) {
+            console.error("Failed to fetch form responses for module", e);
+        }
+
+        allItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        setDocs(allItems);
+    };
+
+    const handleNewReport = () => {
+        const route = getSitepackReportRoute(selectedModule?.title);
+        if (!route) return;
+        navigate(pathWithSearchParams(route, sitepackParams({
+            category: selectedModule.title,
+            create: "true",
+        })));
     };
 
     const handleFileChange = (e) => {
@@ -631,14 +820,13 @@ export default function SitepackManagement() {
             uploadData.append('file', formData.file);
             uploadData.append('title', formData.title);
             uploadData.append('validUntil', formData.validUntil);
-            uploadData.append('siteId', selectedSite._id || selectedSite.id);
+            uploadData.append('siteId', getSiteId());
+            uploadData.append('subfolderId', getSubfolderId());
             uploadData.append('category', selectedModule.title);
 
             await uploadDocument(uploadData);
             handleCloseUploadModal();
-            // Refresh docs
-            const { documents } = await fetchDocuments(selectedSite._id || selectedSite.id, selectedModule.title);
-            setDocs(documents || []);
+            await reloadModuleDocuments();
         } catch (error) {
             console.error("Upload failed", error);
             setFormErrors((prev) => ({ ...prev, file: formatUploadError(error) }));
@@ -648,47 +836,46 @@ export default function SitepackManagement() {
     };
 
     const handleSelectForm = (formPath, isCustom = false, customFormId = null) => {
-        const siteId = selectedSite._id || selectedSite.id;
-        const category = encodeURIComponent("Friday Pack Forms");
+        const params = sitepackParams({ category: "Friday Pack Forms" });
+        const qs = new URLSearchParams(params).toString();
 
         if (isCustom) {
-            navigate(`/forms/${customFormId}/use?siteId=${siteId}&category=${category}`);
+            navigate(`/forms/${customFormId}/use?${qs}`);
         } else {
-            navigate(`${formPath}?siteId=${siteId}&category=${category}`);
+            navigate(`${formPath}?${qs}`);
         }
     };
 
     const handlePreviewForm = (formPath, isCustom = false, customFormId = null) => {
-        const siteId = selectedSite._id || selectedSite.id;
-        const category = encodeURIComponent("Friday Pack Forms");
+        const params = sitepackParams({ category: "Friday Pack Forms", preview: "true" });
+        const qs = new URLSearchParams(params).toString();
 
-        let url = "";
-        if (isCustom) {
-            url = `/forms/${customFormId}/use?siteId=${siteId}&category=${category}&preview=true`;
-        } else {
-            url = `${formPath}?siteId=${siteId}&category=${category}&preview=true`;
-        }
+        const url = isCustom
+            ? `/forms/${customFormId}/use?${qs}`
+            : `${formPath}?${qs}`;
         setPreviewUrl(url);
         setPreviewModalOpen(true);
     };
 
     const handleSelectSavedGeneralSubmission = (submission) => {
-        const siteId = selectedSite._id || selectedSite.id;
-        const category = encodeURIComponent("Friday Pack Forms");
         const path = generalFormTitleToPath[submission.form?.title];
         if (!path) return;
         const rid = submission.id || submission._id;
-        // fromTemplate: hydrate from saved general form but POST a new response for this site (do not overwrite the template).
-        navigate(`${path}?siteId=${siteId}&category=${category}&fromTemplate=${encodeURIComponent(rid)}`);
+        navigate(pathWithSearchParams(path, sitepackParams({
+            category: "Friday Pack Forms",
+            fromTemplate: rid,
+        })));
     };
 
     const handlePreviewSavedGeneralSubmission = (submission) => {
-        const siteId = selectedSite._id || selectedSite.id;
-        const category = encodeURIComponent("Friday Pack Forms");
         const path = generalFormTitleToPath[submission.form?.title];
         if (!path) return;
         const rid = submission.id || submission._id;
-        setPreviewUrl(`${path}?siteId=${siteId}&category=${category}&fromTemplate=${encodeURIComponent(rid)}&preview=true`);
+        setPreviewUrl(pathWithSearchParams(path, sitepackParams({
+            category: "Friday Pack Forms",
+            fromTemplate: rid,
+            preview: "true",
+        })));
         setPreviewModalOpen(true);
     };
 
@@ -714,12 +901,16 @@ export default function SitepackManagement() {
     const handleView = async () => {
         if (menuDoc?.isFormBase) {
             handleMenuClose();
-            const siteId = selectedSite._id || selectedSite.id;
             const resId = menuDoc.id || menuDoc._id;
+            const category = selectedModule?.title || menuDoc.rawResponse?.category || "Friday Pack Forms";
+            const reportPath = getSitepackReportFormPath(menuDoc, resId, sitepackParams({ category }));
+            if (reportPath) {
+                navigate(reportPath);
+                return;
+            }
             const path = getSitepackFormPathForResponse(menuDoc, resId);
             if (!path) return;
-            const category = selectedModule?.title || "Friday Pack Forms";
-            navigate(pathWithSearchParams(path, { siteId, category }));
+            navigate(pathWithSearchParams(path, sitepackParams({ category })));
             return;
         }
 
@@ -821,12 +1012,16 @@ export default function SitepackManagement() {
     const handleDownload = () => {
         if (menuDoc?.isFormBase) {
             handleMenuClose();
-            const siteId = selectedSite._id || selectedSite.id;
             const resId = menuDoc.id || menuDoc._id;
+            const category = selectedModule?.title || menuDoc.rawResponse?.category || "Friday Pack Forms";
+            const reportPath = getSitepackReportFormPath(menuDoc, resId, sitepackParams({ category }));
+            if (reportPath) {
+                window.open(pathWithSearchParams(reportPath, { action: "download" }), "_blank");
+                return;
+            }
             const path = getSitepackFormPathForResponse(menuDoc, resId);
             if (!path) return;
-            const category = selectedModule?.title || "Friday Pack Forms";
-            const url = pathWithSearchParams(path, { siteId, category, action: "download" });
+            const url = pathWithSearchParams(path, sitepackParams({ category, action: "download" }));
             window.open(url, "_blank");
             return;
         }
@@ -841,7 +1036,6 @@ export default function SitepackManagement() {
     const handleDownloadWord = () => {
         if (menuDoc?.isFormBase) {
             handleMenuClose();
-            const siteId = selectedSite._id || selectedSite.id;
             const resId = menuDoc.id || menuDoc._id;
             const templateTitle = getSitepackFormTemplateTitle(menuDoc);
             const standardForms = ['Tool Box Talk Register', 'RAMS Briefing Form', 'Site Induction Register', 'Management Site Inspection Report', 'Daily Safe Start Briefing Sheet', 'Audit Action Form', 'Site Induction Form', 'LOLER Inspection Form', 'PUWER Inspection Form', 'Adstone Site Induction Form'];
@@ -850,7 +1044,7 @@ export default function SitepackManagement() {
             if (!standardForms.includes(templateTitle)) {
                  const path = `/forms/${menuDoc.rawResponse?.formId}/use?responseId=${resId}`;
                  const category = selectedModule?.title || "Friday Pack Forms";
-                 window.open(pathWithSearchParams(path, { siteId, category, action: "download_word" }), "_blank");
+                 window.open(pathWithSearchParams(path, sitepackParams({ category, action: "download_word" })), "_blank");
             }
             return;
         }
@@ -872,52 +1066,8 @@ export default function SitepackManagement() {
                 }
                 setDeleteModalOpen(false);
                 setMenuDoc(null);
-                // Refresh docs
-                if (selectedSite && selectedModule) {
-                    const { documents } = await fetchDocuments(selectedSite._id || selectedSite.id, selectedModule.title);
-                    let allItems = documents || [];
-                    
-                    try {
-                        const res = await api.get(`/forms/responses?category=${encodeURIComponent(selectedModule.title)}`);
-                        if (res.data?.success) {
-                            const siteResponses = res.data.data.filter(r => 
-                                r.answers?.siteId === (selectedSite._id || selectedSite.id) ||
-                                r.siteId === (selectedSite._id || selectedSite.id)
-                            );
-                            const mappedForms = siteResponses.map(r => {
-                                const customName = r.name || r.answers?.name || r.answers?.formMetadata?.name;
-                                const templateTitle = r.form?.title || r.title || r.category || 'Form Response';
-                                const title = customName || templateTitle;
-
-                                let rawTags = r.tags || r.answers?.tags || r.answers?.formMetadata?.tags || [];
-                                let tags = [];
-                                if (typeof rawTags === 'string' && rawTags.trim().length > 0) {
-                                    tags = rawTags.split(',').map(t => t.trim());
-                                } else if (Array.isArray(rawTags)) {
-                                    tags = rawTags.filter(Boolean);
-                                }
-
-                                return {
-                                    id: r.id || r._id,
-                                    title,
-                                    templateTitle: customName ? templateTitle : null,
-                                    type: 'FORM',
-                                    version: '1.0',
-                                    size: customName ? templateTitle : 'Digital Form',
-                                    tags,
-                                    createdAt: r.createdAt,
-                                    isFormBase: true,
-                                    rawResponse: r
-                                };
-                            });
-                            allItems = [...allItems, ...mappedForms];
-                        }
-                    } catch (e) {
-                        console.error("Failed to fetch form responses for module after delete", e);
-                    }
-                    
-                    allItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                    setDocs(allItems);
+                if (selectedSite && selectedSubfolder && selectedModule) {
+                    await reloadModuleDocuments();
                 }
             } catch (error) {
                 console.error("Delete failed", error);
@@ -949,21 +1099,32 @@ export default function SitepackManagement() {
                     )}
                     <Box>
                         <Typography variant="h5" fontWeight={600} gutterBottom sx={{ mb: 0 }}>
-                            {selectedModule ? selectedModule.title : (selectedSite ? selectedSite.name : "All Sites")}
+                            {selectedModule
+                                ? selectedModule.title
+                                : selectedSubfolder
+                                    ? selectedSubfolder.name
+                                    : selectedSite
+                                        ? selectedSite.name
+                                        : "All Sites"}
                         </Typography>
                         {!selectedSite && !selectedModule && (
                             <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
                                 Select a site to manage its document packs
                             </Typography>
                         )}
-                        {selectedSite && !selectedModule && (
+                        {selectedSite && !selectedSubfolder && !selectedModule && (
                             <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
-                                Select a module to manage documents
+                                Create or open a subfolder to manage documents
+                            </Typography>
+                        )}
+                        {selectedSubfolder && !selectedModule && (
+                            <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {selectedSite.name} &bull; Select a module to manage documents
                             </Typography>
                         )}
                         {selectedModule && (
                             <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
-                                {selectedSite.name}
+                                {selectedSite.name}{selectedSubfolder ? ` / ${selectedSubfolder.name}` : ""}
                             </Typography>
                         )}
                         {selectedModule && (
@@ -975,7 +1136,37 @@ export default function SitepackManagement() {
                     </Box>
                 </Box>
 
-                {selectedModule && selectedModule.title === "Friday Pack Forms" ? (
+                {selectedSite && !selectedSubfolder && !selectedModule ? (
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleOpenCreateSubfolder}
+                        sx={{
+                            textTransform: "none",
+                            borderRadius: 3,
+                            boxShadow: "none",
+                            bgcolor: "#3B82F6",
+                            "&:hover": { bgcolor: "#2563EB", boxShadow: "none" },
+                        }}
+                    >
+                        Create Subfolder
+                    </Button>
+                ) : selectedModule && isSitepackReportModule(selectedModule.title) ? (
+                    <Button
+                        variant="contained"
+                        startIcon={<DriveFileRenameOutlineIcon />}
+                        onClick={handleNewReport}
+                        sx={{
+                            textTransform: "none",
+                            borderRadius: 3,
+                            boxShadow: "none",
+                            bgcolor: "#E89F17",
+                            "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
+                        }}
+                    >
+                        New Report
+                    </Button>
+                ) : selectedModule && selectedModule.title === "Friday Pack Forms" ? (
                     <Button
                         variant="contained"
                         startIcon={<DriveFileRenameOutlineIcon />}
@@ -1010,12 +1201,11 @@ export default function SitepackManagement() {
                             <Button 
                                 variant="contained"
                                 onClick={() => {
-                                    const siteId = selectedSite._id || selectedSite.id;
-                                    if (selectedModule.title === "Induction") {
-                                        navigate(`/general-forms/adstone-site-induction?siteId=${siteId}&category=Induction`);
-                                    } else {
-                                        navigate(`/general-forms/tool-box-talk?siteId=${siteId}&category=${encodeURIComponent("Toolbox talks")}`);
-                                    }
+                                    const category = selectedModule.title === "Induction" ? "Induction" : "Toolbox talks";
+                                    const path = selectedModule.title === "Induction"
+                                        ? "/general-forms/adstone-site-induction"
+                                        : "/general-forms/tool-box-talk";
+                                    navigate(pathWithSearchParams(path, sitepackParams({ category })));
                                 }}
                                 sx={{ 
                                     bgcolor: "#111827", 
@@ -1031,7 +1221,7 @@ export default function SitepackManagement() {
                             </Button>
                         )}
                     </Box>
-                ) : selectedSite ? (
+                ) : selectedSubfolder && !selectedModule ? (
                     <Button
                         variant="contained"
                         startIcon={<BarChartIcon />}
@@ -1052,6 +1242,7 @@ export default function SitepackManagement() {
             {/* Main Content Grid (Site List or Documents) */}
             {
                 selectedSite ? (
+                    selectedSubfolder ? (
                     selectedModule ? (
                         // DOCUMENT VIEW
                         <>
@@ -1199,6 +1390,7 @@ export default function SitepackManagement() {
                         </>
                     ) : (
                         // MODULE SELECTION VIEW
+                        <>
                         <Grid container spacing={2}>
                             {modules.map((module) => (
                                 <Grid item xs={6} sm={6} md={6} lg={6} xl={6} key={module.title} sx={{ minWidth: 0 }}>
@@ -1268,6 +1460,157 @@ export default function SitepackManagement() {
                                 </Grid>
                             ))}
                         </Grid>
+
+                        <Box sx={{ mt: 4, maxWidth: 480 }}>
+                            {SITEPACK_FORM_GROUPS.map((group) => {
+                                const GroupIcon = group.icon;
+                                const expanded = openFormGroup === group.id;
+                                const items = reportModulesForGroup(group.id);
+                                return (
+                                    <Box key={group.id} sx={{ mb: 1.5 }}>
+                                        <Box
+                                            onClick={() => setOpenFormGroup(expanded ? null : group.id)}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 1.5,
+                                                px: 2,
+                                                py: 1.25,
+                                                borderRadius: 2,
+                                                cursor: "pointer",
+                                                bgcolor: isDarkMode ? "#1B212C" : "#F9FAFB",
+                                                border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB",
+                                                "&:hover": {
+                                                    borderColor: isDarkMode ? "#4B5563" : "#D1D5DB",
+                                                },
+                                            }}
+                                        >
+                                            <GroupIcon size={18} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+                                            <Typography
+                                                variant="body2"
+                                                fontWeight={600}
+                                                sx={{ flex: 1, color: isDarkMode ? "#E5E7EB" : "#374151" }}
+                                            >
+                                                {group.heading}
+                                            </Typography>
+                                            {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                        </Box>
+                                        <Collapse in={expanded}>
+                                            <Box sx={{ pl: 2.5, ml: 2, borderLeft: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>
+                                                {items.map((item) => (
+                                                    <Box
+                                                        key={item.title}
+                                                        onClick={() => handleReportModuleClick(item)}
+                                                        sx={{
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            justifyContent: "space-between",
+                                                            gap: 2,
+                                                            py: 1.25,
+                                                            px: 1.5,
+                                                            cursor: "pointer",
+                                                            borderRadius: 1.5,
+                                                            "&:hover": {
+                                                                bgcolor: isDarkMode ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+                                                            },
+                                                        }}
+                                                    >
+                                                        <Typography
+                                                            variant="body2"
+                                                            sx={{ color: isDarkMode ? "#D1D5DB" : "#4B5563" }}
+                                                        >
+                                                            {item.title}
+                                                        </Typography>
+                                                        <Chip
+                                                            label={reportCounts[item.title] || "0 documents"}
+                                                            size="small"
+                                                            sx={{
+                                                                height: 20,
+                                                                fontSize: "0.65rem",
+                                                                bgcolor: "#DFA036",
+                                                                color: "#FFFFFF",
+                                                                fontWeight: 600,
+                                                            }}
+                                                        />
+                                                    </Box>
+                                                ))}
+                                            </Box>
+                                        </Collapse>
+                                    </Box>
+                                );
+                            })}
+                        </Box>
+                        </>
+                    )
+                    ) : (
+                        // SUBFOLDER LIST VIEW
+                        subfoldersLoading ? (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
+                                <CircularProgress />
+                            </Box>
+                        ) : (
+                            <Grid container spacing={3}>
+                                {subfolders.length === 0 ? (
+                                    <Grid item xs={12}>
+                                        <Typography color="text.secondary" align="center">
+                                            No subfolders yet. Click &quot;Create Subfolder&quot; to add one.
+                                        </Typography>
+                                    </Grid>
+                                ) : (
+                                    subfolders.map((subfolder) => (
+                                        <Grid item xs={12} sm={6} md={4} key={subfolder.id}>
+                                            <Card
+                                                variant="outlined"
+                                                onClick={() => handleSubfolderClick(subfolder)}
+                                                sx={{
+                                                    borderRadius: 4,
+                                                    width: 350,
+                                                    height: 120,
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    bgcolor: isDarkMode ? "#111827" : "#FFFFFF",
+                                                    border: isDarkMode ? "1px solid #374151" : '1px solid #E5E7EB',
+                                                    transition: 'all 0.2s ease-in-out',
+                                                    cursor: 'pointer',
+                                                    "&:hover": {
+                                                        borderColor: "#3B82F6",
+                                                        boxShadow: isDarkMode ? "0 4px 20px rgba(0,0,0,0.4)" : "0 4px 6px -1px rgba(59, 130, 246, 0.1), 0 2px 4px -1px rgba(59, 130, 246, 0.06)"
+                                                    }
+                                                }}
+                                            >
+                                                <CardActionArea sx={{ height: '100%', p: 3, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, width: '100%' }}>
+                                                        <Box
+                                                            sx={{
+                                                                bgcolor: isDarkMode ? "rgba(59, 130, 246, 0.1)" : '#EFF6FF',
+                                                                p: 1.5,
+                                                                borderRadius: 3,
+                                                                color: '#3B82F6',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                minWidth: 56,
+                                                                height: 56
+                                                            }}
+                                                        >
+                                                            <Folder size={28} />
+                                                        </Box>
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Typography variant="h6" fontWeight={700} noWrap sx={{ fontSize: '1.05rem', color: isDarkMode ? "#F9FAFB" : "#111827" }}>
+                                                                {subfolder.name}
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                                Open to manage document modules
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                </CardActionArea>
+                                            </Card>
+                                        </Grid>
+                                    ))
+                                )}
+                            </Grid>
+                        )
                     )
                 ) : (
                     // SITE LIST VIEW
@@ -1596,6 +1939,69 @@ export default function SitepackManagement() {
                 </MenuItem>
             </Menu>
 
+            {/* Create Subfolder Dialog */}
+            <Dialog
+                open={createSubfolderOpen}
+                onClose={handleCloseCreateSubfolder}
+                PaperProps={{
+                    sx: {
+                        borderRadius: 3,
+                        padding: 2,
+                        minWidth: 360,
+                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+                        color: isDarkMode ? "#F9FAFB" : "inherit"
+                    }
+                }}
+            >
+                <DialogTitle sx={{ pb: 1, fontWeight: 600, fontSize: '1.25rem' }}>
+                    Create Subfolder
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" sx={{ mb: 2, color: isDarkMode ? "#9CA3AF" : "text.secondary" }}>
+                        Name your subfolder. Inside it you can manage all document modules for this site.
+                    </Typography>
+                    <TextField
+                        autoFocus
+                        fullWidth
+                        label="Folder name"
+                        value={newSubfolderName}
+                        onChange={(e) => {
+                            setNewSubfolderName(e.target.value);
+                            setSubfolderError("");
+                        }}
+                        error={Boolean(subfolderError)}
+                        helperText={subfolderError}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") handleCreateSubfolder();
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions sx={{ borderTop: isDarkMode ? "1px solid #374151" : "none", pt: 2 }}>
+                    <Button
+                        onClick={handleCloseCreateSubfolder}
+                        disabled={creatingSubfolder}
+                        variant="outlined"
+                        sx={{ textTransform: 'none', borderRadius: 50, px: 3 }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleCreateSubfolder}
+                        disabled={creatingSubfolder}
+                        variant="contained"
+                        sx={{
+                            textTransform: 'none',
+                            borderRadius: 50,
+                            px: 3,
+                            bgcolor: "#3B82F6",
+                            "&:hover": { bgcolor: "#2563EB" },
+                        }}
+                    >
+                        {creatingSubfolder ? "Creating..." : "Create"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
             {/* Delete Confirmation Dialog */}
             <Dialog
                 open={deleteModalOpen}
@@ -1904,7 +2310,7 @@ export default function SitepackManagement() {
                                         lineHeight: 1.2,
                                     }}
                                 >
-                                    Saved general forms
+                                    Saved templates
                                 </Typography>
                                 {!createFormModalLoading && (
                                     <Chip
@@ -1924,7 +2330,7 @@ export default function SitepackManagement() {
                                 color="text.secondary"
                                 sx={{ mb: 2, maxWidth: 520, lineHeight: 1.5 }}
                             >
-                                Forms saved from General Forms. Select one to pre-fill this Friday pack submission.
+                                Forms saved from Templates. Select one to pre-fill this Friday pack submission.
                             </Typography>
 
                             {createFormModalLoading ? (
@@ -1945,7 +2351,7 @@ export default function SitepackManagement() {
                                     }}
                                 >
                                     <Typography variant="body2" color="text.secondary">
-                                        No saved forms yet. Edit a template in General Forms and save it to see it here.
+                                        No saved forms yet. Edit a template in Templates and save it to see it here.
                                     </Typography>
                                 </Paper>
                             ) : (

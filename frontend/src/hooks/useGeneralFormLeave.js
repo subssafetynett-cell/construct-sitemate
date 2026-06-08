@@ -11,6 +11,7 @@ export function useGeneralFormLeave({
     loading,
     watchDeps = [],
     siteId,
+    subfolderId,
     category,
     listPath,
     saving,
@@ -23,15 +24,15 @@ export function useGeneralFormLeave({
 
     const navigateBack = useCallback(() => {
         if (siteId) {
-            navigate("/sitepack-management", {
-                state: { siteId, moduleTitle: category },
-            });
+            const state = { siteId, moduleTitle: category };
+            if (subfolderId) state.subfolderId = subfolderId;
+            navigate("/sitepack-management", { state });
         } else if (listPath) {
             navigate(listPath);
         } else {
             navigate("/general-forms");
         }
-    }, [navigate, siteId, category, listPath]);
+    }, [navigate, siteId, subfolderId, category, listPath]);
 
     const { isDirty, resetDirty } = useAutoFormDirty(watchDeps, { enabled, loading });
 

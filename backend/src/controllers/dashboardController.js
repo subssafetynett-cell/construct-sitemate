@@ -9,14 +9,7 @@ const {
   fetchMonthlySubmissionCounts,
 } = require("../utils/dashboardAccess");
 const { isGlobalSiteAccess } = require("../utils/siteAccess");
-
-function countCategory(categories, matchers) {
-  return Object.entries(categories).reduce((sum, [name, count]) => {
-    const key = String(name).toLowerCase();
-    if (matchers.some((m) => key.includes(m))) return sum + count;
-    return sum;
-  }, 0);
-}
+const { countGroupedCategories } = require("../utils/dashboardCategories");
 
 const SHEQ_CATEGORIES = ["SHEQ Installation", "SHEQ Inspection"];
 const SHEQ_RECENT_LIMIT = 100;
@@ -195,6 +188,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       totalSites,
       totalUsers,
       totalReports,
+      sheqForms,
       monthlyCounts,
       categoryGroups,
       inspectionRows,
@@ -207,6 +201,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
         ? prisma.user.count({ where: userCountWhere })
         : Promise.resolve(null),
       prisma.formResponse.count({ where: responseWhere }),
+      prisma.formResponse.count({ where: sheqResponseWhere }),
       fetchMonthlySubmissionCounts(prisma, responseWhere),
       prisma.formResponse.groupBy({
         by: ["category"],
@@ -299,10 +294,16 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
 
-    const hsConcerns = countCategory(categories, ["health", "safety"]);
-    const envConcerns = countCategory(categories, ["sustainability", "environment"]);
-    const qualityConcerns = countCategory(categories, ["quality"]);
-    const positiveObs = countCategory(categories, ["positive"]);
+    const reportConcerns = countGroupedCategories(categories, [
+      "Health & Safety concern",
+      "Sustainability concern",
+      "Quality concern",
+      "Positive observation",
+    ]);
+    const inspectionForms = countGroupedCategories(categories, [
+      "Weekly supervisor health & safety inspection",
+      "Weekly supervisor reports",
+    ]);
 
     res.json({
       success: true,
@@ -312,10 +313,9 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
         totalSites,
         totalUsers: totalUsers ?? undefined,
         totalReports,
-        hsConcerns,
-        envConcerns,
-        qualityConcerns,
-        positiveObs,
+        reportConcerns,
+        inspectionForms,
+        sheqForms,
         complianceRate: `${avgCompliance}%`,
       },
       charts: {

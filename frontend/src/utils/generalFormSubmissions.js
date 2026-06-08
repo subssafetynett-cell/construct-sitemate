@@ -23,6 +23,13 @@ export function submissionHasSiteContext(sub) {
   return siteId != null && String(siteId).trim() !== "";
 }
 
+export function userOwnsFormSubmission(sub, userId) {
+  if (!userId) return false;
+  const ownerId = sub?.submittedById ?? sub?.submittedBy?.id;
+  if (ownerId == null || ownerId === "") return false;
+  return String(ownerId) === String(userId);
+}
+
 /**
  * Submissions that belong on the General Forms "Manage Submissions" list
  * (template edits saved from /general-forms, not Friday Pack site submissions).

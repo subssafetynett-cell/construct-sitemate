@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { flushSync } from "react-dom";
 import { 
     Box, Typography, Button, Paper, TextField, CircularProgress, 
     IconButton, Checkbox, FormControlLabel, Radio, RadioGroup, FormControl, MenuItem,
@@ -14,11 +15,19 @@ import {
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
 import api, { fetchFormResponseById } from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import SignatureCapture from "../components/SignatureCapture";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
+import { useGeneralFormAutoSave } from "../hooks/useGeneralFormAutoSave";
+import {
+    compressImageFile,
+    compressLogoFile,
+    prepareImagesForPdfExport,
+    shrinkDataUrlIfNeeded,
+} from "../utils/compressImage";
 
 const SCORING_STANDARDS = [
     { title: "ST 1 – Work at Heights: Scaffolding & Edge protection", subtitle: "(scaffold structure, fall protection, car top, voids, protection from falling objects)" },
@@ -329,24 +338,37 @@ function getDefaultHeaderLabelsForCategory(cat) {
     };
 }
 
+function normalizeFormImages(images) {
+    if (!Array.isArray(images)) return [];
+    return images.filter((img) => typeof img === "string" && img.trim().length > 0);
+}
+
 function getPdfFileName(category, id, client) {
     const slug = category === SHEQ_INSPECTION_CATEGORY ? "SHEQ_Inspection" : "SHEQ_Installation";
     const clientPart = (client || "Report").replace(/[^\w\-]+/g, "_").slice(0, 40);
     return `${slug}_${clientPart}_${id || "draft"}`;
 }
 
-/** Block-based PDF: adaptive scale per section, parallel capture, ~2 MB target. */
+/** Block PDF: ~1–2 MB total, high clarity (scale 1.7, quality floor 0.82). */
 const SHEQ_PDF_OPTIONS = {
     paginateBlocks: true,
-    jpegQuality: 0.78,
+    blockScale: 1.7,
+    jpegQuality: 0.86,
+    minJpegQuality: 0.82,
     captureConcurrency: 4,
-    targetMaxBytes: 2 * 1024 * 1024,
-    blockGapMm: 1,
+    targetMaxBytes: 1.75 * 1024 * 1024,
+    maxOutputBytes: 2.25 * 1024 * 1024,
+    sliceByteBudget: 420_000,
+    imageCompression: "SLOW",
+    blockGapMm: 1.5,
     marginX: 10,
-    headerInsetMm: 8,
-    footerInsetMm: 10,
-    skipPreCaptureWaits: true,
-    imageWaitTimeoutMs: 1500,
+    headerInsetMm: 14,
+    footerInsetMm: 11,
+    useRunningHeader: true,
+    skipPreCaptureWaits: false,
+    requireImageDecode: true,
+    chartWaitTimeoutMs: 800,
+    imageWaitTimeoutMs: 12000,
 };
 
 function pdfBlockProps(active) {
@@ -365,20 +387,44 @@ function pdfSectionShellSx(downloading, borderColor, pdfMb) {
         : {};
 }
 
-/** Lightweight chart for PDF export — avoids Recharts render/capture cost. */
+const SheqPdfChartPageHeader = ({ exportBorder }) => (
+    <Box sx={{ p: 1.5, borderBottom: `1px solid ${exportBorder}`, bgcolor: "#f8fafc" }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "nowrap", gap: 1.5 }}>
+            <Typography sx={{ fontSize: "0.95rem", fontWeight: 800, color: "#003049", letterSpacing: "-0.01em", flexShrink: 0 }}>
+                Sectional Performance Analytics
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 1.5, flexShrink: 0 }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <Box sx={{ width: 10, height: 10, borderRadius: "2px", bgcolor: "#10b981" }} />
+                    <Typography sx={{ fontSize: "0.65rem", fontWeight: 600, color: "#475569" }}>High</Typography>
+                </Box>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <Box sx={{ width: 10, height: 10, borderRadius: "2px", bgcolor: "#f59e0b" }} />
+                    <Typography sx={{ fontSize: "0.65rem", fontWeight: 600, color: "#475569" }}>Action Needed</Typography>
+                </Box>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <Box sx={{ width: 10, height: 10, borderRadius: "2px", bgcolor: "#ef4444" }} />
+                    <Typography sx={{ fontSize: "0.65rem", fontWeight: 600, color: "#475569" }}>Critical</Typography>
+                </Box>
+            </Box>
+        </Box>
+    </Box>
+);
+
+/** Lightweight chart for PDF export — label | bar | % column so percentages are never clipped. */
 function SheqPdfPerformanceChart({ items }) {
     return (
-        <Box sx={{ width: "100%", py: 1 }}>
+        <Box sx={{ width: "100%", py: 0.75, pr: 0.5, overflow: "visible" }}>
             {items.map((item, index) => (
                 <Box
                     key={`pdf-bar-${index}`}
-                    sx={{ display: "flex", alignItems: "center", mb: 1.1, minHeight: 26 }}
+                    sx={{ display: "flex", alignItems: "center", mb: 1, minHeight: 24, width: "100%" }}
                 >
                     <Typography
                         sx={{
-                            width: 175,
+                            width: 210,
                             flexShrink: 0,
-                            fontSize: 10,
+                            fontSize: 9.5,
                             fontWeight: 700,
                             color: "#1e293b",
                             pr: 1,
@@ -387,7 +433,16 @@ function SheqPdfPerformanceChart({ items }) {
                     >
                         {item.name}
                     </Typography>
-                    <Box sx={{ flex: 1, position: "relative", height: 22, bgcolor: "#f1f5f9", borderRadius: "0 4px 4px 0" }}>
+                    <Box
+                        sx={{
+                            flex: 1,
+                            minWidth: 0,
+                            height: 20,
+                            bgcolor: "#f1f5f9",
+                            borderRadius: "0 4px 4px 0",
+                            overflow: "hidden",
+                        }}
+                    >
                         <Box
                             sx={{
                                 width: `${Math.max(0, Math.min(100, item.rate))}%`,
@@ -396,20 +451,21 @@ function SheqPdfPerformanceChart({ items }) {
                                 borderRadius: "0 4px 4px 0",
                             }}
                         />
-                        <Typography
-                            sx={{
-                                position: "absolute",
-                                right: -44,
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                fontSize: 11,
-                                fontWeight: 800,
-                                color: "#1e293b",
-                            }}
-                        >
-                            {item.rate}%
-                        </Typography>
                     </Box>
+                    <Typography
+                        sx={{
+                            width: 44,
+                            flexShrink: 0,
+                            pl: 0.75,
+                            textAlign: "right",
+                            fontSize: 10,
+                            fontWeight: 800,
+                            color: "#1e293b",
+                            lineHeight: 1,
+                        }}
+                    >
+                        {item.rate}%
+                    </Typography>
                 </Box>
             ))}
         </Box>
@@ -455,7 +511,7 @@ const NONCONFORMANCE_HEADER = {
 /**
  * Per-item score accumulation (only rows with a score selected).
  * - Unscored: no contribution to score or max.
- * - N/A/NIU: +3 to max and 0 to score when countNaNiInMax is true; otherwise skip.
+ * - N/A/NIU: +3 to max and +3 to score when countNaNiInMax is true; otherwise skip.
  * - Numeric (1–3): +value to score and +3 to max.
  */
 const EMPTY_NONCONFORMANCE_FINDING = {
@@ -511,7 +567,7 @@ function accumulateInstallationItemScore(totals, scoreVal, { countNaNiInMax = fa
         if (countNaNiInMax) {
             return {
                 rating: totals.rating + ITEM_MAX_SCORE,
-                score: totals.score,
+                score: totals.score + ITEM_MAX_SCORE,
             };
         }
         return totals;
@@ -611,6 +667,181 @@ const PdfCheckboxRow = ({ checked, label, accentColor = "#003049" }) => (
         <Typography sx={{ fontSize: "0.8rem", fontWeight: 500, color: "#111827", lineHeight: 1.25 }}>
             {label}
         </Typography>
+    </Box>
+);
+
+const SheqPdfGridField = ({ label, value, customBlue, exportBorder, exportText, colClass = "sheq-pdf-col-25", noRightBorder = false }) => (
+    <Box
+        className={colClass}
+        sx={{
+            display: "flex",
+            flexDirection: "column",
+            borderRight: noRightBorder ? "none" : `1px solid ${exportBorder}`,
+        }}
+    >
+        <Box
+            sx={{
+                background: `linear-gradient(135deg, ${customBlue} 0%, #004a6e 100%)`,
+                color: "#FFF",
+                textAlign: "center",
+                py: 0.5,
+                px: 0.5,
+                fontSize: "0.65rem",
+                fontWeight: "bold",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                borderBottom: `1px solid ${exportBorder}`,
+                minHeight: 28,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+            }}
+        >
+            {label}
+        </Box>
+        <Box sx={{ minHeight: 34, display: "flex", alignItems: "center", bgcolor: "#FFF" }}>
+            <Typography sx={{ px: 1, py: 0.5, fontSize: "0.85rem", color: exportText, lineHeight: 1.35, whiteSpace: "pre-wrap", wordBreak: "break-word", width: "100%" }}>
+                {value || " "}
+            </Typography>
+        </Box>
+    </Box>
+);
+
+const SheqPdfProjectDetailsGrid = ({ headerLabels, formData, customBlue, exportBorder, exportText }) => (
+    <Box sx={{ border: `1px solid ${exportBorder}`, mb: 0.75, bgcolor: "#FFF", overflow: "hidden" }}>
+        <Box className="sheq-pdf-4col-row" sx={{ borderBottom: `1px solid ${exportBorder}` }}>
+            <SheqPdfGridField label={headerLabels.clientLabel} value={formData.client} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} />
+            <SheqPdfGridField label={headerLabels.engineersLabel} value={formData.engineers} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} />
+            <SheqPdfGridField label={headerLabels.dateFieldLabel} value={formData.dateValue} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} />
+            <SheqPdfGridField label={headerLabels.auditorLabel} value={formData.auditor} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} noRightBorder />
+        </Box>
+        <Box className="sheq-pdf-4col-row" sx={{ borderBottom: `1px solid ${exportBorder}` }}>
+            <SheqPdfGridField label={headerLabels.siteAddressLabel} value={formData.siteAddress} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} colClass="sheq-pdf-col-50" />
+            <SheqPdfGridField label={headerLabels.serviceManagerLabel} value={formData.serviceManager} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} colClass="sheq-pdf-col-50" noRightBorder />
+        </Box>
+        <Box className="sheq-pdf-4col-row">
+            <SheqPdfGridField label={headerLabels.equipmentIdLabel} value={formData.equipmentId} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} colClass="sheq-pdf-col-50" />
+            <SheqPdfGridField label={headerLabels.siteContactLabel} value={formData.siteContact} customBlue={customBlue} exportBorder={exportBorder} exportText={exportText} colClass="sheq-pdf-col-50" noRightBorder />
+        </Box>
+    </Box>
+);
+
+const SheqPdfMetaRow = ({ headerLabels, docInfo, exportBorder, exportLabelBg, exportText }) => (
+    <Box
+        sx={{
+            display: "flex",
+            flexDirection: "row",
+            border: `1px solid ${exportBorder}`,
+            mb: 0.75,
+            bgcolor: "#FFF",
+        }}
+    >
+        {[
+            { label: headerLabels.dateLabel, value: docInfo.date },
+            { label: headerLabels.docNoLabel, value: docInfo.docNo },
+            { label: headerLabels.approvedByLabel, value: docInfo.approvedBy },
+        ].map((cell, idx) => (
+            <Box
+                key={cell.label}
+                sx={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    borderRight: idx < 2 ? `1px solid ${exportBorder}` : "none",
+                }}
+            >
+                <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${exportBorder}`, textAlign: "center", minHeight: 25, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Typography sx={{ fontSize: "0.65rem", fontWeight: "bold", textTransform: "uppercase", color: exportText }}>
+                        {cell.label}
+                    </Typography>
+                </Box>
+                <Box sx={{ minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <HeaderInput downloading textColor={exportText} value={cell.value} minRows={1} />
+                </Box>
+            </Box>
+        ))}
+    </Box>
+);
+
+const SheqPdfSummarySection = ({ headerLabels, formData, customBlue, exportBorder }) => (
+    <Box sx={{ border: `1px solid ${exportBorder}`, mb: 0.75, bgcolor: "#FFF", overflow: "hidden" }}>
+        <Box
+            sx={{
+                bgcolor: customBlue,
+                color: "#FFF",
+                textAlign: "center",
+                py: 0.6,
+                px: 2,
+                fontWeight: "bold",
+                fontSize: "0.8rem",
+                borderBottom: `1px solid ${exportBorder}`,
+            }}
+        >
+            {headerLabels.projectSummaryLabel}
+        </Box>
+        <Box className="sheq-pdf-summary-row" sx={{ display: "flex", flexDirection: "row", alignItems: "stretch" }}>
+            <Box sx={{ flex: "0 0 42%", display: "flex", alignItems: "center", justifyContent: "center", borderRight: `1px solid ${exportBorder}`, py: 0.5 }}>
+                <PdfProjectStatusBadge status={formData.projectStatus} />
+            </Box>
+            <Box sx={{ flex: 1, p: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.15 }}>
+                {[
+                    { key: "installationDirector", label: "Installation Director" },
+                    { key: "sheqAdvisor", label: "SHEQ Advisor" },
+                    { key: "principalContractor", label: "Principal Contractor" },
+                ].map((item) => (
+                    <PdfCheckboxRow
+                        key={item.key}
+                        checked={!!formData.distribution[item.key]}
+                        label={item.label}
+                        accentColor={customBlue}
+                    />
+                ))}
+            </Box>
+        </Box>
+    </Box>
+);
+
+const SheqPdfScoringTable = ({ summaryChartItems, summaryData, exportBorder }) => (
+    <Box sx={{ border: `1px solid ${exportBorder}`, bgcolor: "#FFF", overflow: "hidden" }}>
+        <Box sx={{ p: 1.25, borderBottom: `1px solid ${exportBorder}`, bgcolor: "#f8fafc" }}>
+            <Typography sx={{ fontSize: "0.95rem", fontWeight: 800, color: "#003049", letterSpacing: "-0.01em", textTransform: "uppercase" }}>
+                SCORING SUMMARY & PERFORMANCE ANALYTICS
+            </Typography>
+        </Box>
+        <Table size="small" sx={{ tableLayout: "fixed", width: "100%" }}>
+            <TableHead sx={{ bgcolor: "#003049" }}>
+                <TableRow>
+                    <TableCell sx={{ color: "#FFF", fontWeight: "bold", fontSize: "0.68rem", py: 0.75, width: "46%" }}>ITEM / SECTION</TableCell>
+                    <TableCell align="center" sx={{ color: "#FFF", fontWeight: "bold", fontSize: "0.68rem", py: 0.75, width: "18%" }}>AVERAGE SCORE</TableCell>
+                    <TableCell align="center" sx={{ color: "#FFF", fontWeight: "bold", fontSize: "0.68rem", py: 0.75, width: "18%" }}>MAXIMUM SCORE</TableCell>
+                    <TableCell align="center" sx={{ color: "#FFF", fontWeight: "bold", fontSize: "0.68rem", py: 0.75, width: "18%" }}>% COMPLIANCE RATE</TableCell>
+                </TableRow>
+            </TableHead>
+            <TableBody>
+                {summaryChartItems.map((item, idx) => (
+                    <TableRow key={idx} sx={{ bgcolor: idx % 2 === 0 ? "#FFF" : "#fcfcfc" }}>
+                        <TableCell sx={{ fontSize: "0.72rem", fontWeight: 700, color: "#1e293b", py: 0.5, lineHeight: 1.25 }}>{item.name}</TableCell>
+                        <TableCell align="center" sx={{ fontSize: "0.72rem", fontWeight: 800, color: "#003049", py: 0.5 }}>{item.avgScore}</TableCell>
+                        <TableCell align="center" sx={{ fontSize: "0.72rem", color: "#64748b", py: 0.5 }}>{item.rating}</TableCell>
+                        <TableCell align="center" sx={{ fontSize: "0.72rem", fontWeight: 800, color: item.color, py: 0.5 }}>{item.rate}%</TableCell>
+                    </TableRow>
+                ))}
+                <TableRow sx={{ bgcolor: "#f0f7ff" }}>
+                    <TableCell colSpan={3} align="right" sx={{ fontWeight: 800, fontSize: "0.78rem", color: "#003049", py: 1 }}>OVERALL COMPLIANCE RATE:</TableCell>
+                    <TableCell
+                        align="center"
+                        sx={{
+                            fontWeight: 900,
+                            fontSize: "0.85rem",
+                            color: summaryData.overallRate >= 90 ? "#10b981" : summaryData.overallRate >= 75 ? "#f59e0b" : "#ef4444",
+                            py: 1,
+                        }}
+                    >
+                        {summaryData.overallRate}%
+                    </TableCell>
+                </TableRow>
+            </TableBody>
+        </Table>
     </Box>
 );
 
@@ -961,8 +1192,9 @@ const HeaderInput = ({ value, onChange, textColor, multiline = true, minRows = 2
 export default function SheqInstallationForm({ 
     submissionId: propsId, 
     category: propsCategory, 
-    isModal = false, 
-    onClose 
+    isModal = false,
+    autoDownload = false,
+    onClose,
 }) {
     const { isDarkMode } = useTheme();
     const { id: urlId } = useParams();
@@ -972,9 +1204,11 @@ export default function SheqInstallationForm({
     const [searchParams] = useSearchParams();
     
     const siteId = searchParams.get("siteId");
+    const subfolderId = searchParams.get("subfolderId");
     const rawCategory = propsCategory || searchParams.get("category") || SHEQ_INSTALLATION_CATEGORY;
     const category = decodeURIComponent(String(rawCategory));
     const action = searchParams.get("action");
+    const isDownloadSession = action === "download" || autoDownload;
     const isViewMode = searchParams.get("view") === "true";
     const containerRef = useRef(null);
 
@@ -983,7 +1217,22 @@ export default function SheqInstallationForm({
     const [downloading, setDownloading] = useState(false);
     const [saveDialogOpen, setSaveDialogOpen] = useState(false);
     const [formMetadata, setFormMetadata] = useState({ name: "", tags: "" });
+    const [persistedResponseId, setPersistedResponseId] = useState(id || null);
+    const [autoSaveStatus, setAutoSaveStatus] = useState(null);
+    const [imageUploading, setImageUploading] = useState(false);
+    const [preparingPdf, setPreparingPdf] = useState(false);
+    const [pdfAssets, setPdfAssets] = useState(null);
     const hasDownloaded = useRef(false);
+    const persistedResponseIdRef = useRef(persistedResponseId);
+    const resetDirtyRef = useRef(() => {});
+
+    useEffect(() => {
+        persistedResponseIdRef.current = persistedResponseId;
+    }, [persistedResponseId]);
+
+    useEffect(() => {
+        if (id) setPersistedResponseId(id);
+    }, [id]);
 
     // State structure
     const [docInfo, setDocInfo] = useState({
@@ -1069,7 +1318,7 @@ export default function SheqInstallationForm({
               ? "/shq-installation"
               : "/general-forms";
 
-    const performSave = async (asNew = false, name = "", tags = "") => {
+    const performSave = async (asNew = false, name = "", tags = "", { silent = false } = {}) => {
         setSaving(true);
         try {
             const payload = buildSavePayload(name, tags);
@@ -1078,8 +1327,11 @@ export default function SheqInstallationForm({
                     ? SHEQ_INSPECTION_CATEGORY
                     : SHEQ_INSTALLATION_CATEGORY;
 
-            if (id && !asNew) {
-                const res = await api.put(`/forms/responses/${id}`, {
+            const existingId = persistedResponseIdRef.current;
+            let savedId = existingId;
+
+            if (existingId && !asNew) {
+                const res = await api.put(`/forms/responses/${existingId}`, {
                     answers: payload,
                     category,
                 });
@@ -1095,31 +1347,68 @@ export default function SheqInstallationForm({
                 if (!res.data?.success) {
                     throw new Error(res.data?.message || "Save failed");
                 }
+                savedId = res.data?.data?.id || res.data?.data?._id || null;
+                if (savedId && !asNew) {
+                    setPersistedResponseId(savedId);
+                    persistedResponseIdRef.current = savedId;
+                    if (!propsId) {
+                        const params = new URLSearchParams(searchParams);
+                        params.delete("action");
+                        const query = params.toString();
+                        navigate(
+                            `/sheq-install-form/${savedId}${query ? `?${query}` : ""}`,
+                            { replace: true }
+                        );
+                    }
+                }
             }
 
             setFormMetadata({ name: payload.name, tags: payload.tags });
+            resetDirtyRef.current();
+            if (silent) {
+                setAutoSaveStatus(new Date());
+            }
             return true;
         } catch (e) {
             console.error("Failed to save", e);
-            const msg = e?.response?.data?.message || e.message || "Failed to save the form.";
-            alert(msg);
+            if (!silent) {
+                const msg = e?.response?.data?.message || e.message || "Failed to save the form.";
+                alert(msg);
+            }
             return false;
         } finally {
             setSaving(false);
         }
     };
 
-    const { navigateBack, finishSaveAndNavigate, resetDirty, UnsavedDialog } = useGeneralFormLeave({
-        enabled: !isViewMode && !downloading,
+    const { navigateBack, finishSaveAndNavigate, resetDirty, isDirty, UnsavedDialog } = useGeneralFormLeave({
+        enabled: !isViewMode && !downloading && !isDownloadSession,
         loading,
         watchDeps: [formData, formSections, headerLabels, docInfo, visibleSections, formMetadata],
         siteId,
+
+        subfolderId,
         category,
         listPath,
         saving,
-        canQuickSave: Boolean(id && formMetadata.name?.trim()),
+        canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
         onQuickSave: () => performSave(false, formMetadata.name, formMetadata.tags),
         onOpenSaveDialog: () => setSaveDialogOpen(true),
+    });
+    resetDirtyRef.current = resetDirty;
+
+    useGeneralFormAutoSave({
+        enabled: !isViewMode && !isModal && !isDownloadSession,
+        isDirty,
+        saving,
+        loading,
+        downloading,
+        onAutoSave: async () => {
+            const defaultName =
+                formMetadata.name?.trim() ||
+                buildSavePayload().name;
+            return performSave(false, defaultName, formMetadata.tags, { silent: true });
+        },
     });
 
     const completeSaveNavigation = useCallback(() => {
@@ -1130,25 +1419,71 @@ export default function SheqInstallationForm({
         finishSaveAndNavigate();
     }, [isModal, onClose, finishSaveAndNavigate]);
 
-    useEffect(() => {
-        if (loading || action !== "download" || !id || hasDownloaded.current) return;
-        hasDownloaded.current = true;
-        setDownloading(true);
-        const fileName = getPdfFileName(category, id, formData.client);
-        let cancelled = false;
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (cancelled) return;
+    const preparePdfAssets = useCallback(async () => {
+        const [images, logo, logoRight] = await Promise.all([
+            prepareImagesForPdfExport(normalizeFormImages(formData.images)),
+            shrinkDataUrlIfNeeded(docInfo.logo, {
+                maxWidth: 400,
+                maxHeight: 200,
+                quality: 0.85,
+                thresholdBytes: 120_000,
+            }),
+            shrinkDataUrlIfNeeded(docInfo.logoRight, {
+                maxWidth: 400,
+                maxHeight: 200,
+                quality: 0.85,
+                thresholdBytes: 120_000,
+            }),
+        ]);
+        return { images, logo, logoRight };
+    }, [formData.images, docInfo.logo, docInfo.logoRight]);
+
+    const triggerPdfDownload = useCallback(
+        async (responseId, { closeAfter = false } = {}) => {
+            if (!responseId || hasDownloaded.current) return;
+            setPreparingPdf(true);
+            try {
+                const assets = await preparePdfAssets();
+                flushSync(() => {
+                    setPdfAssets(assets);
+                    setDownloading(true);
+                });
+                hasDownloaded.current = true;
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const fileName = getPdfFileName(category, responseId, formData.client);
                 runSheqPdfDownload(containerRef, fileName, (err) => {
                     setDownloading(false);
-                    if (!err) navigate(listPath);
+                    setPreparingPdf(false);
+                    setPdfAssets(null);
+                    if (err) {
+                        hasDownloaded.current = false;
+                        if (autoDownload && onClose) onClose(false);
+                        else if (!autoDownload) alert("PDF download failed. Please try again.");
+                        return;
+                    }
+                    if (closeAfter) {
+                        if (autoDownload && onClose) onClose(true);
+                        else if (action === "download") navigate(listPath);
+                    }
                 });
-            });
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [loading, action, id, category, listPath, formData.client]);
+            } catch (err) {
+                console.error("PDF preparation failed:", err);
+                setPreparingPdf(false);
+                setPdfAssets(null);
+                hasDownloaded.current = false;
+                alert("PDF download failed. Please try again.");
+            }
+        },
+        [category, formData.client, listPath, navigate, action, autoDownload, onClose, preparePdfAssets]
+    );
+
+    useEffect(() => {
+        if (loading || !isDownloadSession || !persistedResponseId || hasDownloaded.current) return;
+        const timerId = window.setTimeout(() => {
+            triggerPdfDownload(persistedResponseId, { closeAfter: true });
+        }, 120);
+        return () => window.clearTimeout(timerId);
+    }, [loading, isDownloadSession, persistedResponseId, triggerPdfDownload]);
 
     const hydrateSubmissionAnswers = (submission, { asTemplate = false } = {}) => {
         if (!submission?.answers) return;
@@ -1211,6 +1546,8 @@ export default function SheqInstallationForm({
                 fd.nonconformanceFindings || {}
             );
 
+            const normalizedImages = asTemplate ? [] : normalizeFormImages(fd.images);
+
             setFormData((prev) => ({
                 ...prev,
                 ...fd,
@@ -1227,12 +1564,16 @@ export default function SheqInstallationForm({
                           comments: "",
                           images: [],
                       }
-                    : {}),
+                    : { images: normalizedImages }),
                 measures,
                 nonconformanceFindings: mergedFindings,
                 actions:
                     Array.isArray(fd.actions) && fd.actions.length > 0 ? fd.actions : prev.actions,
             }));
+
+            if (!asTemplate && normalizedImages.length > 0) {
+                setVisibleSections((prev) => ({ ...prev, uploads: true }));
+            }
         }
         const baseName =
             ans.name ||
@@ -1279,7 +1620,7 @@ export default function SheqInstallationForm({
             name ||
             formMetadata.name ||
             `${category} - ${new Date().toLocaleDateString("en-GB")}`;
-        const payload = {
+        return appendSitepackToAnswers({
             docInfo: { ...docInfo },
             headerLabels: { ...headerLabels },
             formSections: JSON.parse(JSON.stringify(formSections)),
@@ -1295,35 +1636,23 @@ export default function SheqInstallationForm({
             name: displayName,
             tags: tags || formMetadata.tags || "",
             category,
-        };
-        if (siteId) payload.siteId = siteId;
-        return payload;
+        }, { siteId, subfolderId });
     };
 
     const handleSaveClick = () => {
         if (isViewMode) return;
-        if (id) {
+        if (persistedResponseId) {
             setSaveDialogOpen(true);
         } else {
             executeSave(false);
         }
     };
 
-    const handleDownloadClick = () => {
-        if (!id) {
-            alert("Please save the form before downloading.");
-            return;
-        }
+    const handleViewDownloadClick = () => {
+        const responseId = persistedResponseId || id;
+        if (!responseId || loading || downloading || preparingPdf) return;
         hasDownloaded.current = false;
-        setDownloading(true);
-        const fileName = getPdfFileName(category, id, formData.client);
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                runSheqPdfDownload(containerRef, fileName, () => {
-                    setDownloading(false);
-                });
-            });
-        });
+        triggerPdfDownload(responseId);
     };
 
     const executeSave = async (asNew = false, name = "", tags = "") => {
@@ -1386,24 +1715,40 @@ export default function SheqInstallationForm({
         }));
     };
 
-    const appendImagesFromFiles = (fileList) => {
-        const files = Array.from(fileList || []);
-        files.forEach((file) => {
-            if (!file?.type?.startsWith("image/")) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                setFormData((prev) => ({
-                    ...prev,
-                    images: [...(prev.images || []), ev.target.result],
-                }));
-            };
-            reader.readAsDataURL(file);
-        });
+    const appendImagesFromFiles = async (fileList) => {
+        const files = Array.from(fileList || []).filter((file) =>
+            file?.type?.startsWith("image/")
+        );
+        if (!files.length) return;
+        setImageUploading(true);
+        try {
+            const compressed = await Promise.all(files.map((file) => compressImageFile(file)));
+            setFormData((prev) => ({
+                ...prev,
+                images: [...(prev.images || []), ...compressed],
+            }));
+        } catch (err) {
+            console.error("Image upload failed:", err);
+            alert("Could not process the image. Try a smaller photo or a different format.");
+        } finally {
+            setImageUploading(false);
+        }
     };
 
     const handleImageUpload = (e) => {
         appendImagesFromFiles(e.target.files);
         e.target.value = "";
+    };
+
+    const applyLogoFromFile = async (file, field) => {
+        if (!file?.type?.startsWith("image/")) return;
+        try {
+            const dataUrl = await compressLogoFile(file);
+            setDocInfo((prev) => ({ ...prev, [field]: dataUrl }));
+        } catch (err) {
+            console.error("Logo upload failed:", err);
+            alert("Could not load the logo image.");
+        }
     };
 
     const removeImage = (index) => {
@@ -1576,12 +1921,14 @@ export default function SheqInstallationForm({
     };
 
     const borderColor = isDarkMode ? "#334155" : "#E2E8F0";
+    const exportBorder = downloading ? "#E2E8F0" : borderColor;
     const headerBgColor = isDarkMode ? "rgba(255,255,255,0.03)" : "#F8FAFC";
     const customBlue = "#003049"; // New Dark Blue
     const isServiceForm = category === SHEQ_INSPECTION_CATEGORY;
-    const serviceSectionBg = isDarkMode ? "#374151" : "#d1d5db";
-    const serviceSectionColor = isDarkMode ? "#F9FAFB" : "#111827";
-    const scoreColBg = isDarkMode ? "rgba(255,255,255,0.06)" : "#e5e7eb";
+    const serviceSectionBg = downloading ? "#e2e8f0" : (isDarkMode ? "#374151" : "#d1d5db");
+    const serviceSectionColor = downloading ? "#111827" : (isDarkMode ? "#F9FAFB" : "#111827");
+    const scoreColBg = downloading ? "#f1f5f9" : (isDarkMode ? "rgba(255,255,255,0.06)" : "#e5e7eb");
+    const sectionBorder = exportBorder;
     const sectionTitleBgColor = "#004a6e"; // Corresponding lighter shade
     const sectionTitleTextColor = "#FFF";
     const textColor = isDarkMode ? "#F9FAFB" : "#111827";
@@ -1590,17 +1937,29 @@ export default function SheqInstallationForm({
     const pdfMb = downloading ? 1 : 4;
     const engineerPdfRows = downloading ? Math.min(6, countTextLines(formData.engineers, 2)) : 10;
     const summaryChartItems = summaryData.items;
-    const summaryChartWidth = 1060;
     const chartTickColor = downloading ? "#1e293b" : (isDarkMode ? "#cbd5e1" : "#1e293b");
     const chartLabelColor = downloading ? "#1e293b" : (isDarkMode ? "#cbd5e1" : "#1e293b");
     /** PDF: signature always appears below the overall compliance score section. */
     const pdfSignatureBlock = downloading && visibleSections.signatures;
+    const activeDocInfo = pdfAssets
+        ? {
+              ...docInfo,
+              logo: pdfAssets.logo ?? docInfo.logo,
+              logoRight: pdfAssets.logoRight ?? docInfo.logoRight,
+          }
+        : docInfo;
+    const displayImages = normalizeFormImages(pdfAssets?.images ?? formData.images);
+    const exportBg = downloading ? "#FFFFFF" : (isDarkMode ? "#1B212C" : "#FFFFFF");
+    const exportText = downloading ? "#111827" : textColor;
+    const exportSubBg = downloading ? "#F8FAFC" : (isDarkMode ? "rgba(255,255,255,0.02)" : "#F8FAFC");
+    const exportLabelBg = downloading ? "#F1F5F9" : (isDarkMode ? "rgba(255,255,255,0.05)" : "#F1F5F9");
+    const cellText = downloading ? exportText : textColor;
 
-    if (loading && action === "download") {
+    if (loading && isDownloadSession) {
         return (
-            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 2 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: isModal ? "40vh" : "60vh", gap: 2 }}>
                 <CircularProgress />
-                <Typography color="text.secondary">Loading form for download...</Typography>
+                <Typography color="text.secondary">Preparing PDF...</Typography>
             </Box>
         );
     }
@@ -1613,7 +1972,7 @@ export default function SheqInstallationForm({
 
     const formContent = (
         <Box sx={{ p: isModal ? 0 : 3, position: "relative" }}>
-            {action === "download" && downloading && (
+            {isDownloadSession && downloading && (
                 <Box
                     className="pdf-hide-on-export"
                     sx={{
@@ -1632,7 +1991,7 @@ export default function SheqInstallationForm({
                     <Typography color="text.secondary">Generating PDF...</Typography>
                 </Box>
             )}
-            <Box sx={{ mb: action === "download" ? 0 : 4, display: action === "download" ? "none" : "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Box sx={{ mb: isDownloadSession ? 0 : 4, display: isDownloadSession ? "none" : "flex", justifyContent: "space-between", alignItems: "center" }}>
                 {!isModal ? (
                     <IconButton 
                         onClick={navigateBack}
@@ -1653,29 +2012,43 @@ export default function SheqInstallationForm({
                             Cancel
                         </Button>
                     )}
-                    {id && (
+                    {autoSaveStatus && !isViewMode && (
+                        <Typography variant="caption" sx={{ alignSelf: "center", color: "text.secondary", mr: 1 }}>
+                            Auto-saved {autoSaveStatus.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        </Typography>
+                    )}
+                    {isViewMode && id && (
                         <Button
-                            variant="outlined"
-                            onClick={handleDownloadClick}
-                            disabled={saving || downloading || loading}
-                            startIcon={downloading ? <CircularProgress size={20} /> : <Download size={20} />}
+                            variant="contained"
+                            onClick={handleViewDownloadClick}
+                            disabled={loading || downloading || preparingPdf}
+                            startIcon={downloading || preparingPdf ? <CircularProgress size={20} color="inherit" /> : <Download size={20} />}
                             sx={{
-                                borderRadius: "12px",
-                                textTransform: "none",
+                                bgcolor: customBlue,
+                                color: "#FFFFFF",
                                 fontWeight: 600,
-                                px: 3,
-                                borderColor: customBlue,
-                                color: customBlue,
+                                borderRadius: "12px",
+                                boxShadow: `0 4px 14px 0 ${isDarkMode ? "rgba(0,0,0,0.39)" : "rgba(2, 132, 199, 0.39)"}`,
+                                px: 4,
+                                py: 1.5,
+                                textTransform: "none",
+                                fontSize: "1rem",
+                                transition: "all 0.2s ease-in-out",
+                                "&:hover": {
+                                    bgcolor: "#004a6e",
+                                    boxShadow: "0 6px 20px rgba(2, 132, 199, 0.23)",
+                                    transform: "translateY(-1px)",
+                                },
                             }}
                         >
-                            {downloading ? "Downloading..." : "Download PDF"}
+                            {preparingPdf ? "Preparing PDF..." : downloading ? "Downloading..." : "Download PDF"}
                         </Button>
                     )}
                     {!isViewMode && (
                     <Button 
                         variant="contained" 
                         onClick={handleSaveClick}
-                        disabled={saving || downloading}
+                        disabled={saving || downloading || preparingPdf || imageUploading}
                         startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <Save size={20} />}
                         sx={{ 
                             bgcolor: customBlue, 
@@ -1710,7 +2083,8 @@ export default function SheqInstallationForm({
             }}>
                 <Paper 
                     ref={containerRef}
-                    className={downloading ? "pdf-export-root" : undefined}
+                    className={downloading ? "pdf-export-root sheq-pdf-export" : undefined}
+                    data-pdf-form-title={downloading ? headerLabels.formTitle : undefined}
                     elevation={0} 
                     sx={{ 
                         width: downloading ? "1100px" : "100%", 
@@ -1721,27 +2095,168 @@ export default function SheqInstallationForm({
                         overflow: downloading ? "visible" : "hidden",
                         p: downloading ? 1.5 : { xs: 2, md: 5 }, 
                         pb: downloading ? 2 : 5, 
-                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF", 
-                        color: textColor,
+                        bgcolor: exportBg, 
+                        color: exportText,
                         borderRadius: "12px",
-                        border: `1px solid ${borderColor}`,
-                        boxShadow: isDarkMode ? "0 10px 15px -3px rgba(0,0,0,0.5)" : "0 10px 15px -3px rgba(0,0,0,0.1)"
+                        border: `1px solid ${exportBorder}`,
+                        boxShadow: downloading ? "none" : (isDarkMode ? "0 10px 15px -3px rgba(0,0,0,0.5)" : "0 10px 15px -3px rgba(0,0,0,0.1)")
                     }}
                 >
+                    {downloading && (
+                        <Box data-pdf-block className="sheq-pdf-page-one">
+                            {visibleSections.header && (
+                                <>
+                                    <Box
+                                        className="sheq-pdf-header-row"
+                                        sx={{
+                                            display: "flex",
+                                            flexDirection: "row",
+                                            border: `1px solid ${exportBorder}`,
+                                            mb: 0.75,
+                                            bgcolor: exportBg,
+                                        }}
+                                    >
+                                        {visibleSections.logoLeft && activeDocInfo.logo && (
+                                            <Box
+                                                className="sheq-pdf-col-25"
+                                                sx={{
+                                                    p: 1.5,
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    borderRight: `1px solid ${exportBorder}`,
+                                                }}
+                                            >
+                                                <Box
+                                                    component="img"
+                                                    className="pdf-header-logo"
+                                                    src={activeDocInfo.logo}
+                                                    alt="Logo"
+                                                    sx={{ maxWidth: "90%", maxHeight: 68, objectFit: "contain", display: "block" }}
+                                                />
+                                            </Box>
+                                        )}
+                                        <Box
+                                            className={
+                                                visibleSections.logoLeft &&
+                                                activeDocInfo.logo &&
+                                                visibleSections.logoRight &&
+                                                activeDocInfo.logoRight
+                                                    ? "sheq-pdf-col-50"
+                                                    : undefined
+                                            }
+                                            sx={{
+                                                flex: 1,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                p: 1.5,
+                                                bgcolor: exportSubBg,
+                                                borderRight:
+                                                    visibleSections.logoRight && activeDocInfo.logoRight
+                                                        ? `1px solid ${exportBorder}`
+                                                        : "none",
+                                            }}
+                                        >
+                                            <Typography sx={{ fontWeight: "bold", fontSize: "1.15rem", color: customBlue, textAlign: "center" }}>
+                                                {headerLabels.formTitle}
+                                            </Typography>
+                                        </Box>
+                                        {visibleSections.logoRight && activeDocInfo.logoRight && (
+                                            <Box className="sheq-pdf-col-25" sx={{ p: 1.5, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                <Box
+                                                    component="img"
+                                                    className="pdf-header-logo"
+                                                    src={activeDocInfo.logoRight}
+                                                    alt="Logo"
+                                                    sx={{ maxWidth: "90%", maxHeight: 68, objectFit: "contain", display: "block" }}
+                                                />
+                                            </Box>
+                                        )}
+                                    </Box>
+                                    <SheqPdfMetaRow
+                                        headerLabels={headerLabels}
+                                        docInfo={docInfo}
+                                        exportBorder={exportBorder}
+                                        exportLabelBg={exportLabelBg}
+                                        exportText={exportText}
+                                    />
+                                </>
+                            )}
+                            <SheqPdfProjectDetailsGrid
+                                headerLabels={headerLabels}
+                                formData={formData}
+                                customBlue={customBlue}
+                                exportBorder={exportBorder}
+                                exportText={exportText}
+                            />
+                            <SheqPdfSummarySection
+                                headerLabels={headerLabels}
+                                formData={formData}
+                                customBlue={customBlue}
+                                exportBorder={exportBorder}
+                            />
+                        </Box>
+                    )}
+
+                    {downloading && id && visibleSections.summary && (
+                        <Box data-pdf-block sx={{ mb: 0.75 }}>
+                            <SheqPdfScoringTable
+                                summaryChartItems={summaryChartItems}
+                                summaryData={summaryData}
+                                exportBorder={exportBorder}
+                            />
+                        </Box>
+                    )}
+
+                    {downloading && id && visibleSections.summary && (
+                        <Box
+                            data-pdf-block
+                            className="sheq-pdf-chart-page"
+                            sx={{
+                                mb: 0.75,
+                                border: `1px solid ${exportBorder}`,
+                                borderRadius: "8px",
+                                bgcolor: "#FFF",
+                                overflow: "visible",
+                            }}
+                        >
+                            <SheqPdfChartPageHeader exportBorder={exportBorder} />
+                            <Box sx={{ px: 1.5, py: 0.75, overflow: "visible" }}>
+                                <SheqPdfPerformanceChart items={summaryChartItems} />
+                            </Box>
+                        </Box>
+                    )}
+
+                    {!downloading && (
+                    <>
                     {/* Professional Header Section */}
                     {visibleSections.header && (
-                        <Box data-pdf-block sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, border: `1px solid ${borderColor}`, mb: pdfMb, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
+                        <>
+                        <Box
+                            data-pdf-block
+                            className={downloading ? "sheq-pdf-header-row" : undefined}
+                            sx={{
+                                display: "flex",
+                                flexDirection: downloading ? "row" : { xs: "column", md: "row" },
+                                border: `1px solid ${exportBorder}`,
+                                mb: downloading ? 1 : pdfMb,
+                                bgcolor: exportBg,
+                            }}
+                        >
                         {/* Logo Left */}
                         {visibleSections.logoLeft && (
-                            <Box sx={{ 
-                                width: { xs: '100%', md: '25%' }, 
+                            <Box
+                                className={downloading ? "sheq-pdf-col-25" : undefined}
+                                sx={{ 
+                                width: downloading ? "25%" : { xs: '100%', md: '25%' }, 
                                 p: 2, 
                                 display: 'flex', 
                                 flexDirection: 'column', 
                                 alignItems: 'center', 
                                 justifyContent: 'center', 
-                                borderRight: { xs: 'none', md: `1px solid ${borderColor}` },
-                                borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' },
+                                borderRight: downloading ? `1px solid ${exportBorder}` : { xs: 'none', md: `1px solid ${borderColor}` },
+                                borderBottom: downloading ? "none" : { xs: `1px solid ${borderColor}`, md: 'none' },
                                 position: 'relative'
                             }}>
                                 {!downloading && (
@@ -1751,19 +2266,15 @@ export default function SheqInstallationForm({
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {docInfo.logo ? (
+                                {activeDocInfo.logo ? (
                                     <Box sx={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Box component="img" className={downloading ? "pdf-header-logo" : undefined} src={docInfo.logo} sx={{ maxWidth: '90%', maxHeight: downloading ? 72 : 80, objectFit: 'contain', display: 'block', mx: 'auto' }} />
+                                        <Box component="img" className={downloading ? "pdf-header-logo" : undefined} src={activeDocInfo.logo} sx={{ maxWidth: '90%', maxHeight: downloading ? 72 : 80, objectFit: 'contain', display: 'block', mx: 'auto' }} />
                                         {!downloading && (
                                             <Button variant="text" size="small" component="label" sx={{ display: 'block', mx: 'auto', mt: 1, textTransform: 'none', fontSize: '0.7rem' }}>
                                                 Change Logo
                                                 <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = (ev) => setDocInfo(prev => ({ ...prev, logo: ev.target.result }));
-                                                        reader.readAsDataURL(file);
-                                                    }
+                                                    applyLogoFromFile(e.target.files?.[0], "logo");
+                                                    e.target.value = "";
                                                 }} />
                                             </Button>
                                         )}
@@ -1773,12 +2284,8 @@ export default function SheqInstallationForm({
                                         <Button variant="outlined" component="label" size="small" sx={{ textTransform: 'none' }}>
                                             Upload Logo
                                             <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => setDocInfo(prev => ({ ...prev, logo: ev.target.result }));
-                                                    reader.readAsDataURL(file);
-                                                }
+                                                applyLogoFromFile(e.target.files?.[0], "logo");
+                                                e.target.value = "";
                                             }} />
                                         </Button>
                                     )
@@ -1787,14 +2294,24 @@ export default function SheqInstallationForm({
                         )}
 
                         {/* Title & Info Middle */}
-                        <Box sx={{ 
-                            width: { 
-                                xs: '100%', 
-                                md: (visibleSections.logoLeft && visibleSections.logoRight) ? '50%' : (visibleSections.logoLeft || visibleSections.logoRight) ? '75%' : '100%' 
-                            }, 
+                        <Box
+                            className={
+                                downloading && visibleSections.logoLeft && visibleSections.logoRight
+                                    ? "sheq-pdf-col-50"
+                                    : undefined
+                            }
+                            sx={{ 
+                            width: downloading
+                                ? ((visibleSections.logoLeft && visibleSections.logoRight) ? "50%" : (visibleSections.logoLeft || visibleSections.logoRight) ? "75%" : "100%")
+                                : { xs: '100%', md: (visibleSections.logoLeft && visibleSections.logoRight) ? '50%' : (visibleSections.logoLeft || visibleSections.logoRight) ? '75%' : '100%' }, 
+                            flex: downloading && !(visibleSections.logoLeft && visibleSections.logoRight)
+                                ? "1 1 auto"
+                                : undefined,
                             display: 'flex', 
                             flexDirection: 'column', 
-                            borderRight: { xs: 'none', md: visibleSections.logoRight ? `1px solid ${borderColor}` : 'none' },
+                            borderRight: downloading
+                                ? (visibleSections.logoRight ? `1px solid ${exportBorder}` : "none")
+                                : { xs: 'none', md: visibleSections.logoRight ? `1px solid ${borderColor}` : 'none' },
                             position: 'relative'
                         }}>
                             {!downloading && (
@@ -1809,9 +2326,9 @@ export default function SheqInstallationForm({
                                 display: 'flex', 
                                 alignItems: 'center', 
                                 justifyContent: 'center', 
-                                borderBottom: `1px solid ${borderColor}`,
+                                borderBottom: downloading ? "none" : `1px solid ${exportBorder}`,
                                 p: 2,
-                                bgcolor: isDarkMode ? 'rgba(255,255,255,0.02)' : '#F8FAFC'
+                                bgcolor: exportSubBg,
                             }}>
                                 {downloading ? (
                                     <Typography sx={{ fontWeight: 'bold', fontSize: '1.2rem', color: customBlue, textAlign: 'center' }}>
@@ -1832,74 +2349,66 @@ export default function SheqInstallationForm({
                                     />
                                 )}
                             </Box>
+                            {!downloading && (
                             <Box sx={{ display: 'flex', flex: 1 }}>
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${borderColor}` }}>
-                                    <Box sx={{ bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9', p: 0.5, borderBottom: `1px solid ${borderColor}`, textAlign: 'center', minHeight: '25px', display: 'flex', alignItems: 'center' }}>
-                                        {downloading ? (
-                                            <Typography sx={{ width: '100%', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase' }}>{headerLabels.dateLabel}</Typography>
-                                        ) : (
-                                            <TextField
-                                                fullWidth
-                                                variant="standard"
-                                                value={headerLabels.dateLabel}
-                                                onChange={(e) => setHeaderLabels(prev => ({ ...prev, dateLabel: e.target.value }))}
-                                                InputProps={{ disableUnderline: true, sx: { fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', input: { textAlign: 'center', p: 0 } } }}
-                                            />
-                                        )}
+                                    <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${borderColor}`, textAlign: 'center', minHeight: '25px', display: 'flex', alignItems: 'center' }}>
+                                        <TextField
+                                            fullWidth
+                                            variant="standard"
+                                            value={headerLabels.dateLabel}
+                                            onChange={(e) => setHeaderLabels(prev => ({ ...prev, dateLabel: e.target.value }))}
+                                            InputProps={{ disableUnderline: true, sx: { fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', input: { textAlign: 'center', p: 0 } } }}
+                                        />
                                     </Box>
                                     <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <HeaderInput downloading={downloading} textColor={textColor} value={docInfo.date} onChange={(e) => setDocInfo(prev => ({ ...prev, date: e.target.value }))} minRows={1} />
+                                        <HeaderInput downloading={false} textColor={exportText} value={docInfo.date} onChange={(e) => setDocInfo(prev => ({ ...prev, date: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${borderColor}` }}>
-                                    <Box sx={{ bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9', p: 0.5, borderBottom: `1px solid ${borderColor}`, textAlign: 'center', minHeight: '25px', display: 'flex', alignItems: 'center' }}>
-                                        {downloading ? (
-                                            <Typography sx={{ width: '100%', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase' }}>{headerLabels.docNoLabel}</Typography>
-                                        ) : (
-                                            <TextField
-                                                fullWidth
-                                                variant="standard"
-                                                value={headerLabels.docNoLabel}
-                                                onChange={(e) => setHeaderLabels(prev => ({ ...prev, docNoLabel: e.target.value }))}
-                                                InputProps={{ disableUnderline: true, sx: { fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', input: { textAlign: 'center', p: 0 } } }}
-                                            />
-                                        )}
+                                    <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${borderColor}`, textAlign: 'center', minHeight: '25px', display: 'flex', alignItems: 'center' }}>
+                                        <TextField
+                                            fullWidth
+                                            variant="standard"
+                                            value={headerLabels.docNoLabel}
+                                            onChange={(e) => setHeaderLabels(prev => ({ ...prev, docNoLabel: e.target.value }))}
+                                            InputProps={{ disableUnderline: true, sx: { fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', input: { textAlign: 'center', p: 0 } } }}
+                                        />
                                     </Box>
                                     <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <HeaderInput downloading={downloading} textColor={textColor} value={docInfo.docNo} onChange={(e) => setDocInfo(prev => ({ ...prev, docNo: e.target.value }))} minRows={1} />
+                                        <HeaderInput downloading={false} textColor={exportText} value={docInfo.docNo} onChange={(e) => setDocInfo(prev => ({ ...prev, docNo: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                    <Box sx={{ bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9', p: 0.5, borderBottom: `1px solid ${borderColor}`, textAlign: 'center', minHeight: '25px', display: 'flex', alignItems: 'center' }}>
-                                        {downloading ? (
-                                            <Typography sx={{ width: '100%', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase' }}>{headerLabels.approvedByLabel}</Typography>
-                                        ) : (
-                                            <TextField
-                                                fullWidth
-                                                variant="standard"
-                                                value={headerLabels.approvedByLabel}
-                                                onChange={(e) => setHeaderLabels(prev => ({ ...prev, approvedByLabel: e.target.value }))}
-                                                InputProps={{ disableUnderline: true, sx: { fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', input: { textAlign: 'center', p: 0 } } }}
-                                            />
-                                        )}
+                                    <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${borderColor}`, textAlign: 'center', minHeight: '25px', display: 'flex', alignItems: 'center' }}>
+                                        <TextField
+                                            fullWidth
+                                            variant="standard"
+                                            value={headerLabels.approvedByLabel}
+                                            onChange={(e) => setHeaderLabels(prev => ({ ...prev, approvedByLabel: e.target.value }))}
+                                            InputProps={{ disableUnderline: true, sx: { fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', input: { textAlign: 'center', p: 0 } } }}
+                                        />
                                     </Box>
                                     <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <HeaderInput downloading={downloading} textColor={textColor} value={docInfo.approvedBy} onChange={(e) => setDocInfo(prev => ({ ...prev, approvedBy: e.target.value }))} minRows={1} />
+                                        <HeaderInput downloading={false} textColor={exportText} value={docInfo.approvedBy} onChange={(e) => setDocInfo(prev => ({ ...prev, approvedBy: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                             </Box>
+                            )}
                         </Box>
 
                         {/* Logo Right */}
                         {visibleSections.logoRight && (
-                            <Box sx={{ 
-                                width: { xs: '100%', md: '25%' }, 
+                            <Box
+                                className={downloading ? "sheq-pdf-col-25" : undefined}
+                                sx={{ 
+                                width: downloading ? "25%" : { xs: '100%', md: '25%' }, 
                                 p: 2, 
                                 display: 'flex', 
                                 flexDirection: 'column', 
                                 alignItems: 'center', 
                                 justifyContent: 'center',
-                                borderTop: { xs: `1px solid ${borderColor}`, md: 'none' },
+                                borderTop: downloading ? "none" : { xs: `1px solid ${borderColor}`, md: 'none' },
                                 position: 'relative'
                             }}>
                                 {!downloading && (
@@ -1909,19 +2418,15 @@ export default function SheqInstallationForm({
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {docInfo.logoRight ? (
+                                {activeDocInfo.logoRight ? (
                                     <Box sx={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Box component="img" className={downloading ? "pdf-header-logo" : undefined} src={docInfo.logoRight} sx={{ maxWidth: '90%', maxHeight: downloading ? 72 : 80, objectFit: 'contain', display: 'block', mx: 'auto' }} />
+                                        <Box component="img" className={downloading ? "pdf-header-logo" : undefined} src={activeDocInfo.logoRight} sx={{ maxWidth: '90%', maxHeight: downloading ? 72 : 80, objectFit: 'contain', display: 'block', mx: 'auto' }} />
                                         {!downloading && (
                                             <Button variant="text" size="small" component="label" sx={{ display: 'block', mx: 'auto', mt: 1, textTransform: 'none', fontSize: '0.7rem' }}>
                                                 Change Logo
                                                 <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = (ev) => setDocInfo(prev => ({ ...prev, logoRight: ev.target.result }));
-                                                        reader.readAsDataURL(file);
-                                                    }
+                                                    applyLogoFromFile(e.target.files?.[0], "logoRight");
+                                                    e.target.value = "";
                                                 }} />
                                             </Button>
                                         )}
@@ -1931,12 +2436,8 @@ export default function SheqInstallationForm({
                                         <Button variant="outlined" component="label" size="small" sx={{ textTransform: 'none' }}>
                                             Upload Right Logo
                                             <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => setDocInfo(prev => ({ ...prev, logoRight: ev.target.result }));
-                                                    reader.readAsDataURL(file);
-                                                }
+                                                applyLogoFromFile(e.target.files?.[0], "logoRight");
+                                                e.target.value = "";
                                             }} />
                                         </Button>
                                     )
@@ -1944,23 +2445,78 @@ export default function SheqInstallationForm({
                             </Box>
                         )}
                     </Box>
+
+                    {downloading && (
+                        <Box
+                            data-pdf-block
+                            sx={{
+                                display: "flex",
+                                flexDirection: "row",
+                                border: `1px solid ${exportBorder}`,
+                                mb: pdfMb,
+                                bgcolor: exportBg,
+                            }}
+                        >
+                            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", borderRight: `1px solid ${exportBorder}` }}>
+                                <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${exportBorder}`, textAlign: "center", minHeight: "25px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <Typography sx={{ width: "100%", fontSize: "0.65rem", fontWeight: "bold", textTransform: "uppercase", color: exportText }}>
+                                        {headerLabels.dateLabel}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ minHeight: "36px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <HeaderInput downloading textColor={exportText} value={docInfo.date} minRows={1} />
+                                </Box>
+                            </Box>
+                            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", borderRight: `1px solid ${exportBorder}` }}>
+                                <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${exportBorder}`, textAlign: "center", minHeight: "25px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <Typography sx={{ width: "100%", fontSize: "0.65rem", fontWeight: "bold", textTransform: "uppercase", color: exportText }}>
+                                        {headerLabels.docNoLabel}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ minHeight: "36px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <HeaderInput downloading textColor={exportText} value={docInfo.docNo} minRows={1} />
+                                </Box>
+                            </Box>
+                            <Box sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                                <Box sx={{ bgcolor: exportLabelBg, p: 0.5, borderBottom: `1px solid ${exportBorder}`, textAlign: "center", minHeight: "25px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <Typography sx={{ width: "100%", fontSize: "0.65rem", fontWeight: "bold", textTransform: "uppercase", color: exportText }}>
+                                        {headerLabels.approvedByLabel}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ minHeight: "36px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <HeaderInput downloading textColor={exportText} value={docInfo.approvedBy} minRows={1} />
+                                </Box>
+                            </Box>
+                        </Box>
+                    )}
+                    </>
                 )}
 
                     {/* CUSTOM GRID HEADER */}
-                    <Box data-pdf-block sx={{ border: `1px solid ${borderColor}`, mb: pdfMb, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, bgcolor: isDarkMode ? "#1B212C" : "#FFF" }}>
+                    <Box
+                        data-pdf-block
+                        className={downloading ? "sheq-pdf-grid-row" : undefined}
+                        sx={{
+                            border: `1px solid ${exportBorder}`,
+                            mb: pdfMb,
+                            display: "flex",
+                            flexDirection: downloading ? "row" : { xs: "column", md: "row" },
+                            bgcolor: exportBg,
+                        }}
+                    >
                         {/* Left Column */}
-                        <Box sx={{ width: { xs: '100%', md: '33%' }, display: 'flex', flexDirection: 'column', borderRight: { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' } }}>
-                            <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.clientLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, clientLabel: v }))}>Client</HeaderLabel>
-                            <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '45px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.client} onChange={(e) => setFormData(prev => ({ ...prev, client: e.target.value }))} minRows={1} />
+                        <Box className={downloading ? "sheq-pdf-col-33" : undefined} sx={{ width: downloading ? "33.33%" : { xs: '100%', md: '33%' }, display: 'flex', flexDirection: 'column', borderRight: downloading ? `1px solid ${exportBorder}` : { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: downloading ? "none" : { xs: `1px solid ${borderColor}`, md: 'none' } }}>
+                            <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.clientLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, clientLabel: v }))}>Client</HeaderLabel>
+                            <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '45px', borderBottom: `1px solid ${exportBorder}`, display: 'flex', alignItems: 'center' }}>
+                                <HeaderInput downloading={downloading} textColor={exportText} value={formData.client} onChange={(e) => setFormData(prev => ({ ...prev, client: e.target.value }))} minRows={1} />
                             </Box>
-                            <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.siteAddressLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, siteAddressLabel: v }))}>Site Address</HeaderLabel>
-                            <Box sx={{ flex: downloading ? 'none' : 2, minHeight: downloading ? 'auto' : '80px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'stretch' }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.siteAddress} onChange={(e) => setFormData(prev => ({ ...prev, siteAddress: e.target.value }))} />
+                            <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.siteAddressLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, siteAddressLabel: v }))}>Site Address</HeaderLabel>
+                            <Box sx={{ flex: downloading ? 'none' : 2, minHeight: downloading ? 'auto' : '80px', borderBottom: `1px solid ${exportBorder}`, display: 'flex', alignItems: 'stretch' }}>
+                                <HeaderInput downloading={downloading} textColor={exportText} value={formData.siteAddress} onChange={(e) => setFormData(prev => ({ ...prev, siteAddress: e.target.value }))} />
                             </Box>
-                            <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.equipmentIdLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, equipmentIdLabel: v }))}>Equipment ID</HeaderLabel>
+                            <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.equipmentIdLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, equipmentIdLabel: v }))}>Equipment ID</HeaderLabel>
                             <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '45px', display: 'flex', alignItems: 'center' }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.equipmentId} onChange={(e) => setFormData(prev => ({ ...prev, equipmentId: e.target.value }))} minRows={1} />
+                                <HeaderInput downloading={downloading} textColor={exportText} value={formData.equipmentId} onChange={(e) => setFormData(prev => ({ ...prev, equipmentId: e.target.value }))} minRows={1} />
                             </Box>
                         </Box>
 
@@ -1974,10 +2530,10 @@ export default function SheqInstallationForm({
                         )}
 
                         {/* Middle Column */}
-                        <Box sx={{ width: { xs: '100%', md: downloading ? '34%' : '30%' }, display: 'flex', flexDirection: 'column', borderRight: { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: { xs: `1px solid ${borderColor}`, md: 'none' } }}>
-                            <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.engineersLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, engineersLabel: v }))}>Engineer(s)</HeaderLabel>
-                            <Box sx={{ flex: downloading ? 'none' : 1, borderBottom: downloading ? 'none' : `1px solid ${borderColor}` }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.engineers} onChange={(e) => setFormData(prev => ({ ...prev, engineers: e.target.value }))} minRows={engineerPdfRows} />
+                        <Box className={downloading ? "sheq-pdf-col-34" : undefined} sx={{ width: downloading ? "34%" : { xs: '100%', md: '30%' }, display: 'flex', flexDirection: 'column', borderRight: downloading ? `1px solid ${exportBorder}` : { xs: 'none', md: `1px solid ${borderColor}` }, borderBottom: downloading ? "none" : { xs: `1px solid ${borderColor}`, md: 'none' } }}>
+                            <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.engineersLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, engineersLabel: v }))}>Engineer(s)</HeaderLabel>
+                            <Box sx={{ flex: downloading ? 'none' : 1, borderBottom: downloading ? 'none' : `1px solid ${exportBorder}` }}>
+                                <HeaderInput downloading={downloading} textColor={exportText} value={formData.engineers} onChange={(e) => setFormData(prev => ({ ...prev, engineers: e.target.value }))} minRows={engineerPdfRows} />
                             </Box>
                             {/* Filling empty space with lines like image - Hidden on Mobile */}
                             {!downloading && (
@@ -1990,30 +2546,30 @@ export default function SheqInstallationForm({
                         </Box>
 
                         {/* Right Column */}
-                        <Box sx={{ width: { xs: '100%', md: downloading ? '33%' : '32%' }, display: 'flex', flexDirection: 'column' }}>
-                            <Box sx={{ display: 'flex', borderBottom: `1px solid ${borderColor}` }}>
-                                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${borderColor}` }}>
-                                    <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.dateFieldLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, dateFieldLabel: v }))}>Date</HeaderLabel>
+                        <Box className={downloading ? "sheq-pdf-col-33" : undefined} sx={{ width: downloading ? "33.33%" : { xs: '100%', md: '32%' }, display: 'flex', flexDirection: 'column' }}>
+                            <Box sx={{ display: 'flex', borderBottom: `1px solid ${exportBorder}` }}>
+                                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${exportBorder}` }}>
+                                    <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.dateFieldLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, dateFieldLabel: v }))}>Date</HeaderLabel>
                                     <Box sx={{ minHeight: downloading ? 'auto' : '45px', display: 'flex', alignItems: 'center' }}>
-                                        <HeaderInput downloading={downloading} textColor={textColor} value={formData.dateValue} onChange={(e) => setFormData(prev => ({ ...prev, dateValue: e.target.value }))} minRows={1} />
+                                        <HeaderInput downloading={downloading} textColor={exportText} value={formData.dateValue} onChange={(e) => setFormData(prev => ({ ...prev, dateValue: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                    <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.auditorLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, auditorLabel: v }))}>Auditor</HeaderLabel>
+                                    <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.auditorLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, auditorLabel: v }))}>Auditor</HeaderLabel>
                                     <Box sx={{ minHeight: downloading ? 'auto' : '45px', display: 'flex', alignItems: 'center' }}>
-                                        <HeaderInput downloading={downloading} textColor={textColor} value={formData.auditor} onChange={(e) => setFormData(prev => ({ ...prev, auditor: e.target.value }))} minRows={1} />
+                                        <HeaderInput downloading={downloading} textColor={exportText} value={formData.auditor} onChange={(e) => setFormData(prev => ({ ...prev, auditor: e.target.value }))} minRows={1} />
                                     </Box>
                                 </Box>
                             </Box>
                             
-                            <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.serviceManagerLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, serviceManagerLabel: v }))}>Service Manager</HeaderLabel>
-                            <Box sx={{ minHeight: downloading ? 'auto' : '45px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center' }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.serviceManager} onChange={(e) => setFormData(prev => ({ ...prev, serviceManager: e.target.value }))} minRows={1} />
+                            <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.serviceManagerLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, serviceManagerLabel: v }))}>Service Manager</HeaderLabel>
+                            <Box sx={{ minHeight: downloading ? 'auto' : '45px', borderBottom: `1px solid ${exportBorder}`, display: 'flex', alignItems: 'center' }}>
+                                <HeaderInput downloading={downloading} textColor={exportText} value={formData.serviceManager} onChange={(e) => setFormData(prev => ({ ...prev, serviceManager: e.target.value }))} minRows={1} />
                             </Box>
                             
-                            <HeaderLabel customBlue={customBlue} borderColor={borderColor} downloading={downloading} value={headerLabels.siteContactLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, siteContactLabel: v }))}>Site Contact</HeaderLabel>
+                            <HeaderLabel customBlue={customBlue} borderColor={exportBorder} downloading={downloading} value={headerLabels.siteContactLabel} onChange={(v) => setHeaderLabels(prev => ({ ...prev, siteContactLabel: v }))}>Site Contact</HeaderLabel>
                             <Box sx={{ flex: downloading ? 'none' : 1, minHeight: downloading ? 'auto' : '80px', display: 'flex', alignItems: 'stretch' }}>
-                                <HeaderInput downloading={downloading} textColor={textColor} value={formData.siteContact} onChange={(e) => setFormData(prev => ({ ...prev, siteContact: e.target.value }))} />
+                                <HeaderInput downloading={downloading} textColor={exportText} value={formData.siteContact} onChange={(e) => setFormData(prev => ({ ...prev, siteContact: e.target.value }))} />
                             </Box>
                         </Box>
                     </Box>
@@ -2097,6 +2653,8 @@ export default function SheqInstallationForm({
                             </Box>
                         </Box>
                     </Box>
+                    </>
+                    )}
 
                     {/* Summary Section */}
                     {id && visibleSections.summary && (
@@ -2115,19 +2673,20 @@ export default function SheqInstallationForm({
                                 </Typography>
                             </Box>
 
+                            {!downloading && (
                             <Box
                                 data-pdf-block
                                 sx={{
-                                    mb: downloading ? 0.5 : 2,
+                                    mb: 2,
                                     borderRadius: '16px',
                                     border: `1px solid ${borderColor}`,
-                                    bgcolor: downloading ? '#FFF' : (isDarkMode ? '#111827' : '#FFF'),
-                                    boxShadow: downloading ? 'none' : '0 10px 25px -5px rgba(0,0,0,0.05)',
+                                    bgcolor: isDarkMode ? '#111827' : '#FFF',
+                                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)',
                                     overflow: 'visible',
                                     breakInside: 'avoid',
                                 }}
                             >
-                                <Box sx={{ p: 2, borderBottom: `1px solid ${borderColor}`, bgcolor: downloading ? '#f8fafc' : (isDarkMode ? 'rgba(255,255,255,0.02)' : '#f8fafc') }}>
+                                <Box sx={{ p: 2, borderBottom: `1px solid ${borderColor}`, bgcolor: isDarkMode ? 'rgba(255,255,255,0.02)' : '#f8fafc' }}>
                                     <Typography sx={{ fontSize: '1.1rem', fontWeight: 800, color: '#003049', letterSpacing: '-0.01em', textTransform: 'uppercase' }}>
                                         SCORING SUMMARY & PERFORMANCE ANALYTICS
                                     </Typography>
@@ -2144,8 +2703,8 @@ export default function SheqInstallationForm({
                                         </TableHead>
                                         <TableBody>
                                             {summaryChartItems.map((item, idx) => (
-                                                <TableRow key={idx} sx={{ bgcolor: idx % 2 === 0 ? 'transparent' : (downloading ? '#fcfcfc' : (isDarkMode ? 'rgba(255,255,255,0.02)' : '#fcfcfc')) }}>
-                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 700, color: downloading ? '#1e293b' : (isDarkMode ? '#cbd5e1' : '#1e293b') }}>{item.name}</TableCell>
+                                                <TableRow key={idx} sx={{ bgcolor: idx % 2 === 0 ? 'transparent' : (isDarkMode ? 'rgba(255,255,255,0.02)' : '#fcfcfc') }}>
+                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 700, color: isDarkMode ? '#cbd5e1' : '#1e293b' }}>{item.name}</TableCell>
                                                     <TableCell align="center" sx={{ fontSize: '0.75rem', fontWeight: 800, color: '#003049' }}>{item.avgScore}</TableCell>
                                                     <TableCell align="center" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>{item.rating}</TableCell>
                                                     <TableCell align="center" sx={{ fontSize: '0.75rem', fontWeight: 800, color: item.color }}>{item.rate}%</TableCell>
@@ -2159,7 +2718,9 @@ export default function SheqInstallationForm({
                                     </Table>
                                 </Box>
                             </Box>
+                            )}
 
+                            {!downloading && (
                             <Box
                                 {...pdfBlockProps(true)}
                                 sx={{
@@ -2171,9 +2732,9 @@ export default function SheqInstallationForm({
                                     breakInside: 'avoid',
                                 }}
                             >
-                                <Box sx={{ p: downloading ? 1.5 : 3, borderBottom: `1px solid ${borderColor}`, bgcolor: '#f8fafc' }}>
+                                <Box sx={{ p: 3, borderBottom: `1px solid ${borderColor}`, bgcolor: '#f8fafc' }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
-                                        <Typography sx={{ fontSize: downloading ? '0.95rem' : '1.1rem', fontWeight: 800, color: '#003049', letterSpacing: '-0.01em' }}>
+                                        <Typography sx={{ fontSize: '1.1rem', fontWeight: 800, color: '#003049', letterSpacing: '-0.01em' }}>
                                             Sectional Performance Analytics
                                         </Typography>
                                         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
@@ -2195,18 +2756,13 @@ export default function SheqInstallationForm({
 
                                 <Box
                                     sx={{
-                                        width: downloading ? summaryChartWidth : '100%',
-                                        height: downloading ? 'auto' : Math.max(400, summaryChartItems.length * 35),
-                                        minHeight: downloading ? Math.min(280, summaryChartItems.length * 28) : undefined,
-                                        mx: downloading ? 'auto' : 0,
-                                        px: downloading ? 2 : 3,
-                                        py: downloading ? 1 : 3,
+                                        width: '100%',
+                                        height: Math.max(400, summaryChartItems.length * 35),
+                                        px: 3,
+                                        py: 3,
                                         bgcolor: '#FFF',
                                     }}
                                 >
-                                    {downloading ? (
-                                        <SheqPdfPerformanceChart items={summaryChartItems} />
-                                    ) : (
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart
                                                 data={summaryChartItems}
@@ -2247,9 +2803,9 @@ export default function SheqInstallationForm({
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
-                                    )}
                                 </Box>
                             </Box>
+                            )}
                         </>
                     )}
 
@@ -2266,9 +2822,10 @@ export default function SheqInstallationForm({
                         {/* Table Header Row */}
                         <Box
                             {...pdfBlockProps(downloading)}
-                            sx={pdfSectionShellSx(downloading, borderColor, pdfMb)}
+                            {...(downloading ? { "data-pdf-break-before": true } : {})}
+                            sx={pdfSectionShellSx(downloading, sectionBorder, pdfMb)}
                         >
-                        <Box sx={{ display: 'flex', background: `linear-gradient(135deg, ${customBlue} 0%, #004a6e 100%)`, color: "#FFF", fontWeight: 'bold', fontSize: '0.75rem', borderBottom: `1px solid ${borderColor}`, letterSpacing: '0.05em', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)' }}>
+                        <Box sx={{ display: 'flex', background: `linear-gradient(135deg, ${customBlue} 0%, #004a6e 100%)`, color: "#FFF", fontWeight: 'bold', fontSize: '0.75rem', borderBottom: `1px solid ${sectionBorder}`, letterSpacing: '0.05em', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)' }}>
                             <Box sx={{ width: CHECKLIST_COL_ITEM, p: 1.25, borderRight: `1px solid rgba(255,255,255,0.1)`, textAlign: 'center' }}>
                                 ITEM
                             </Box>
@@ -2280,28 +2837,26 @@ export default function SheqInstallationForm({
                             </Box>
                         </Box>
 
-                        {isServiceForm && (
-                            <Box
+                        <Box
+                            sx={{
+                                px: 2,
+                                py: 1.25,
+                                bgcolor: downloading ? "#FEF3C7" : (isDarkMode ? "rgba(251, 191, 36, 0.18)" : "#FEF3C7"),
+                                borderBottom: `1px solid ${sectionBorder}`,
+                                textAlign: "center",
+                            }}
+                        >
+                            <Typography
                                 sx={{
-                                    px: 2,
-                                    py: 1.25,
-                                    bgcolor: isDarkMode ? "rgba(251, 191, 36, 0.18)" : "#FEF3C7",
-                                    borderBottom: `1px solid ${borderColor}`,
-                                    textAlign: "center",
+                                    fontSize: "0.8rem",
+                                    fontWeight: 700,
+                                    color: downloading ? "#92400E" : (isDarkMode ? "#FCD34D" : "#92400E"),
+                                    letterSpacing: "0.02em",
                                 }}
                             >
-                                <Typography
-                                    sx={{
-                                        fontSize: "0.8rem",
-                                        fontWeight: 700,
-                                        color: isDarkMode ? "#FCD34D" : "#92400E",
-                                        letterSpacing: "0.02em",
-                                    }}
-                                >
-                                    1 Non-compliant &nbsp;&nbsp; 2 Partial &nbsp;&nbsp; 3 Full Compliance &nbsp;&nbsp; N/A &nbsp;&nbsp; NIU
-                                </Typography>
-                            </Box>
-                        )}
+                                1 Non-compliant &nbsp;&nbsp; 2 Partial &nbsp;&nbsp; 3 Full Compliance &nbsp;&nbsp; N/A &nbsp;&nbsp; NIU
+                            </Typography>
+                        </Box>
                         </Box>
 
                         {formSections.map((cat, catIdx) => {
@@ -2331,7 +2886,7 @@ export default function SheqInstallationForm({
                                     {...pdfBlockProps(downloading)}
                                     sx={{
                                         borderBottom: downloading ? 'none' : (catIdx < formSections.length - 1 ? `3px solid ${borderColor}` : 'none'),
-                                        ...pdfSectionShellSx(downloading, borderColor, pdfMb),
+                                        ...pdfSectionShellSx(downloading, sectionBorder, pdfMb),
                                     }}
                                 >
                                     {/* Main Category Header */}
@@ -2473,12 +3028,13 @@ export default function SheqInstallationForm({
                                         {sub.items.map((item, itemIdx) => (
                                             <Box key={itemIdx} sx={{ 
                                                 display: 'flex', 
-                                                borderBottom: `1px solid ${borderColor}`, 
+                                                borderBottom: `1px solid ${sectionBorder}`, 
                                                 minHeight: downloading ? '32px' : '40px',
+                                                bgcolor: downloading ? "#FFF" : "transparent",
                                                 transition: 'background-color 0.2s',
-                                                "&:hover": { bgcolor: isDarkMode ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)" }
+                                                "&:hover": { bgcolor: downloading ? "#FFF" : (isDarkMode ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)") }
                                             }}>
-                                        <Box sx={{ width: CHECKLIST_COL_ITEM, p: downloading ? 0.75 : 1.5, borderRight: `1px solid ${borderColor}`, fontSize: '0.8rem', fontWeight: 500, display: 'flex', alignItems: 'center', color: isDarkMode ? "#cbd5e1" : "#334155" }}>
+                                        <Box sx={{ width: CHECKLIST_COL_ITEM, p: downloading ? 0.75 : 1.5, borderRight: `1px solid ${sectionBorder}`, fontSize: '0.8rem', fontWeight: 500, display: 'flex', alignItems: 'center', color: downloading ? "#334155" : (isDarkMode ? "#cbd5e1" : "#334155"), bgcolor: downloading ? "#FFF" : "transparent" }}>
                                                     {!downloading && (
                                                         <Tooltip title="Delete Item">
                                                             <IconButton 
@@ -2501,9 +3057,9 @@ export default function SheqInstallationForm({
                                                         />
                                                     )}
                                                 </Box>
-                                                <Box sx={{ width: CHECKLIST_COL_SCORE, borderRight: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: scoreColBg }}>
+                                                <Box sx={{ width: CHECKLIST_COL_SCORE, borderRight: `1px solid ${sectionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: scoreColBg }}>
                                                     {downloading ? (
-                                                        <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: isDarkMode ? "#F9FAFB" : "#111827" }}>
+                                                        <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: cellText }}>
                                                             {formData.installationMeasures[item.key]?.score || ""}
                                                         </Typography>
                                                     ) : (
@@ -2541,7 +3097,7 @@ export default function SheqInstallationForm({
                                                 </Box>
                                                 <Box sx={{ width: CHECKLIST_COL_COMMENTS, display: 'flex', alignItems: 'center' }}>
                                                     {downloading ? (
-                                                        <Typography sx={{ px: 1.5, py: 1, fontSize: '0.8rem', color: textColor, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                        <Typography sx={{ px: 1.5, py: 1, fontSize: '0.8rem', color: cellText, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                                             {formData.installationMeasures[item.key]?.remedial || " "}
                                                         </Typography>
                                                     ) : (
@@ -2579,9 +3135,9 @@ export default function SheqInstallationForm({
                         {/* Grand Total Row - Positioned as the final row of the table */}
                         <Box
                             {...pdfBlockProps(downloading)}
-                            sx={pdfSectionShellSx(downloading, borderColor, pdfMb)}
+                            sx={pdfSectionShellSx(downloading, sectionBorder, pdfMb)}
                         >
-                        <Box sx={{ display: 'flex', bgcolor: customBlue, color: "#FFF", borderTop: `2px solid ${isDarkMode ? "#000" : "#FFF"}` }}>
+                        <Box sx={{ display: 'flex', bgcolor: customBlue, color: "#FFF", borderTop: `2px solid ${downloading ? "#FFF" : (isDarkMode ? "#000" : "#FFF")}` }}>
                             <Box sx={{ width: CHECKLIST_COL_ITEM, p: 1.5, textAlign: 'right', fontWeight: 900, fontSize: '0.9rem', borderRight: `1px solid rgba(255,255,255,0.2)` }}>
                                 TOTAL SCORE
                             </Box>
@@ -2690,100 +3246,126 @@ export default function SheqInstallationForm({
                             </Box>
                         )}
                     
-                    {/* Document Upload Section */}
-                    {visibleSections.uploads && (
-                        <Box data-pdf-block sx={{ mb: pdfMb, border: `1px solid ${borderColor}`, borderRadius: '8px', overflow: 'hidden', boxShadow: downloading ? 'none' : '0 1px 3px rgba(0,0,0,0.05)' }}>
-                            <Box sx={{ p: 1.5, bgcolor: customBlue, color: "#FFF", fontWeight: 'bold', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Box sx={{ flex: 1 }}>
-                                    {downloading ? headerLabels.uploadLabel : (
+                    {/* Document Upload Section — header + one PDF block per image for faster export */}
+                    {(visibleSections.uploads || (downloading && displayImages.length > 0)) && (
+                        downloading ? (
+                            <>
+                                <Box
+                                    data-pdf-block
+                                    sx={{
+                                        mb: displayImages.length > 0 ? 1 : pdfMb,
+                                        border: `1px solid ${borderColor}`,
+                                        borderRadius: "8px",
+                                        overflow: "hidden",
+                                    }}
+                                >
+                                    <Box sx={{ p: 1.5, bgcolor: customBlue, color: "#FFF", fontWeight: "bold", fontSize: "0.9rem", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                                        {headerLabels.uploadLabel}
+                                    </Box>
+                                </Box>
+                                {displayImages.map((img, idx) => (
+                                    <Box
+                                        key={`pdf-img-${idx}`}
+                                        data-pdf-block
+                                        className="pdf-upload-photo-block"
+                                        sx={{
+                                            mb: idx < displayImages.length - 1 ? 1 : pdfMb,
+                                            border: `1px solid ${borderColor}`,
+                                            borderRadius: "8px",
+                                            overflow: "hidden",
+                                            bgcolor: "#FFF",
+                                            minHeight: 120,
+                                        }}
+                                    >
+                                        <Box
+                                            component="img"
+                                            className="pdf-upload-photo"
+                                            src={img}
+                                            alt={`Upload ${idx + 1}`}
+                                            loading="eager"
+                                            decoding="sync"
+                                            sx={{
+                                                display: "block",
+                                                width: "100%",
+                                                minHeight: 120,
+                                                maxHeight: 480,
+                                                objectFit: "contain",
+                                                bgcolor: "#FFF",
+                                            }}
+                                        />
+                                    </Box>
+                                ))}
+                            </>
+                        ) : (
+                            <Box data-pdf-block sx={{ mb: pdfMb, border: `1px solid ${borderColor}`, borderRadius: "8px", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+                                <Box sx={{ p: 1.5, bgcolor: customBlue, color: "#FFF", fontWeight: "bold", fontSize: "0.9rem", letterSpacing: "0.05em", textTransform: "uppercase", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                    <Box sx={{ flex: 1 }}>
                                         <TextField
                                             fullWidth
                                             variant="standard"
                                             value={headerLabels.uploadLabel}
                                             onChange={(e) => setHeaderLabels(prev => ({ ...prev, uploadLabel: e.target.value }))}
-                                            InputProps={{ disableUnderline: true, sx: { color: 'white', fontWeight: 'bold', fontSize: '0.9rem', letterSpacing: '0.05em' } }}
+                                            InputProps={{ disableUnderline: true, sx: { color: "white", fontWeight: "bold", fontSize: "0.9rem", letterSpacing: "0.05em" } }}
                                         />
-                                    )}
-                                </Box>
-                                {!downloading && (
+                                    </Box>
                                     <Tooltip title="Delete Section">
-                                        <IconButton size="small" onClick={() => confirmDeleteSection('uploads')} sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { color: '#FFF' } }}>
+                                        <IconButton size="small" onClick={() => confirmDeleteSection("uploads")} sx={{ color: "rgba(255,255,255,0.7)", "&:hover": { color: "#FFF" } }}>
                                             <Trash2 size={16} />
                                         </IconButton>
                                     </Tooltip>
-                                )}
-                            </Box>
-                            <Box sx={{ p: 3 }}>
-                                {!downloading && (
-                                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 3 }}>
+                                </Box>
+                                <Box sx={{ p: 3 }}>
+                                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: displayImages.length ? 3 : 0 }}>
                                         <Button
                                             variant="outlined"
                                             component="label"
-                                            startIcon={<Download size={20} />}
+                                            disabled={imageUploading}
+                                            startIcon={imageUploading ? <CircularProgress size={18} /> : <Download size={20} />}
                                             sx={{
                                                 borderRadius: "10px",
                                                 textTransform: "none",
                                                 borderColor: customBlue,
                                                 color: customBlue,
-                                                "&:hover": {
-                                                    borderColor: "#004a6e",
-                                                    bgcolor: "rgba(0, 48, 73, 0.05)",
-                                                },
+                                                "&:hover": { borderColor: "#004a6e", bgcolor: "rgba(0, 48, 73, 0.05)" },
                                             }}
                                         >
-                                            Select Images
-                                            <input
-                                                type="file"
-                                                hidden
-                                                multiple
-                                                accept="image/*"
-                                                onChange={handleImageUpload}
-                                            />
+                                            {imageUploading ? "Processing..." : "Select Images"}
+                                            <input type="file" hidden multiple accept="image/*" onChange={handleImageUpload} />
                                         </Button>
                                         <Button
                                             variant="outlined"
                                             component="label"
-                                            startIcon={<Camera size={20} />}
+                                            disabled={imageUploading}
+                                            startIcon={imageUploading ? <CircularProgress size={18} /> : <Camera size={20} />}
                                             sx={{
                                                 borderRadius: "10px",
                                                 textTransform: "none",
                                                 borderColor: customBlue,
                                                 color: customBlue,
-                                                "&:hover": {
-                                                    borderColor: "#004a6e",
-                                                    bgcolor: "rgba(0, 48, 73, 0.05)",
-                                                },
+                                                "&:hover": { borderColor: "#004a6e", bgcolor: "rgba(0, 48, 73, 0.05)" },
                                             }}
                                         >
                                             Take Photo
-                                            <input
-                                                type="file"
-                                                hidden
-                                                accept="image/*"
-                                                capture="environment"
-                                                onChange={handleImageUpload}
-                                            />
+                                            <input type="file" hidden accept="image/*" capture="environment" onChange={handleImageUpload} />
                                         </Button>
                                     </Box>
-                                )}
-                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 2 }}>
-                                    {formData.images?.map((img, idx) => (
-                                        <Box key={idx} sx={{ position: 'relative', border: `1px solid ${borderColor}`, borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                                            <Box component="img" src={img} sx={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-                                            {!downloading && (
-                                                <IconButton 
-                                                    size="small" 
+                                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 2 }}>
+                                        {displayImages.map((img, idx) => (
+                                            <Box key={idx} sx={{ position: "relative", border: `1px solid ${borderColor}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+                                                <Box component="img" src={img} alt={`Upload ${idx + 1}`} sx={{ width: "100%", height: "200px", objectFit: "cover" }} />
+                                                <IconButton
+                                                    size="small"
                                                     onClick={() => removeImage(idx)}
-                                                    sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'rgba(239, 68, 68, 0.9)', color: '#FFF', '&:hover': { bgcolor: 'rgba(220, 38, 38, 1)' }, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}
+                                                    sx={{ position: "absolute", top: 8, right: 8, bgcolor: "rgba(239, 68, 68, 0.9)", color: "#FFF", "&:hover": { bgcolor: "rgba(220, 38, 38, 1)" }, boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }}
                                                 >
                                                     <X size={16} />
                                                 </IconButton>
-                                            )}
-                                        </Box>
-                                    ))}
+                                            </Box>
+                                        ))}
+                                    </Box>
                                 </Box>
                             </Box>
-                        </Box>
+                        )
                     )}
 
                     {showNonconformanceSection && (
@@ -3135,7 +3717,7 @@ export default function SheqInstallationForm({
                 open={saveDialogOpen}
                 onClose={() => setSaveDialogOpen(false)}
                 onSave={executeSave}
-                existingId={id}
+                existingId={persistedResponseId}
                 defaultName={formMetadata.name || `${category === SHEQ_INSPECTION_CATEGORY ? "Service" : "Installation"} - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 saving={saving}
@@ -3144,7 +3726,7 @@ export default function SheqInstallationForm({
         </Box>
     );
 
-    if (isModal || action === "download") return formContent;
+    if (isModal || isDownloadSession) return formContent;
 
     return (
         <Layout pageTitle={category === SHEQ_INSPECTION_CATEGORY ? "SHEQ service" : "SHEQ Installation"}>

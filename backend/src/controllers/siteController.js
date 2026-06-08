@@ -264,6 +264,74 @@ exports.deleteSite = async (req, res) => {
     }
 };
 
+exports.getSiteSubfolders = async (req, res) => {
+    try {
+        const { siteId } = req.params;
+        const actingClientId = req.actingClient?.id || null;
+        if (!(await userCanAccessSite(prisma, req.scopedUser || req.user, siteId, actingClientId))) {
+            return res.status(403).json({ success: false, message: "You do not have access to this site." });
+        }
+
+        const subfolders = await prisma.siteSubfolder.findMany({
+            where: { siteId },
+            orderBy: { createdAt: "desc" },
+        });
+
+        res.json({ success: true, subfolders });
+    } catch (error) {
+        console.error("Error fetching site subfolders:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch subfolders." });
+    }
+};
+
+exports.createSiteSubfolder = async (req, res) => {
+    try {
+        const { siteId } = req.params;
+        const name = String(req.body?.name || "").trim();
+
+        if (!name) {
+            return res.status(400).json({ success: false, message: "Subfolder name is required." });
+        }
+
+        const actingClientId = req.actingClient?.id || null;
+        if (!(await userCanAccessSite(prisma, req.scopedUser || req.user, siteId, actingClientId))) {
+            return res.status(403).json({ success: false, message: "You do not have access to this site." });
+        }
+
+        const subfolder = await prisma.siteSubfolder.create({
+            data: { name, siteId },
+        });
+
+        res.status(201).json({ success: true, subfolder });
+    } catch (error) {
+        console.error("Error creating site subfolder:", error);
+        res.status(500).json({ success: false, message: "Failed to create subfolder." });
+    }
+};
+
+exports.deleteSiteSubfolder = async (req, res) => {
+    try {
+        const { siteId, subfolderId } = req.params;
+        const actingClientId = req.actingClient?.id || null;
+        if (!(await userCanAccessSite(prisma, req.scopedUser || req.user, siteId, actingClientId))) {
+            return res.status(403).json({ success: false, message: "You do not have access to this site." });
+        }
+
+        const existing = await prisma.siteSubfolder.findFirst({
+            where: { id: subfolderId, siteId },
+        });
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Subfolder not found." });
+        }
+
+        await prisma.siteSubfolder.delete({ where: { id: subfolderId } });
+        res.json({ success: true, message: "Subfolder deleted." });
+    } catch (error) {
+        console.error("Error deleting site subfolder:", error);
+        res.status(500).json({ success: false, message: "Failed to delete subfolder." });
+    }
+};
+
 // All active users in the requester's company (for site manager assignment)
 exports.getSiteManagers = async (req, res) => {
     try {

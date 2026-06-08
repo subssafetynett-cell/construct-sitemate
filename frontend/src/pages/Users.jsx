@@ -55,6 +55,7 @@ import {
   Building2,
   Clock,
   X,
+  FileText,
 } from "lucide-react";
 import { useParams, useLocation, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
@@ -218,6 +219,8 @@ export default function UsersPage() {
   const [menuUser, setMenuUser] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailUser, setDetailUser] = useState(null);
+  const [detailSubmissions, setDetailSubmissions] = useState([]);
+  const [detailSubmissionsLoading, setDetailSubmissionsLoading] = useState(false);
 
   // Edit User State
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -338,10 +341,28 @@ export default function UsersPage() {
     }
   };
 
+  const formatSubmissionDate = (value) => {
+    if (!value) return "—";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   // VIEW User
   const handleView = async (user) => {
+    const id = user._id ?? user.id;
+    setDetailSubmissions([]);
+    setDetailSubmissionsLoading(true);
+    setDetailOpen(true);
+    closeMenu();
+
     try {
-      const id = user._id ?? user.id;
       const res = await api.get(`/users/${id}`);
       const raw = res?.data?.user ?? user;
       setDetailUser(normalizeUserActivityFields(raw));
@@ -349,13 +370,25 @@ export default function UsersPage() {
       console.warn("Could not fetch full user, using local copy", err);
       setDetailUser(normalizeUserActivityFields(user));
     }
-    setDetailOpen(true);
-    closeMenu();
+
+    try {
+      const subsRes = await api.get(`/users/${id}/form-submissions`);
+      if (subsRes.data?.success) {
+        setDetailSubmissions(subsRes.data.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to load user form submissions", err);
+      setDetailSubmissions([]);
+    } finally {
+      setDetailSubmissionsLoading(false);
+    }
   };
 
   const closeDetails = () => {
     setDetailOpen(false);
     setDetailUser(null);
+    setDetailSubmissions([]);
+    setDetailSubmissionsLoading(false);
   };
 
   const detailUserOnline = detailUser ? isUserOnline(detailUser.lastSeenAt, detailUser.lastLoginAt) : false;
@@ -1374,6 +1407,100 @@ export default function UsersPage() {
                       {Math.round(ONLINE_WINDOW_MS / 60000)} minutes (e.g. while using the app).
                     </Typography>
                   </Box>
+                </Box>
+
+                <Divider sx={{ borderColor: isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)" }} />
+
+                <Box
+                  sx={{
+                    px: 2.25,
+                    py: 1.75,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
+                    borderBottom: isDarkMode ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(15,23,42,0.06)",
+                    bgcolor: isDarkMode ? "rgba(0,0,0,0.15)" : "rgba(248,250,252,0.9)",
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <FileText size={18} color={isDarkMode ? "#E89F17" : "#0B4DA6"} strokeWidth={2} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: isDarkMode ? "#E5E7EB" : "#334155" }}>
+                      Form submissions
+                    </Typography>
+                  </Box>
+                  {!detailSubmissionsLoading && (
+                    <Chip
+                      size="small"
+                      label={`${detailSubmissions.length} total`}
+                      sx={{
+                        height: 22,
+                        fontSize: "0.7rem",
+                        fontWeight: 700,
+                        bgcolor: isDarkMode ? "rgba(11,77,166,0.25)" : "rgba(11,77,166,0.1)",
+                        color: isDarkMode ? "#93C5FD" : "#0B4DA6",
+                      }}
+                    />
+                  )}
+                </Box>
+                <Box sx={{ px: 2.25, py: 1.5, maxHeight: 280, overflowY: "auto" }}>
+                  {detailSubmissionsLoading ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+                      <CircularProgress size={28} />
+                    </Box>
+                  ) : detailSubmissions.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: isDarkMode ? "#94A3B8" : "#64748B", py: 1 }}>
+                      No forms submitted yet.
+                    </Typography>
+                  ) : (
+                    detailSubmissions.map((row, index) => (
+                      <Box
+                        key={row.id}
+                        sx={{
+                          display: "flex",
+                          gap: 1.5,
+                          py: 1.25,
+                          borderBottom:
+                            index < detailSubmissions.length - 1
+                              ? isDarkMode
+                                ? "1px dashed rgba(255,255,255,0.06)"
+                                : "1px dashed rgba(15,23,42,0.08)"
+                              : "none",
+                        }}
+                      >
+                        <Box sx={{ color: isDarkMode ? "#64748B" : "#94A3B8", pt: 0.35, flexShrink: 0 }}>
+                          <FileText size={16} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 600,
+                              color: isDarkMode ? "#F1F5F9" : "#0f172a",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {row.title}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: isDarkMode ? "#64748B" : "#64748B", display: "block", mt: 0.25 }}>
+                            {row.category}
+                          </Typography>
+                        </Box>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: isDarkMode ? "#94A3B8" : "#64748B",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                            pt: 0.25,
+                          }}
+                        >
+                          {formatSubmissionDate(row.createdAt)}
+                        </Typography>
+                      </Box>
+                    ))
+                  )}
                 </Box>
               </Box>
             </DialogContent>

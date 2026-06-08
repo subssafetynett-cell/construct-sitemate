@@ -293,11 +293,12 @@ export default function SignatureCapture({
   strokeColor = "#111827",
   savedLibraryEnabled = true,
   autoApplyDrawing = false,
+  imageClassName,
 }) {
   const { currentUser } = useAuth();
   const userId = currentUser?.id || currentUser?._id || "me";
   const [pickerOpen, setPickerOpen] = useState(false);
-  const heightCss = compact ? 72 : 120;
+  const heightCss = compact ? 72 : 140;
 
   const hasImageValue = (v) =>
     v &&
@@ -347,7 +348,13 @@ export default function SignatureCapture({
       );
     }
     return (
-      <Box component="img" src={value} alt="Signature" sx={{ width: "100%", maxHeight: compact ? 48 : 80, objectFit: "contain" }} />
+      <Box
+        component="img"
+        className={imageClassName}
+        src={value}
+        alt="Signature"
+        sx={{ width: "100%", maxHeight: compact ? 48 : 80, objectFit: "contain" }}
+      />
     );
   }
 

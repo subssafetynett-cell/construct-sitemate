@@ -829,6 +829,53 @@ exports.getUserById = asyncHandler(async (req, res) => {
   res.json({ success: true, user: out });
 });
 
+function submissionDisplayTitle(row) {
+  const answers = row.answers && typeof row.answers === "object" ? row.answers : {};
+  const custom =
+    (answers.name && String(answers.name).trim()) ||
+    (answers.report_heading && String(answers.report_heading).trim()) ||
+    (answers.formMetadata?.name && String(answers.formMetadata.name).trim()) ||
+    "";
+  if (custom) return custom;
+  return row.form?.title || row.category || "Untitled form";
+}
+
+exports.getUserFormSubmissions = asyncHandler(async (req, res) => {
+  const { id: targetId } = req.params;
+
+  const gate = await loadAdminActor(prisma, req);
+  if (!gate.ok) {
+    return res.status(gate.status).json({ success: false, message: gate.message });
+  }
+  const { actor } = gate;
+
+  const user = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found" });
+  }
+  if (!canManageTargetUser(actor, user, actor.effectiveRole)) {
+    return res.status(403).json({ success: false, message: "Insufficient permissions" });
+  }
+
+  const responses = await prisma.formResponse.findMany({
+    where: { submittedById: targetId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      form: { select: { title: true } },
+    },
+    take: 250,
+  });
+
+  const data = responses.map((row) => ({
+    id: row.id,
+    title: submissionDisplayTitle(row),
+    category: row.category || row.form?.title || "General",
+    createdAt: toIsoOrNull(row.createdAt),
+  }));
+
+  res.json({ success: true, data, total: data.length });
+});
+
 exports.deleteUser = asyncHandler(async (req, res) => {
   const { id: targetId } = req.params;
 

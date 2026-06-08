@@ -65,6 +65,14 @@ router.get(
   usersController.listAllUsers
 );
 
+// Form submissions for a user — admin user detail view
+router.get(
+  "/:id/form-submissions",
+  requireAuth,
+  requireRole(["superadmin", "company_admin"]),
+  usersController.getUserFormSubmissions
+);
+
 // Get single user — authenticated users (used in profile views)
 router.get("/:id", requireAuth, usersController.getUserById);
 

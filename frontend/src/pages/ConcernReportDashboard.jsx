@@ -16,15 +16,12 @@ import {
     Cell,
     Legend,
 } from "recharts";
-import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
 import DomainIcon from "@mui/icons-material/Domain";
-import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
-import EnergySavingsLeafIcon from "@mui/icons-material/EnergySavingsLeaf";
-import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import { useAuth } from "../context/AuthContext";
 
 const T = {
@@ -264,10 +261,8 @@ const defaultDashboard = {
     },
 };
 
-const DASHBOARD_USER_ROLES = ["superadmin", "company_admin"];
-
 export default function ConcernReportDashboard() {
-    const { currentUser, role } = useAuth();
+    const { currentUser } = useAuth();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [data, setData] = useState(defaultDashboard);
@@ -337,7 +332,6 @@ export default function ConcernReportDashboard() {
     );
     const caps = data.scope?.capabilities || defaultDashboard.scope.capabilities;
     const scopeLabel = data.scope?.label || "Your data";
-    const showUsersCard = caps.showUsers && DASHBOARD_USER_ROLES.includes(role);
     const showFormsByCompany = Boolean(caps.showFormsByCompany);
     const formsByCompany = data.formsByCompany || [];
     const companyBarData = formsByCompany.map((row) => ({
@@ -353,62 +347,34 @@ export default function ConcernReportDashboard() {
 
     const statCards = [
         {
-            key: "reports",
-            show: true,
-            icon: AssignmentTurnedInIcon,
-            color: "blue",
-            label: caps.showUsers ? "Total forms submitted" : "Your forms submitted",
-            value: totalFormsSubmitted,
-        },
-        {
             key: "sites",
-            show: caps.showSites,
             icon: DomainIcon,
             color: "blue",
-            label: "Sites",
+            label: "Total sites",
             value: data.stats.totalSites ?? 0,
         },
         {
-            key: "users",
-            show: showUsersCard,
-            icon: PeopleOutlineIcon,
-            color: "green",
-            label: "Users",
-            value: data.stats.totalUsers ?? 0,
-        },
-        {
-            key: "hs",
-            show: true,
+            key: "report-concern",
             icon: WarningAmberIcon,
             color: "red",
-            label: "Health & safety",
-            value: data.stats.hsConcerns ?? 0,
+            label: "Total report concern",
+            value: data.stats.reportConcerns ?? 0,
         },
         {
-            key: "env",
-            show: true,
-            icon: EnergySavingsLeafIcon,
-            color: "green",
-            label: "Sustainability",
-            value: data.stats.envConcerns ?? 0,
-        },
-        {
-            key: "quality",
-            show: !caps.showUsers,
+            key: "inspection",
             icon: FactCheckIcon,
             color: "blue",
-            label: "Quality",
-            value: data.stats.qualityConcerns ?? 0,
+            label: "Total inspection",
+            value: data.stats.inspectionForms ?? 0,
         },
         {
-            key: "positive",
-            show: !caps.showUsers,
-            icon: ThumbUpOffAltIcon,
+            key: "sheq",
+            icon: ShieldOutlinedIcon,
             color: "green",
-            label: "Positive",
-            value: data.stats.positiveObs ?? 0,
+            label: "Total SHEQ forms",
+            value: data.stats.sheqForms ?? sheqSummary.total ?? 0,
         },
-    ].filter((c) => c.show);
+    ];
 
     return (
         <Layout disablePadding={true}>

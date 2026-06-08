@@ -41,6 +41,7 @@ export default function UseForm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const siteId = searchParams.get("siteId");
+  const subfolderId = searchParams.get("subfolderId");
   const category = searchParams.get("category");
   const action = searchParams.get("action");
   const responseId = searchParams.get("responseId") || searchParams.get("submissionId");
@@ -63,7 +64,9 @@ export default function UseForm() {
 
   const navigateBack = () => {
     if (siteId) {
-      navigate("/sitepack-management", { state: { siteId, moduleTitle: category } });
+      const state = { siteId, moduleTitle: category };
+      if (subfolderId) state.subfolderId = subfolderId;
+      navigate("/sitepack-management", { state });
     } else {
       navigate("/forms");
     }
@@ -82,6 +85,7 @@ export default function UseForm() {
       }
 
       if (siteId) processedAnswers.siteId = siteId;
+      if (subfolderId) processedAnswers.subfolderId = subfolderId;
 
       const payload = {
         formId: id,

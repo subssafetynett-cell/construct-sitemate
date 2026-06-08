@@ -1,5 +1,6 @@
 const prisma = require("../prismaClient");
 const { sendEmail } = require("../services/emailService");
+const { notifyAdminsOfNewFormSubmission } = require("../services/formSubmissionNotifyService");
 const { assertGeneralFormTemplateWrite } = require("../utils/generalFormTemplatePolicy");
 const {
   buildCompanyFormResponseWhere,
@@ -249,6 +250,16 @@ exports.saveResponse = async (req, res) => {
         submittedById: submitterId,
       }
     });
+
+    notifyAdminsOfNewFormSubmission({
+      submitterId,
+      formTitle: form.title,
+      category,
+      answers: sanitizedAnswers,
+    }).catch((err) => {
+      console.error("Form submission admin notification failed:", err);
+    });
+
     res.json({ success: true, data: response });
   } catch (err) {
     console.error("Save response error:", err);

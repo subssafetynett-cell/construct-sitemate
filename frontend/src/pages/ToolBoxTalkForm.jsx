@@ -13,6 +13,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import api from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
@@ -26,6 +27,7 @@ import {
 import FormDocumentHeader from "../components/FormDocumentHeader";
 import FormHeaderApprovedRow from "../components/FormHeaderApprovedRow";
 import FormTableCellTextField from "../components/FormTableCellTextField";
+import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 
 const LEGACY_ATTENDEE_DISCLAIMER =
     "The undersigned have been fully briefed on the contents of the attached Tool Box Talk and will ensure they work to the agreed safe system of work in place at all times and shall raise any concerns directly with the Site Supervisor or Construct Lifts Installation Director.";
@@ -111,12 +113,9 @@ export default function ToolBoxTalkForm() {
 
     const [consultation, setConsultation] = useState("");
     const [persistedSiteId, setPersistedSiteId] = useState(null);
+    const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
-    const { canEdit, siteId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(
-        action,
-        downloading,
-        persistedSiteId
-    );
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
     const canFillFields = !pdfLayout && (canEdit || isSitePackContext || Boolean(fromTemplateId));
     const canEditTemplateText = canEdit && !isSitePackContext && !pdfLayout;
 
@@ -137,7 +136,7 @@ export default function ToolBoxTalkForm() {
                 name: name || formMetadata.name,
                 tags: tags || formMetadata.tags,
             };
-            if (siteId) payload.siteId = siteId;
+            payload = appendSitepackToAnswers(payload, { siteId, subfolderId });
             payload = withGeneralFormVisibility(payload, visibility, {
                 hasSiteContext: Boolean(siteId),
             });
@@ -177,6 +176,8 @@ export default function ToolBoxTalkForm() {
         loading,
         watchDeps: [docInfo, headerData, headerLabels, attendees, consultation],
         siteId,
+
+        subfolderId,
         category,
         saving,
         canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
@@ -186,7 +187,10 @@ export default function ToolBoxTalkForm() {
     });
 
     useEffect(() => {
-        if (!persistedResponseId && !fromTemplateId) setPersistedSiteId(null);
+        if (!persistedResponseId && !fromTemplateId) {
+            setPersistedSiteId(null);
+            setPersistedSubfolderId(null);
+        }
     }, [persistedResponseId, fromTemplateId]);
 
     useEffect(() => {
@@ -222,6 +226,7 @@ export default function ToolBoxTalkForm() {
                 const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
+                    setPersistedSubfolderId(submission.answers.subfolderId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);
                     if (submission.answers.headerData) setHeaderData(submission.answers.headerData);
                     if (submission.answers.headerLabels) {
@@ -308,21 +313,29 @@ export default function ToolBoxTalkForm() {
                     </Typography>
                 </Box>
                 {canEdit && (
-                <Button 
-                    variant="contained" 
-                    onClick={handleSaveClick}
-                    disabled={saving || !canEdit || downloading}
-                    sx={{ 
-                        bgcolor: "#E89F17", 
-                        color: "#FFFFFF", 
-                        fontWeight: 600, 
-                        borderRadius: "8px",
-                        boxShadow: "none",
-                        "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
-                    }}
-                >
-                    {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
-                </Button>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                    <GeneralFormSubmissionDeleteButton
+                        responseId={persistedResponseId}
+                        canEdit={canEdit}
+                        isSitePackContext={isSitePackContext}
+                        disabled={saving || downloading}
+                    />
+                    <Button 
+                        variant="contained" 
+                        onClick={handleSaveClick}
+                        disabled={saving || !canEdit || downloading}
+                        sx={{ 
+                            bgcolor: "#E89F17", 
+                            color: "#FFFFFF", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            boxShadow: "none",
+                            "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
+                        }}
+                    >
+                        {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
+                    </Button>
+                </Box>
                 )}
             </Box>
 

@@ -7,6 +7,12 @@ const DEFAULT_TARGET_BYTES = 2 * 1024 * 1024;
 const ORPHAN_PAGE_FRACTION = 0.28;
 const BLOCK_GAP_MM = 2;
 
+function blockHasLayout(el) {
+    const w = el.offsetWidth || el.scrollWidth || el.clientWidth;
+    const h = el.offsetHeight || el.scrollHeight || el.clientHeight;
+    return w > 0 && h > 0;
+}
+
 function getTopLevelPdfBlocks(root) {
     const all = Array.from(root.querySelectorAll("[data-pdf-block]"));
     return all.filter((el) => {
@@ -15,7 +21,7 @@ function getTopLevelPdfBlocks(root) {
             if (parent.hasAttribute("data-pdf-block")) return false;
             parent = parent.parentElement;
         }
-        return el.offsetWidth > 0 && el.offsetHeight > 0;
+        return blockHasLayout(el);
     });
 }
 
@@ -70,7 +76,7 @@ function waitForImages(root, timeoutMs = 8000, options = {}) {
         const src = img.getAttribute("src") || "";
         return src.startsWith("data:") || src.startsWith("blob:");
     });
-    if (allDataUrls) return Promise.resolve();
+    if (allDataUrls && !options.requireImageDecode) return Promise.resolve();
 
     const waitOne = (img) =>
         new Promise((resolve) => {
@@ -89,6 +95,28 @@ function waitForImages(root, timeoutMs = 8000, options = {}) {
     ]);
 }
 
+/** Ensure export subtree is visible in html2canvas clone (hidden/off-screen ancestors). */
+function ensurePdfExportVisible(clonedRoot) {
+    if (!clonedRoot?.querySelectorAll) return;
+    const exportRoot =
+        clonedRoot.classList?.contains("pdf-export-root")
+            ? clonedRoot
+            : clonedRoot.querySelector(".pdf-export-root") || clonedRoot;
+    [exportRoot].forEach((root) => {
+        root.style.visibility = "visible";
+        root.style.opacity = "1";
+        root.style.display = root.style.display || "block";
+    });
+    exportRoot.querySelectorAll("*").forEach((el) => {
+        if (el.classList?.contains("pdf-hide-on-export")) return;
+        el.style.visibility = "visible";
+        if (el.tagName === "IMG" || el.classList?.contains("pdf-upload-photo")) {
+            el.style.opacity = "1";
+            el.style.display = "block";
+        }
+    });
+}
+
 function absolutizeMediaUrlsInClone(_document, clonedRoot) {
     if (!clonedRoot?.querySelectorAll) return;
     clonedRoot.querySelectorAll("img[src]").forEach((img) => {
@@ -102,12 +130,78 @@ function absolutizeMediaUrlsInClone(_document, clonedRoot) {
 
 function html2canvasOnClone(_document, clonedElement) {
     absolutizeMediaUrlsInClone(_document, clonedElement);
+    ensurePdfExportVisible(clonedElement);
     const style = _document.createElement("style");
     style.textContent = `
         [data-pdf-block] { break-inside: avoid !important; page-break-inside: avoid !important; }
         .pdf-hide-on-export { display: none !important; }
-        .pdf-export-root { padding: 12px !important; }
+        .pdf-export-root { padding: 12px !important; visibility: visible !important; opacity: 1 !important; }
         .pdf-export-root [data-pdf-block] { margin-bottom: 0 !important; }
+        .pdf-upload-photo,
+        .pdf-upload-photo img,
+        .pdf-export-root img {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            max-width: 100% !important;
+        }
+        .pdf-export-root.sheq-pdf-export,
+        .pdf-export-root.sheq-pdf-export .MuiPaper-root {
+            background: #ffffff !important;
+            color: #111827 !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-header-row,
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-grid-row {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: stretch !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-col-25 {
+            width: 25% !important;
+            max-width: 25% !important;
+            flex: 0 0 25% !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-col-33 {
+            width: 33.33% !important;
+            max-width: 33.33% !important;
+            flex: 0 0 33.33% !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-col-34 {
+            width: 34% !important;
+            max-width: 34% !important;
+            flex: 0 0 34% !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-col-50 {
+            width: 50% !important;
+            max-width: 50% !important;
+            flex: 0 0 50% !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-4col-row,
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-summary-row {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: stretch !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-page-one,
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-chart-page {
+            background: #ffffff !important;
+            overflow: visible !important;
+        }
+        .pdf-export-root.sheq-pdf-export .MuiTableCell-root {
+            border-color: #e2e8f0 !important;
+        }
+        .pdf-export-root.sheq-pdf-export .MuiTableHead-root .MuiTableCell-root {
+            color: #ffffff !important;
+            background-color: #003049 !important;
+        }
+        .pdf-export-root.sheq-pdf-export .sheq-pdf-page-one .MuiTypography-root {
+            color: #111827 !important;
+        }
+        .pdf-export-root.sheq-pdf-export .MuiTypography-root {
+            color: #111827 !important;
+        }
         [data-pdf-chart] .recharts-wrapper,
         [data-pdf-chart] .recharts-surface,
         [data-pdf-chart] svg { overflow: visible !important; }
@@ -175,6 +269,79 @@ function html2canvasOnClone(_document, clonedElement) {
         }
         .sif-pdf-export .sif-page3-body {
             width: 100% !important;
+        }
+        .concern-pdf-export,
+        .concern-pdf-export .MuiPaper-root {
+            background: #ffffff !important;
+            color: #111827 !important;
+            -webkit-font-smoothing: antialiased !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            text-rendering: geometricPrecision !important;
+            font-synthesis: none !important;
+        }
+        .concern-pdf-export * {
+            font-synthesis: none !important;
+        }
+        .concern-pdf-export h1,
+        .concern-pdf-export input,
+        .concern-pdf-export div,
+        .concern-pdf-export label,
+        .concern-pdf-export p,
+        .concern-pdf-export textarea {
+            font-weight: inherit !important;
+        }
+        .concern-pdf-export .pdf-header {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: flex-start !important;
+            justify-content: space-between !important;
+        }
+        .concern-pdf-export .pdf-logo-box {
+            width: auto !important;
+            min-width: 180px !important;
+            max-width: 240px !important;
+            height: auto !important;
+            min-height: 64px !important;
+            max-height: 96px !important;
+            overflow: visible !important;
+            padding: 4px 10px !important;
+            flex-shrink: 0 !important;
+        }
+        .concern-pdf-export .pdf-header-logo {
+            display: block !important;
+            max-height: 84px !important;
+            max-width: 220px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+        .concern-pdf-export .pdf-upload-photo img {
+            max-height: 280px !important;
+            width: auto !important;
+            max-width: 100% !important;
+            object-fit: contain !important;
+        }
+        .concern-pdf-export .pdf-signature-img {
+            max-height: 64px !important;
+            width: auto !important;
+            max-width: 100% !important;
+            object-fit: contain !important;
+        }
+        .weekly-pdf-export .pdf-header {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: flex-start !important;
+            justify-content: space-between !important;
+        }
+        .weekly-pdf-export .pdf-header-logo {
+            display: block !important;
+            max-height: 72px !important;
+            max-width: 160px !important;
+            object-fit: contain !important;
         }
     `;
     _document.head.appendChild(style);
@@ -252,12 +419,13 @@ async function captureElement(element, captureOpts) {
     return { canvas, jpegQuality };
 }
 
-function canvasToJpeg(canvas, quality, targetMaxBytes) {
+function canvasToJpeg(canvas, quality, targetMaxBytes, minQuality = 0.5) {
     let q = quality;
     let data = canvas.toDataURL("image/jpeg", q);
-    const cap = targetMaxBytes * 0.55;
-    while (q >= 0.5 && data.length > cap) {
-        q -= 0.05;
+    const cap = targetMaxBytes;
+    const floor = Math.min(quality, Math.max(0.5, minQuality));
+    while (q > floor + 0.001 && data.length > cap) {
+        q = Math.max(floor, q - 0.04);
         data = canvas.toDataURL("image/jpeg", q);
     }
     return data;
@@ -278,7 +446,7 @@ function cropCanvasSlice(source, srcY, srcHeight) {
  * Renders marked sections (`[data-pdf-block]`) one after another with page breaks between
  * sections instead of slicing one tall screenshot (avoids cutting rows in half).
  */
-function drawPdfHeaderFooter(pdf, options, pageNum, totalPages, layout) {
+function drawPdfHeaderFooter(pdf, options, pageNum, totalPages, layout, runningHeaderText = "") {
     if (options.skipBuiltInFooter) return;
 
     const { marginX, headerInsetMm, footerInsetMm } = layout;
@@ -303,6 +471,17 @@ function drawPdfHeaderFooter(pdf, options, pageNum, totalPages, layout) {
     pdf.setLineWidth(0.2);
     pdf.line(contentLeft, contentTop - 0.5, pageWidth - contentRight, contentTop - 0.5);
     pdf.line(contentLeft, footerLineY, pageWidth - contentRight, footerLineY);
+
+    if (runningHeaderText) {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(0, 48, 73);
+        const maxHeaderWidth = pageWidth - contentLeft - contentRight - 4;
+        const headerLines = pdf.splitTextToSize(runningHeaderText, maxHeaderWidth);
+        pdf.text(headerLines, pageWidth / 2, 6.5, { align: "center" });
+    }
+
+    pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8);
     pdf.setTextColor(90, 90, 90);
     pdf.text(currentDate, contentLeft + 2, footerTextY);
@@ -314,12 +493,18 @@ async function downloadPdfPaginatedByBlocks(root, fileName, onComplete, options)
     const { marginX, headerInsetMm, footerInsetMm } = layout;
     const blockScale = options.blockScale ?? 2;
     const jpegQuality = options.jpegQuality ?? 0.85;
+    const minJpegQuality = options.minJpegQuality ?? 0.5;
     const targetMaxBytes = options.targetMaxBytes ?? DEFAULT_TARGET_BYTES;
     const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
     const blockGapMm = options.blockGapMm ?? BLOCK_GAP_MM;
+    const imageCompression = options.imageCompression ?? "FAST";
 
     const blocks = getTopLevelPdfBlocks(root);
     const captureConcurrency = options.captureConcurrency ?? 2;
+    const perBlockByteCap = Math.max(
+        options.sliceByteBudget ?? 0,
+        Math.floor((targetMaxBytes / Math.max(blocks.length, 1)) * 1.15)
+    );
 
     if (blocks.length === 0) {
         return downloadPdfSingleCanvas(root, fileName, onComplete, options);
@@ -345,22 +530,33 @@ async function downloadPdfPaginatedByBlocks(root, fileName, onComplete, options)
         cursorY = contentTop;
     };
 
+    const runningHeaderText =
+        options.runningHeaderText ||
+        (options.useRunningHeader ? root.getAttribute("data-pdf-form-title") || "" : "");
+
     const capturedBlocks = await mapWithConcurrency(
         blocks,
         (block) => captureElement(block, { scale: blockScale, jpegQuality }),
         captureConcurrency
     );
 
-    for (const { canvas } of capturedBlocks) {
+    blocks.forEach((block, blockIndex) => {
+        const { canvas } = capturedBlocks[blockIndex];
         const imgWidth = availableWidth;
         const imgHeightMm = (canvas.height * imgWidth) / canvas.width;
 
+        if (block.hasAttribute("data-pdf-break-before") && cursorY > contentTop + 0.5) {
+            pdf.addPage();
+            pageCount += 1;
+            cursorY = contentTop;
+        }
+
         if (imgHeightMm <= availableHeight) {
             ensureSpace(imgHeightMm + blockGapMm);
-            const imgData = canvasToJpeg(canvas, jpegQuality, targetMaxBytes);
-            pdf.addImage(imgData, "JPEG", contentLeft, cursorY, imgWidth, imgHeightMm, undefined, "FAST");
+            const imgData = canvasToJpeg(canvas, jpegQuality, perBlockByteCap, minJpegQuality);
+            pdf.addImage(imgData, "JPEG", contentLeft, cursorY, imgWidth, imgHeightMm, undefined, imageCompression);
             cursorY += imgHeightMm + blockGapMm;
-            continue;
+            return;
         }
 
         if (options.fitBlockToPage) {
@@ -369,10 +565,10 @@ async function downloadPdfPaginatedByBlocks(root, fileName, onComplete, options)
             const fittedH = availableHeight;
             const xOff = contentLeft + (availableWidth - fittedW) / 2;
             ensureSpace(fittedH + blockGapMm);
-            const imgData = canvasToJpeg(canvas, jpegQuality, targetMaxBytes);
-            pdf.addImage(imgData, "JPEG", xOff, cursorY, fittedW, fittedH, undefined, "FAST");
+            const imgData = canvasToJpeg(canvas, jpegQuality, perBlockByteCap, minJpegQuality);
+            pdf.addImage(imgData, "JPEG", xOff, cursorY, fittedW, fittedH, undefined, imageCompression);
             cursorY += fittedH + blockGapMm;
-            continue;
+            return;
         }
 
         // Tall block: slice at page boundaries (kept within one section)
@@ -394,18 +590,18 @@ async function downloadPdfPaginatedByBlocks(root, fileName, onComplete, options)
             }
 
             const sliceCanvas = cropCanvasSlice(canvas, srcY, slicePx);
-            const imgData = canvasToJpeg(sliceCanvas, jpegQuality, targetMaxBytes);
-            pdf.addImage(imgData, "JPEG", contentLeft, cursorY, imgWidth, sliceHeightMm, undefined, "FAST");
+            const imgData = canvasToJpeg(sliceCanvas, jpegQuality, perBlockByteCap, minJpegQuality);
+            pdf.addImage(imgData, "JPEG", contentLeft, cursorY, imgWidth, sliceHeightMm, undefined, imageCompression);
             srcY += slicePx;
             cursorY = contentTop + sliceHeightMm;
         }
         cursorY += blockGapMm;
-    }
+    });
 
     const totalPages = pdf.getNumberOfPages();
     for (let p = 1; p <= totalPages; p += 1) {
         pdf.setPage(p);
-        drawPdfHeaderFooter(pdf, options, p, totalPages, layout);
+        drawPdfHeaderFooter(pdf, options, p, totalPages, layout, runningHeaderText);
     }
 
     warnIfOversized(pdf, maxOutputBytes);

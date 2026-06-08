@@ -190,9 +190,22 @@ function pipeRemoteUrl(sourceUrl, res, { disposition, filename, fallbackMime }) 
   });
 }
 
+async function assertSubfolderForSite(siteId, subfolderId) {
+    if (!subfolderId) return null;
+    const subfolder = await prisma.siteSubfolder.findFirst({
+        where: { id: subfolderId, siteId },
+    });
+    if (!subfolder) {
+        const err = new Error('Subfolder not found for this site.');
+        err.status = 400;
+        throw err;
+    }
+    return subfolder;
+}
+
 // Upload a document
 exports.uploadDocument = asyncHandler(async (req, res) => {
-    const { title, version, validFrom, validUntil, tags, siteId, category } = req.body;
+    const { title, version, validFrom, validUntil, tags, siteId, category, subfolderId } = req.body;
 
     if (!siteId) {
         return res.status(400).json({ success: false, message: "Site ID is required" });
@@ -200,6 +213,12 @@ exports.uploadDocument = asyncHandler(async (req, res) => {
 
     if (!(await userCanAccessSite(prisma, req.scopedUser || req.user, siteId, req.actingClient?.id))) {
         return res.status(403).json({ success: false, message: "You do not have access to this site." });
+    }
+
+    try {
+        await assertSubfolderForSite(siteId, subfolderId || null);
+    } catch (err) {
+        return res.status(err.status || 400).json({ success: false, message: err.message });
     }
 
     if (!validUntil) {
@@ -253,6 +272,7 @@ exports.uploadDocument = asyncHandler(async (req, res) => {
         validUntil: normalizedValidUntil,
         tags: tags || "",
         siteId,
+        subfolderId: subfolderId || null,
         category: category || 'uploads',
         uploadedById: req.user.id,
         url: stored.url,
@@ -269,7 +289,7 @@ exports.uploadDocument = asyncHandler(async (req, res) => {
 
 // Get documents for a specific site and module (category)
 exports.getDocuments = asyncHandler(async (req, res) => {
-    const { siteId, category } = req.query;
+    const { siteId, category, subfolderId } = req.query;
 
     if (!siteId) {
         return res.status(400).json({ success: false, message: "Site ID is required" });
@@ -291,6 +311,10 @@ exports.getDocuments = asyncHandler(async (req, res) => {
         where.category = category;
     }
 
+    if (subfolderId) {
+        where.subfolderId = subfolderId;
+    }
+
     const documents = await prisma.siteDocument.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -306,7 +330,7 @@ exports.getDocuments = asyncHandler(async (req, res) => {
 
 // Get counts per module for a site (User specific)
 exports.getModuleCounts = asyncHandler(async (req, res) => {
-    const { siteId } = req.query;
+    const { siteId, subfolderId } = req.query;
 
     if (!siteId) {
         return res.status(400).json({ success: false, message: "Site ID is required" });
@@ -319,12 +343,17 @@ exports.getModuleCounts = asyncHandler(async (req, res) => {
     await purgeExpiredDocuments();
 
     const today = getTodayDateString();
+    const docWhere = {
+        siteId,
+        validUntil: { gte: today },
+    };
+    if (subfolderId) {
+        docWhere.subfolderId = subfolderId;
+    }
+
     const counts = await prisma.siteDocument.groupBy({
         by: ['category'],
-        where: {
-            siteId,
-            validUntil: { gte: today },
-        },
+        where: docWhere,
         _count: {
             category: true,
         },

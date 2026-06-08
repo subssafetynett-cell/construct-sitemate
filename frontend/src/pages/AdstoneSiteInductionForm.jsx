@@ -13,9 +13,11 @@ import { useTheme } from "../context/ThemeContext";
 import { useSearchParams } from "react-router-dom";
 import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import api from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
+import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import {
     withGeneralFormVisibility,
@@ -101,12 +103,9 @@ export default function AdstoneSiteInductionForm() {
     });
 
     const [persistedSiteId, setPersistedSiteId] = useState(null);
+    const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
-    const { canEdit, siteId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(
-        action,
-        downloading,
-        persistedSiteId
-    );
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
 
     const performSave = async (
         asNew = false,
@@ -122,7 +121,7 @@ export default function AdstoneSiteInductionForm() {
                 name: name || formMetadata.name,
                 tags: tags || formMetadata.tags,
             };
-            if (siteId) payload.siteId = siteId;
+            payload = appendSitepackToAnswers(payload, { siteId, subfolderId });
             payload = withGeneralFormVisibility(payload, visibility, {
                 hasSiteContext: Boolean(siteId),
             });
@@ -165,6 +164,8 @@ export default function AdstoneSiteInductionForm() {
         loading,
         watchDeps: [formData, headerLabels],
         siteId,
+
+        subfolderId,
         category,
         saving,
         canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
@@ -174,7 +175,10 @@ export default function AdstoneSiteInductionForm() {
     });
 
     useEffect(() => {
-        if (!persistedResponseId && !fromTemplateId) setPersistedSiteId(null);
+        if (!persistedResponseId && !fromTemplateId) {
+            setPersistedSiteId(null);
+            setPersistedSubfolderId(null);
+        }
     }, [persistedResponseId, fromTemplateId]);
 
     useEffect(() => {
@@ -206,6 +210,7 @@ export default function AdstoneSiteInductionForm() {
                 const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
+                    setPersistedSubfolderId(submission.answers.subfolderId ?? null);
                     setFormData(submission.answers);
                     if (submission.answers.headerLabels) setHeaderLabels(submission.answers.headerLabels);
                     setFormMetadata({
@@ -328,7 +333,13 @@ export default function AdstoneSiteInductionForm() {
                     </IconButton>
                 </Box>
                 {canEdit && (
-                <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                    <GeneralFormSubmissionDeleteButton
+                        responseId={persistedResponseId}
+                        canEdit={canEdit}
+                        isSitePackContext={Boolean(siteId)}
+                        disabled={saving || downloading}
+                    />
                     <Button 
                         variant="contained" 
                         onClick={handleSave}

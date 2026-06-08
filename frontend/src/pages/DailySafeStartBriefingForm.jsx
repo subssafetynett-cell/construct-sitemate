@@ -13,6 +13,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useSearchParams } from "react-router-dom";
 import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import api from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
@@ -25,6 +26,7 @@ import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import FormDocumentHeader from "../components/FormDocumentHeader";
 import FormHeaderApprovedRow from "../components/FormHeaderApprovedRow";
+import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 
 const HAZARD_CATEGORIES = [
     { key: "workAtHeight", label: "Work at Height", img: "/hazards/work-at-height.png" },
@@ -130,12 +132,9 @@ export default function DailySafeStartBriefingForm() {
         jobTitle: ""
     });
     const [persistedSiteId, setPersistedSiteId] = useState(null);
+    const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
-    const { canEdit, siteId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(
-        action,
-        downloading,
-        persistedSiteId
-    );
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
 
     const performSave = async (
         asNew = false,
@@ -159,7 +158,7 @@ export default function DailySafeStartBriefingForm() {
                 name: name || formMetadata.name,
                 tags: tags || formMetadata.tags,
             };
-            if (siteId) payload.siteId = siteId;
+            payload = appendSitepackToAnswers(payload, { siteId, subfolderId });
             payload = withGeneralFormVisibility(payload, visibility, {
                 hasSiteContext: Boolean(siteId),
             });
@@ -199,6 +198,8 @@ export default function DailySafeStartBriefingForm() {
         loading,
         watchDeps: [docInfo, headerData, headerLabels, activities, hazards, checks, controlMeasures, attendees, consultation, briefingGivenBy],
         siteId,
+
+        subfolderId,
         category,
         saving,
         canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
@@ -208,7 +209,10 @@ export default function DailySafeStartBriefingForm() {
     });
 
     useEffect(() => {
-        if (!persistedResponseId && !fromTemplateId) setPersistedSiteId(null);
+        if (!persistedResponseId && !fromTemplateId) {
+            setPersistedSiteId(null);
+            setPersistedSubfolderId(null);
+        }
     }, [persistedResponseId, fromTemplateId]);
 
     useEffect(() => {
@@ -238,6 +242,7 @@ export default function DailySafeStartBriefingForm() {
                 const submission = res.data.data;
                 if (submission && submission.answers) {
                     setPersistedSiteId(submission.answers.siteId ?? null);
+                    setPersistedSubfolderId(submission.answers.subfolderId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);
                     if (submission.answers.headerData) setHeaderData(submission.answers.headerData);
                     if (submission.answers.headerLabels) setHeaderLabels(submission.answers.headerLabels);
@@ -331,21 +336,29 @@ export default function DailySafeStartBriefingForm() {
                     </IconButton>
                 </Box>
                 {canEdit && (
-                <Button 
-                    variant="contained" 
-                    onClick={handleSaveClick}
-                    disabled={saving || !canEdit || downloading}
-                    sx={{ 
-                        bgcolor: "#E89F17", 
-                        color: "#FFFFFF", 
-                        fontWeight: 600, 
-                        borderRadius: "8px",
-                        boxShadow: "none",
-                        "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
-                    }}
-                >
-                    {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
-                </Button>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                    <GeneralFormSubmissionDeleteButton
+                        responseId={persistedResponseId}
+                        canEdit={canEdit}
+                        isSitePackContext={Boolean(siteId)}
+                        disabled={saving || downloading}
+                    />
+                    <Button 
+                        variant="contained" 
+                        onClick={handleSaveClick}
+                        disabled={saving || !canEdit || downloading}
+                        sx={{ 
+                            bgcolor: "#E89F17", 
+                            color: "#FFFFFF", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            boxShadow: "none",
+                            "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
+                        }}
+                    >
+                        {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
+                    </Button>
+                </Box>
                 )}
             </Box>
 

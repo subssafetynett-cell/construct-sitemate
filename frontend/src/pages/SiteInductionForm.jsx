@@ -10,6 +10,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
 import api from "../services/api";
+import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
@@ -20,6 +21,7 @@ import {
     withGeneralFormVisibility,
     GENERAL_FORM_VISIBILITY,
 } from "../utils/generalFormVisibility";
+import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 
 export default function SiteInductionForm() {
   const logoUrl = useCompanyLogo();
@@ -27,6 +29,7 @@ export default function SiteInductionForm() {
     const { id } = useParams();
     const [searchParams] = useSearchParams();
     const siteId = searchParams.get("siteId");
+    const subfolderId = searchParams.get("subfolderId");
     const category = searchParams.get("category") || "General forms";
     const action = searchParams.get("action");
     const containerRef = useRef(null);
@@ -109,7 +112,7 @@ export default function SiteInductionForm() {
                 name: name || formMetadata.name,
                 tags: tags || formMetadata.tags,
             };
-            if (siteId) payload.siteId = siteId;
+            payload = appendSitepackToAnswers(payload, { siteId, subfolderId });
             payload = withGeneralFormVisibility(payload, visibility, {
                 hasSiteContext: Boolean(siteId),
             });
@@ -149,6 +152,8 @@ export default function SiteInductionForm() {
         loading,
         watchDeps: [docInfo, headerData, headerLabels, attendees],
         siteId,
+
+        subfolderId,
         category,
         saving,
         canQuickSave: Boolean(id && formMetadata.name?.trim()),
@@ -258,21 +263,29 @@ export default function SiteInductionForm() {
                     </Typography>
                 </Box>
                 {canEdit && (
-                <Button 
-                    variant="contained" 
-                    onClick={handleSaveClick}
-                    disabled={saving}
-                    sx={{ 
-                        bgcolor: "#E89F17", 
-                        color: "#FFFFFF", 
-                        fontWeight: 600, 
-                        borderRadius: "8px",
-                        boxShadow: "none",
-                        "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
-                    }}
-                >
-                    {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
-                </Button>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                    <GeneralFormSubmissionDeleteButton
+                        responseId={id}
+                        canEdit={canEdit}
+                        isSitePackContext={Boolean(siteId)}
+                        disabled={saving || downloading}
+                    />
+                    <Button 
+                        variant="contained" 
+                        onClick={handleSaveClick}
+                        disabled={saving}
+                        sx={{ 
+                            bgcolor: "#E89F17", 
+                            color: "#FFFFFF", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            boxShadow: "none",
+                            "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" } 
+                        }}
+                    >
+                        {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
+                    </Button>
+                </Box>
                 )}
             </Box>
 

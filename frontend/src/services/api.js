@@ -133,17 +133,32 @@ export const uploadDocument = async (formData, { onUploadProgress } = {}) => {
   return response.data;
 };
 
-export const fetchDocuments = async (siteId, category) => {
-  const response = await api.get(`/documents`, {
-    params: { siteId, category }
-  });
+export const fetchDocuments = async (siteId, category, subfolderId) => {
+  const params = { siteId, category };
+  if (subfolderId) params.subfolderId = subfolderId;
+  const response = await api.get(`/documents`, { params });
   return response.data;
 };
 
-export const fetchDocumentCounts = async (siteId) => {
-  const response = await api.get(`/documents/counts`, {
-    params: { siteId }
-  });
+export const fetchDocumentCounts = async (siteId, subfolderId) => {
+  const params = { siteId };
+  if (subfolderId) params.subfolderId = subfolderId;
+  const response = await api.get(`/documents/counts`, { params });
+  return response.data;
+};
+
+export const fetchSiteSubfolders = async (siteId) => {
+  const response = await api.get(`/sites/${siteId}/subfolders`);
+  return response.data;
+};
+
+export const createSiteSubfolder = async (siteId, name) => {
+  const response = await api.post(`/sites/${siteId}/subfolders`, { name });
+  return response.data;
+};
+
+export const deleteSiteSubfolder = async (siteId, subfolderId) => {
+  const response = await api.delete(`/sites/${siteId}/subfolders/${subfolderId}`);
   return response.data;
 };
 

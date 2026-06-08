@@ -1,5 +1,9 @@
+# AWS ECR Public Gallery mirrors Docker Hub official images (avoids registry-1.docker.io timeouts).
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine
+ARG NGINX_IMAGE=public.ecr.aws/docker/library/nginx:stable-alpine
+
 # Stage 1: Build the React application
-FROM node:20-alpine AS build
+FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
 
@@ -21,7 +25,7 @@ ENV VITE_BASE_PATH=$VITE_BASE_PATH
 RUN node ./node_modules/vite/bin/vite.js build
 
 # Stage 2: Serve the application using Nginx
-FROM nginx:stable-alpine
+FROM ${NGINX_IMAGE}
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
