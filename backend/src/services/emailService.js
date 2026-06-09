@@ -10,6 +10,9 @@ const transporter = nodemailer.createTransport({
         user: process.env.SMTP_USER || "user@example.com",
         pass: process.env.SMTP_PASS || "password",
     },
+    connectionTimeout: 5000, // 5 seconds
+    greetingTimeout: 5000,   // 5 seconds
+    socketTimeout: 5000,     // 5 seconds
 });
 
 console.log("Email Service Initialized with:");

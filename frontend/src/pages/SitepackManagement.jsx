@@ -488,7 +488,9 @@ export default function SitepackManagement() {
 
                     let formCountsByCategory = {};
                     try {
-                        const res = await api.get('/forms/responses');
+                        const res = await api.get('/forms/responses', {
+                            params: { siteId, subfolderId }
+                        });
                         if (res.data?.success) {
                             const siteResponses = res.data.data.filter((r) =>
                                 matchesSitepackScope(r, { siteId, subfolderId })
@@ -539,9 +541,14 @@ export default function SitepackManagement() {
                     const { documents } = await fetchDocuments(siteId, selectedModule.title, subfolderId);
                     if (documents) allItems = [...allItems, ...documents];
 
-                    // Also fetch Form Responses for the current category
                     try {
-                        const res = await api.get(`/forms/responses?category=${encodeURIComponent(selectedModule.title)}`);
+                        const res = await api.get('/forms/responses', {
+                            params: {
+                                category: selectedModule.title,
+                                siteId,
+                                subfolderId
+                            }
+                        });
                         if (res.data?.success) {
                             const siteResponses = res.data.data.filter((r) =>
                                 matchesSitepackScope(r, { siteId, subfolderId })
@@ -605,7 +612,9 @@ export default function SitepackManagement() {
             setCreateFormModalLoading(true);
             setSavedGeneralSubmissions([]);
             try {
-                const responsesRes = await api.get("/forms/responses");
+                const responsesRes = await api.get("/forms/responses", {
+                    params: { category: "General forms," }
+                });
                 if (cancelled) return;
                 if (responsesRes.data?.success) {
                     const list = responsesRes.data.data || [];
@@ -706,7 +715,13 @@ export default function SitepackManagement() {
         if (documents) allItems = [...allItems, ...documents];
 
         try {
-            const res = await api.get(`/forms/responses?category=${encodeURIComponent(selectedModule.title)}`);
+            const res = await api.get('/forms/responses', {
+                params: {
+                    category: selectedModule.title,
+                    siteId,
+                    subfolderId
+                }
+            });
             if (res.data?.success) {
                 const siteResponses = res.data.data.filter((r) =>
                     matchesSitepackScope(r, { siteId, subfolderId })

@@ -282,7 +282,45 @@ exports.getAllResponses = async (req, res) => {
       readScope
     );
     if (req.query.category) {
-      filter.category = req.query.category;
+      const parts = String(req.query.category).split(",").map(c => c.trim());
+      const categories = [];
+      let matchNullOrEmpty = false;
+      parts.forEach(p => {
+        if (p === "" || p === "null" || p === "undefined") {
+          matchNullOrEmpty = true;
+        } else {
+          categories.push(p);
+        }
+      });
+
+      if (matchNullOrEmpty) {
+        const orConditions = [
+          { category: "" },
+          { category: null }
+        ];
+        if (categories.length > 0) {
+          orConditions.push({ category: { in: categories } });
+        }
+        filter.OR = orConditions;
+      } else {
+        filter.category = { in: categories };
+      }
+    }
+
+    const querySiteId = req.query.siteId ? String(req.query.siteId).trim() : null;
+    const querySubfolderId = req.query.subfolderId ? String(req.query.subfolderId).trim() : null;
+    if ((querySiteId && querySiteId !== "null" && querySiteId !== "undefined") || 
+        (querySubfolderId && querySubfolderId !== "null" && querySubfolderId !== "undefined")) {
+      const jsonFilter = {};
+      if (querySiteId && querySiteId !== "null" && querySiteId !== "undefined") {
+        jsonFilter.siteId = querySiteId;
+      }
+      if (querySubfolderId && querySubfolderId !== "null" && querySubfolderId !== "undefined") {
+        jsonFilter.subfolderId = querySubfolderId;
+      }
+      filter.answers = {
+        contains: jsonFilter,
+      };
     }
 
     const responses = await prisma.formResponse.findMany({

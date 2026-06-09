@@ -8,7 +8,12 @@ import api from './api';
  * @param {string} formTitle the exact string title of the form (e.g., "Tool Box Talk Register")
  * @returns {Promise<string>} an ID representing the Form
  */
+const templateFormCache = {};
+
 export const getOrCreateTemplateForm = async (formTitle) => {
+    if (templateFormCache[formTitle]) {
+        return templateFormCache[formTitle];
+    }
     try {
         // First try to fetch all user forms
         const res = await api.get('/forms');
@@ -16,7 +21,9 @@ export const getOrCreateTemplateForm = async (formTitle) => {
             // Find existing
             const existing = res.data.data.find(f => f.title === formTitle);
             if (existing) {
-                return existing.id || existing._id;
+                const id = existing.id || existing._id;
+                templateFormCache[formTitle] = id;
+                return id;
             }
         }
 
@@ -38,7 +45,9 @@ export const getOrCreateTemplateForm = async (formTitle) => {
 
         if (createRes.data?.success && createRes.data.form) {
             const created = createRes.data.form;
-            return created.id || created._id;
+            const id = created.id || created._id;
+            templateFormCache[formTitle] = id;
+            return id;
         }
 
         throw new Error("Could not create template form");

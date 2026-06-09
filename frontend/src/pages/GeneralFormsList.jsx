@@ -113,7 +113,9 @@ export default function GeneralFormsList() {
     const fetchSubmissions = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/forms/responses');
+            const res = await api.get('/forms/responses', {
+                params: { category: "General forms," }
+            });
             if (res.data?.success) {
                 setSubmissions((res.data.data || []).filter(isGeneralFormsPageSubmission));
             }

@@ -48,6 +48,10 @@ api.interceptors.request.use(
     const token = getStoredToken();
     const url = config.url || "";
 
+    if (/\/forms\/.*responses/.test(url) || /\/forms\/responses/.test(url)) {
+      config.timeout = UPLOAD_TIMEOUT_MS;
+    }
+
     if (token && !isPublicAuthRequest(url)) {
       if (isTokenExpired(token)) {
         handleSessionExpired("expired");

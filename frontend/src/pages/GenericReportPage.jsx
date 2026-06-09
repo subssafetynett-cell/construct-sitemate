@@ -203,9 +203,14 @@ export default function GenericReportPage({ pageTitle }) {
 
     const fetchSubmissions = useCallback(async () => {
         try {
-            const res = await api.get("/forms/responses", {
-                params: { category: pageTitle }
-            });
+            const params = { category: pageTitle };
+            if (isSitepackContext && siteId) {
+                params.siteId = siteId;
+                if (subfolderId) {
+                    params.subfolderId = subfolderId;
+                }
+            }
+            const res = await api.get("/forms/responses", { params });
             if (res.data?.success) {
                 let list = res.data.data || [];
                 if (isSitepackContext) {
