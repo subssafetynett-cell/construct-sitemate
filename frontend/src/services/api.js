@@ -169,6 +169,9 @@ export const deleteSiteSubfolder = async (siteId, subfolderId) => {
 /** Large saved forms (SHEQ with images) can exceed the default JSON timeout. */
 export const FORM_RESPONSE_LOAD_TIMEOUT_MS = 2 * 60 * 1000;
 
+/** Saving form responses (may include base64 images) can be slow on poor connections. */
+export const FORM_RESPONSE_SAVE_TIMEOUT_MS = 5 * 60 * 1000;
+
 export const fetchFormResponseById = async (id, { timeout = FORM_RESPONSE_LOAD_TIMEOUT_MS } = {}) => {
   const response = await api.get(`/forms/responses/${id}`, { timeout });
   const payload = response?.data;
