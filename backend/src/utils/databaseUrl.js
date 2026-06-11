@@ -2,90 +2,78 @@
  * Normalize Postgres connection strings (Neon cold starts, SSL, pooler).
  * Mutates process.env.DATABASE_URL when applied at startup.
  */
+
+function stripEnvQuotes(value) {
+  if (!value || typeof value !== "string") return value;
+  return value.trim().replace(/^["']|["']$/g, "");
+}
+
+function appendSearchParams(rawUrl, additions) {
+  const qIndex = rawUrl.indexOf("?");
+  const base = qIndex === -1 ? rawUrl : rawUrl.slice(0, qIndex);
+  const query = qIndex === -1 ? "" : rawUrl.slice(qIndex + 1);
+  const params = new URLSearchParams(query);
+  for (const [key, value] of Object.entries(additions)) {
+    if (!params.has(key)) params.set(key, value);
+  }
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 function normalizeDatabaseUrl(rawUrl, { app = true } = {}) {
   if (!rawUrl || typeof rawUrl !== "string") return rawUrl;
 
-  const trimmed = rawUrl.trim();
+  const trimmed = stripEnvQuotes(rawUrl);
   if (!trimmed) return rawUrl;
 
-  try {
-    const normalized = trimmed.replace(/^postgresql:/i, "postgres:");
-    const url = new URL(normalized);
-    const isNeon = url.hostname.includes(".neon.tech");
+  const isNeon = trimmed.includes(".neon.tech");
+  if (!isNeon) return trimmed;
 
-    if (isNeon) {
-      if (!url.searchParams.has("sslmode")) {
-        url.searchParams.set("sslmode", "require");
-      }
-      if (!url.searchParams.has("connect_timeout")) {
-        url.searchParams.set("connect_timeout", "30");
-      }
-      if (!url.searchParams.has("pool_timeout")) {
-        url.searchParams.set("pool_timeout", "30");
-      }
-      // Runtime queries: pooled Neon endpoints need pgbouncer for Prisma.
-      if (
-        app &&
-        url.hostname.includes("-pooler.") &&
-        !url.searchParams.has("pgbouncer")
-      ) {
-        url.searchParams.set("pgbouncer", "true");
-      }
-      if (!app) {
-        url.searchParams.delete("pgbouncer");
-      }
-    }
-
-    return url.toString().replace(/^postgres:/i, "postgresql:");
-  } catch {
-    let out = trimmed;
-    if (out.includes(".neon.tech")) {
-      if (!out.includes("sslmode=")) {
-        out += `${out.includes("?") ? "&" : "?"}sslmode=require`;
-      }
-      if (!out.includes("connect_timeout=")) {
-        out += `${out.includes("?") ? "&" : "?"}connect_timeout=30`;
-      }
-      if (app && out.includes("-pooler.") && !/pgbouncer=/.test(out)) {
-        out += `${out.includes("?") ? "&" : "?"}pgbouncer=true`;
-      }
-      if (!app) {
-        out = out.replace(/[?&]pgbouncer=[^&]*/g, "");
-      }
-    }
-    return out;
+  const additions = {};
+  if (!/sslmode=/i.test(trimmed)) additions.sslmode = "require";
+  if (!/connect_timeout=/i.test(trimmed)) additions.connect_timeout = "60";
+  if (!/pool_timeout=/i.test(trimmed)) additions.pool_timeout = "60";
+  if (app && trimmed.includes("-pooler.") && !/pgbouncer=/i.test(trimmed)) {
+    additions.pgbouncer = "true";
   }
+
+  let out = appendSearchParams(trimmed, additions);
+  if (!app) {
+    out = out
+      .replace(/([?&])pgbouncer=[^&]*/gi, "$1")
+      .replace(/\?&/, "?")
+      .replace(/[?&]$/, "");
+  }
+  return out;
 }
 
 /** Non-pooler URL for Prisma migrate (derived from pooled Neon URL when needed). */
 function deriveDirectDatabaseUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== "string") return rawUrl;
 
-  const base = normalizeDatabaseUrl(rawUrl, { app: false });
-  try {
-    const url = new URL(base.replace(/^postgresql:/i, "postgres:"));
-    if (url.hostname.includes("-pooler.")) {
-      url.hostname = url.hostname.replace("-pooler.", ".");
-    }
-    url.searchParams.delete("pgbouncer");
-    return url.toString().replace(/^postgres:/i, "postgresql:");
-  } catch {
-    return base.replace(/-pooler\./g, ".").replace(/[?&]pgbouncer=[^&]*/g, "");
-  }
+  let out = normalizeDatabaseUrl(rawUrl, { app: false });
+  out = out.replace(/-pooler(?=\.)/g, "");
+  out = out
+    .replace(/([?&])pgbouncer=[^&]*/gi, "$1")
+    .replace(/\?&/, "?")
+    .replace(/[?&]$/, "");
+  return out;
 }
 
 function applyDatabaseUrlEnv() {
   if (process.env.DIRECT_URL) {
-    process.env.DIRECT_URL = normalizeDatabaseUrl(process.env.DIRECT_URL, {
-      app: false,
-    });
+    process.env.DIRECT_URL = normalizeDatabaseUrl(
+      stripEnvQuotes(process.env.DIRECT_URL),
+      { app: false }
+    );
   }
 
   if (!process.env.DATABASE_URL) return null;
 
-  process.env.DATABASE_URL = normalizeDatabaseUrl(process.env.DATABASE_URL, {
-    app: true,
-  });
+  process.env.DATABASE_URL = normalizeDatabaseUrl(
+    stripEnvQuotes(process.env.DATABASE_URL),
+    { app: true }
+  );
 
   if (!process.env.DIRECT_URL) {
     process.env.DIRECT_URL = deriveDirectDatabaseUrl(process.env.DATABASE_URL);
@@ -94,7 +82,19 @@ function applyDatabaseUrlEnv() {
   return process.env.DATABASE_URL;
 }
 
+function isAuthDatabaseError(err) {
+  const code = err?.code;
+  const message = String(err?.message || "");
+  return (
+    code === "P1000" ||
+    /authentication failed/i.test(message) ||
+    /password authentication failed/i.test(message)
+  );
+}
+
 function isTransientDatabaseError(err) {
+  if (isAuthDatabaseError(err)) return false;
+
   const code = err?.code;
   const message = String(err?.message || "");
   return (
@@ -121,6 +121,12 @@ function getDirectDatabaseUrl() {
   if (!process.env.DATABASE_URL && !process.env.DIRECT_URL) return null;
   applyDatabaseUrlEnv();
   return process.env.DIRECT_URL || process.env.DATABASE_URL;
+}
+
+function getConnectionUrlCandidates() {
+  applyDatabaseUrlEnv();
+  const urls = [process.env.DIRECT_URL, process.env.DATABASE_URL].filter(Boolean);
+  return [...new Set(urls)];
 }
 
 async function probeDatabaseConnection(client, { attempts = 12, delayMs = 5000 } = {}) {
@@ -175,6 +181,8 @@ module.exports = {
   deriveDirectDatabaseUrl,
   applyDatabaseUrlEnv,
   getDirectDatabaseUrl,
+  getConnectionUrlCandidates,
+  isAuthDatabaseError,
   isTransientDatabaseError,
   formatDatabaseLogMessage,
   probeDatabaseConnection,

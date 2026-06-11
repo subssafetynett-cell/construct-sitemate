@@ -5,9 +5,10 @@
 const { PrismaClient } = require("@prisma/client");
 const {
   applyDatabaseUrlEnv,
-  getDirectDatabaseUrl,
+  getConnectionUrlCandidates,
   probeDatabaseConnection,
   formatDatabaseLogMessage,
+  isAuthDatabaseError,
 } = require("./src/utils/databaseUrl");
 
 async function columnExists(prisma, tableName, columnName) {
@@ -32,17 +33,39 @@ async function tableExists(prisma, tableName) {
   return row?.ok === true || row?.ok === "t" || row?.ok === 1;
 }
 
-async function main() {
+async function connectPrisma() {
   applyDatabaseUrlEnv();
-  const connectionUrl = getDirectDatabaseUrl();
-  const prisma = new PrismaClient({
-    datasources: {
-      db: { url: connectionUrl },
-    },
-  });
-  try {
-    await probeDatabaseConnection(prisma, { attempts: 10, delayMs: 5000 });
+  const candidates = getConnectionUrlCandidates();
+  let lastError;
 
+  for (const url of candidates) {
+    const prisma = new PrismaClient({
+      datasources: {
+        db: { url },
+      },
+    });
+    try {
+      await probeDatabaseConnection(prisma, { attempts: 6, delayMs: 5000 });
+      return prisma;
+    } catch (err) {
+      lastError = err;
+      try {
+        await prisma.$disconnect();
+      } catch {
+        // Ignore disconnect errors.
+      }
+      if (isAuthDatabaseError(err)) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError || new Error("No database connection URL configured");
+}
+
+async function main() {
+  const prisma = await connectPrisma();
+  try {
     const client = await tableExists(prisma, "Client");
     const lastLogin = await columnExists(prisma, "User", "lastLoginAt");
     const siteClientId = await columnExists(prisma, "Site", "clientId");
@@ -53,14 +76,6 @@ async function main() {
     console.log(
       `client=${client ? "1" : "0"} lastLogin=${lastLogin ? "1" : "0"} siteClientId=${siteClientId ? "1" : "0"} passwordReset=${passwordReset ? "1" : "0"} emailVerified=${emailVerified ? "1" : "0"} viewInviteOtp=${viewInviteOtp ? "1" : "0"}`
     );
-  } catch (err) {
-    if (process.env.PRISMA_BASELINE_VERBOSE === "1") {
-      console.error(
-        "prisma-baseline: database unreachable —",
-        formatDatabaseLogMessage(err)
-      );
-    }
-    process.exitCode = 1;
   } finally {
     try {
       await prisma.$disconnect();
@@ -71,8 +86,9 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(process.exitCode || 0))
+  .then(() => process.exit(0))
   .catch((err) => {
-    console.error("prisma-baseline:", err?.message || err);
+    const code = err?.code ? ` (${err.code})` : "";
+    console.error(`Database connection failed${code}: ${formatDatabaseLogMessage(err)}`);
     process.exit(1);
   });

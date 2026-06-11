@@ -6,16 +6,18 @@ services:
     expose:
       - "4000"
 
-    # Coolify injects DATABASE_URL, JWT_SECRET, APP_URL, etc. from the service env UI.
-    # Root `.env` is optional (local dev); never commit real secrets.
+    # Coolify: `docker compose --env-file /artifacts/.../.env` — vars must be referenced below.
     env_file:
       - path: .env
         required: false
 
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      # Do not default DATABASE_URL here — no bundled Postgres in this stack.
-      # Set DATABASE_URL (Neon pooled URL) and JWT_SECRET in Coolify → backend → Environment.
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL:-}
+      JWT_SECRET: ${JWT_SECRET}
+      APP_URL: ${APP_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
 
     volumes:
       - ./backend/uploads:/app/uploads

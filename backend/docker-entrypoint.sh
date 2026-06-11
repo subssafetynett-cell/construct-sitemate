@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+export DOTENV_CONFIG_QUIET=true
+
 node /app/scripts/validate-deploy-env.cjs
 
 /app/docker-migrate.sh

@@ -9,8 +9,9 @@ const dotenv = require("dotenv");
 const backendDir = path.join(__dirname, "..");
 const repoRoot = path.join(backendDir, "..");
 
-dotenv.config({ path: path.join(repoRoot, ".env") });
-dotenv.config({ path: path.join(backendDir, ".env") });
+const dotenvOpts = { quiet: true };
+dotenv.config({ path: path.join(repoRoot, ".env"), ...dotenvOpts });
+dotenv.config({ path: path.join(backendDir, ".env"), ...dotenvOpts });
 
 if (!process.env.DATABASE_URL) {
   console.error(

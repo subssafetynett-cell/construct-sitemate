@@ -4,7 +4,7 @@ const dotenv = require("dotenv");
 
 function loadEnvFile(filePath) {
   if (fs.existsSync(filePath)) {
-    dotenv.config({ path: filePath });
+    dotenv.config({ path: filePath, quiet: true });
   }
 }
 
