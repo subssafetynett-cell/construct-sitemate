@@ -18,7 +18,12 @@ import api from "../services/api";
 
 function isStandardSheqSubmission(sub) {
     const ans = sub?.answers;
-    return Boolean(ans?.formData !== undefined || ans?.formSections?.length);
+    return Boolean(
+        ans?.formData !== undefined ||
+        ans?.formSections?.length ||
+        ans?.headerLabels ||
+        ans?.installationMeasures
+    );
 }
 
 function getSubmissionLabel(sub) {
@@ -103,8 +108,18 @@ export default function FormSelectionDialog({
         return label.includes(q) || site.includes(q);
     });
 
+    const isInstallation = sheqTemplateCategory === "SHEQ Installation";
     const dialogTitle = sheqMode ? "Choose a report to copy" : "Choose a Form";
     const searchPlaceholder = sheqMode ? "Search saved reports..." : "Search forms...";
+    const defaultChecklistLabel = isInstallation
+        ? "Default SHEQ installation checklist"
+        : "Default SHEQ service checklist";
+    const defaultChecklistHint = isInstallation
+        ? "Standard installation audit layout"
+        : "Standard vehicle / site audit layout";
+    const sheqHelperText = isInstallation
+        ? "Start from a saved installation report or use the default checklist layout."
+        : "Start from a saved SHEQ service report or use the default checklist layout.";
 
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -121,7 +136,7 @@ export default function FormSelectionDialog({
 
                 {sheqMode && (
                     <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-                        Start from a saved SHEQ service report or use the default checklist layout.
+                        {sheqHelperText}
                     </Typography>
                 )}
 
@@ -133,12 +148,12 @@ export default function FormSelectionDialog({
                     <List disablePadding>
                         <ListItemButton
                             onClick={() =>
-                                onSelect({ type: "sheq-blank", title: "Default SHEQ service checklist" })
+                                onSelect({ type: "sheq-blank", title: defaultChecklistLabel })
                             }
                         >
                             <ListItemText
-                                primary="Default SHEQ service checklist"
-                                secondary="Standard vehicle / site audit layout"
+                                primary={defaultChecklistLabel}
+                                secondary={defaultChecklistHint}
                             />
                         </ListItemButton>
                         {filteredSubmissions.length > 0 && <Divider sx={{ my: 1 }} />}

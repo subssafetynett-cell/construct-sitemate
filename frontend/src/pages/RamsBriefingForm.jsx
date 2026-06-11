@@ -15,7 +15,10 @@ import { useTheme } from "../context/ThemeContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import api from "../services/api";
-import { appendSitepackToAnswers } from "../utils/sitepackContext";
+import {
+    appendSitepackToAnswers,
+    resolveFormCategoryFromSearchParams,
+} from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
@@ -66,7 +69,7 @@ export default function RamsBriefingForm() {
     const { persistedResponseId, seedSubmissionId, fromTemplateId } = useGeneralFormRouteSubmissionIds();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const category = searchParams.get("category") || "General forms";
+    const category = resolveFormCategoryFromSearchParams(searchParams);
     const action = searchParams.get("action");
     const containerRef = useRef(null);
 

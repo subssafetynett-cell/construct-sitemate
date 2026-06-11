@@ -1,7 +1,29 @@
+import {
+  FRIDAY_PACK_FORMS_CATEGORY,
+  GENERAL_FORMS_CATEGORY,
+} from "./generalFormSubmissions";
+
 export function normalizeSitepackId(value) {
   if (value == null) return null;
   const t = String(value).trim();
   return t !== "" ? t : null;
+}
+
+/** Category for saves when opened from site pack (Friday Pack module) vs /general-forms. */
+export function resolveFormCategoryFromSearchParams(searchParams) {
+  const explicit = searchParams.get("category")?.trim();
+  if (explicit) return explicit;
+  if (normalizeSitepackId(searchParams.get("siteId"))) {
+    return FRIDAY_PACK_FORMS_CATEGORY;
+  }
+  return GENERAL_FORMS_CATEGORY;
+}
+
+export function resolveSitepackModuleTitle(category, { siteId, subfolderId } = {}) {
+  if (!siteId) return category || null;
+  if (category && category !== GENERAL_FORMS_CATEGORY) return category;
+  if (subfolderId) return FRIDAY_PACK_FORMS_CATEGORY;
+  return category || FRIDAY_PACK_FORMS_CATEGORY;
 }
 
 export function appendSitepackToAnswers(payload, { siteId, subfolderId }) {
@@ -15,10 +37,15 @@ export function appendSitepackToAnswers(payload, { siteId, subfolderId }) {
 
 export function matchesSitepackScope(record, { siteId, subfolderId }) {
   const rSiteId = record.answers?.siteId ?? record.siteId;
-  if (normalizeSitepackId(rSiteId) !== normalizeSitepackId(siteId)) return false;
-  const rSubfolderId = normalizeSitepackId(record.answers?.subfolderId);
+  const rSubfolderId = normalizeSitepackId(
+    record.answers?.subfolderId ?? record.subfolderId
+  );
+  const wantSite = normalizeSitepackId(siteId);
   const wantSubfolder = normalizeSitepackId(subfolderId);
+
+  if (wantSite && normalizeSitepackId(rSiteId) !== wantSite) return false;
   if (wantSubfolder) return rSubfolderId === wantSubfolder;
+  if (wantSite) return true;
   return !rSubfolderId;
 }
 

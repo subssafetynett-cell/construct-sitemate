@@ -33,6 +33,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 import EmailIcon from "@mui/icons-material/Email";
 import { Eye, Pencil, Download, Mail, Trash2 } from "lucide-react";
 import Layout from "../components/Layout";
+import PageContent from "../components/PageContent";
 import { formatSubmitterDisplay, showSubmissionCreatorColumn } from "../utils/submitterDisplay";
 import { useAuth } from "../context/AuthContext";
 import FormSelectionDialog from "../components/FormSelectionDialog";
@@ -602,7 +603,7 @@ export default function GenericReportPage({ pageTitle }) {
 
     return (
         <Layout pageTitle={pageTitle} disablePadding={true}>
-            <Box sx={{ flex: 1, p: 3, height: "100%", overflowY: "auto" }}>
+            <PageContent sx={{ flex: 1, height: "100%", overflowY: "auto" }}>
                 <Box>
                     <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, justifyContent: "space-between", mb: 4, alignItems: { xs: "flex-start", sm: "center" }, gap: { xs: 2.5, sm: 0 } }}>
                         <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
@@ -924,7 +925,7 @@ export default function GenericReportPage({ pageTitle }) {
                         </Box>
                     )}
                 </Box>
-            </Box>
+            </PageContent>
 
             <FormSelectionDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSelect={handleSelectForm} />
 

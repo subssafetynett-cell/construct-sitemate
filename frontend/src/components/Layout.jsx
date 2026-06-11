@@ -78,7 +78,18 @@ const Layout = ({ children, pageTitle, disablePadding = false }) => {
             </Drawer>
 
             {/* Right Content Area */}
-            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", gap: 0 }}>
+            <Box
+                sx={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "100%",
+                    overflow: "hidden",
+                    gap: 0,
+                    minWidth: 0,
+                    width: "100%",
+                }}
+            >
                 <TopNav pageTitle={pageTitle} onMobileMenuClick={handleDrawerToggle} />
 
                 <Box
@@ -86,11 +97,13 @@ const Layout = ({ children, pageTitle, disablePadding = false }) => {
                     sx={{
                         flex: 1,
                         overflow: "auto",
+                        width: "100%",
+                        minWidth: 0,
                         bgcolor: isDarkMode ? "#111827" : "#fff",
                         borderRadius: 0,
                         boxShadow: "none",
-                        px: disablePadding ? 0 : { xs: 2, sm: 3, md: 4 },
-                        py: disablePadding ? 0 : { xs: 3, md: 4 },
+                        px: disablePadding ? 0 : { xs: 2, sm: 3, md: 4, xl: 5 },
+                        py: disablePadding ? 0 : { xs: 2.5, sm: 3, md: 3.5 },
                         color: isDarkMode ? "#F9FAFB" : "inherit",
                     }}
                 >

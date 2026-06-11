@@ -8,6 +8,7 @@ import {
     Avatar,
 } from "@mui/material";
 import Layout from "../components/Layout";
+import PageContent from "../components/PageContent";
 import { useSearchParams } from "react-router-dom";
 import {
     AreaChart,
@@ -197,8 +198,8 @@ export default function AuditReportDashboard() {
 
     return (
         <Layout disablePadding={true}>
-            <Box sx={{ py: { xs: 2, md: 4 }, px: { xs: 2, md: 4 }, bgcolor: "#fafafa", minHeight: "100vh" }}>
-                <Box width="100%">
+            <Box sx={{ bgcolor: "#fafafa", minHeight: "100vh", width: "100%" }}>
+                <PageContent>
                     
                     {/* Top Stats Row */}
                     <Grid container spacing={3} mb={4}>
@@ -411,7 +412,7 @@ export default function AuditReportDashboard() {
                         </Grid>
                     </Box>
 
-                </Box>
+                </PageContent>
             </Box>
         </Layout>
     );

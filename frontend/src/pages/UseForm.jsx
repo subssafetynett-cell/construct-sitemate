@@ -27,6 +27,7 @@ import { downloadWordFromForm } from "../utils/wordGenerator";
 import { useRef } from "react";
 import FormRenderer from "../components/FormRenderer";
 import { getBackendOrigin } from "../utils/backendOrigin.js";
+import { resolveFormCategoryFromSearchParams } from "../utils/sitepackContext";
 
 // helper to build absolute URL for logos
 const computeLogoUrl = (logo) => {
@@ -42,7 +43,7 @@ export default function UseForm() {
   const [searchParams] = useSearchParams();
   const siteId = searchParams.get("siteId");
   const subfolderId = searchParams.get("subfolderId");
-  const category = searchParams.get("category");
+  const category = resolveFormCategoryFromSearchParams(searchParams);
   const action = searchParams.get("action");
   const responseId = searchParams.get("responseId") || searchParams.get("submissionId");
   const containerRef = useRef(null);
@@ -64,7 +65,10 @@ export default function UseForm() {
 
   const navigateBack = () => {
     if (siteId) {
-      const state = { siteId, moduleTitle: category };
+      const state = {
+        siteId,
+        moduleTitle: category || "Friday Pack Forms",
+      };
       if (subfolderId) state.subfolderId = subfolderId;
       navigate("/sitepack-management", { state });
     } else {
@@ -87,18 +91,16 @@ export default function UseForm() {
       if (siteId) processedAnswers.siteId = siteId;
       if (subfolderId) processedAnswers.subfolderId = subfolderId;
 
-      const payload = {
-        formId: id,
-        answers: processedAnswers,
-      };
-      if (category) payload.category = category;
-
       if (responseId) {
-        const updateBody = { answers: processedAnswers };
-        if (category) updateBody.category = category;
-        await api.put(`/forms/responses/${responseId}`, updateBody);
+        await api.put(`/forms/responses/${responseId}`, {
+          answers: processedAnswers,
+          category,
+        });
       } else {
-        await api.post(`/forms/${id}/responses`, payload);
+        await api.post(`/forms/${id}/responses`, {
+          answers: processedAnswers,
+          category,
+        });
       }
       resetDirty();
       return true;

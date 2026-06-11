@@ -528,73 +528,14 @@ export default function SitepackManagement() {
             };
             loadCounts();
         }
-    }, [selectedSite, selectedSubfolder]);
+    }, [selectedSite, selectedSubfolder, location.key]);
 
-    // Load Documents when module selected inside a subfolder
+    // Load documents when module selected (location.key refreshes after saving a form).
     useEffect(() => {
         if (selectedSite && selectedSubfolder && selectedModule) {
-            const loadDocs = async () => {
-                try {
-                    let allItems = [];
-                    const siteId = getSiteId();
-                    const subfolderId = getSubfolderId();
-                    const { documents } = await fetchDocuments(siteId, selectedModule.title, subfolderId);
-                    if (documents) allItems = [...allItems, ...documents];
-
-                    try {
-                        const res = await api.get('/forms/responses', {
-                            params: {
-                                category: selectedModule.title,
-                                siteId,
-                                subfolderId
-                            }
-                        });
-                        if (res.data?.success) {
-                            const siteResponses = res.data.data.filter((r) =>
-                                matchesSitepackScope(r, { siteId, subfolderId })
-                            );
-                            const mappedForms = siteResponses.map(r => {
-                                const customName = r.name || r.answers?.name || r.answers?.formMetadata?.name || r.answers?.report_heading;
-                                const templateTitle = r.form?.title || r.title || r.category || 'Form Response';
-                                const title = customName || templateTitle;
-
-                                // Handle tags which could be an array or a comma-separated string
-                                let rawTags = r.tags || r.answers?.tags || r.answers?.formMetadata?.tags || [];
-                                let tags = [];
-                                if (typeof rawTags === 'string' && rawTags.trim().length > 0) {
-                                    tags = rawTags.split(',').map(t => t.trim());
-                                } else if (Array.isArray(rawTags)) {
-                                    tags = rawTags.filter(Boolean);
-                                }
-
-                                return {
-                                    id: r.id || r._id,
-                                    title,
-                                    templateTitle: customName ? templateTitle : null,
-                                    type: 'FORM',
-                                    version: '1.0',
-                                    size: customName ? templateTitle : 'Digital Form',
-                                    tags,
-                                    createdAt: r.createdAt,
-                                    isFormBase: true,
-                                    rawResponse: r
-                                };
-                            });
-                            allItems = [...allItems, ...mappedForms];
-                        }
-                    } catch (e) {
-                        console.error("Failed to fetch form responses for module", e);
-                    }
-
-                    allItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                    setDocs(allItems);
-                } catch (error) {
-                    console.error("Error loading docs:", error);
-                }
-            };
-            loadDocs();
+            reloadModuleDocuments();
         }
-    }, [selectedSite, selectedSubfolder, selectedModule]);
+    }, [selectedSite, selectedSubfolder, selectedModule, location.key]);
 
     const generalFormTitleToPath = useMemo(() => {
         const m = Object.fromEntries(TEMPLATES.map((t) => [t.title, t.path]));

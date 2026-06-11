@@ -54,10 +54,26 @@ function isExplicitlyPublicGeneralForm(row) {
  * companyWideRead: superadmin "View as company" — non-private same-company submissions;
  *   site-pack fills (siteId in answers) remain submitter-only.
  */
+function isSheqResponse(row) {
+  return isSheqCategory(row?.category) || isSheqCategory(row?.form?.title);
+}
+
 function canViewFormResponse(row, userId, clientId, options = {}) {
   const { globalAccess = false, companyWideRead = false } = options;
   if (!row) return false;
   if (row.submittedById === userId) return true;
+
+  const submitterClientId = row.submittedBy?.clientId;
+  const sameCompany =
+    Boolean(clientId && submitterClientId) && clientId === submitterClientId;
+
+  // SHEQ Installation / Inspection — operational reports.
+  // Admins / acting superadmin see all non-site-pack SHEQ; others fall through to visibility.
+  // Site-pack SHEQ fills (siteId in answers) skip this block — submitter-only like other site fills.
+  if (isSheqResponse(row) && !siteContextPresent(row.answers)) {
+    if (globalAccess) return true;
+    if (companyWideRead && sameCompany) return true;
+  }
 
   if (getVisibilityFromAnswers(row.answers) === GENERAL_FORM_VISIBILITY.PRIVATE) {
     return false;
@@ -66,10 +82,6 @@ function canViewFormResponse(row, userId, clientId, options = {}) {
   if (globalAccess) {
     return true;
   }
-
-  const submitterClientId = row.submittedBy?.clientId;
-  const sameCompany =
-    Boolean(clientId && submitterClientId) && clientId === submitterClientId;
 
   // Site-pack fills are personal even for company-wide read.
   if (siteContextPresent(row.answers)) {
@@ -108,4 +120,5 @@ module.exports = {
   sanitizeVisibilityOnSave,
   siteContextPresent,
   isSheqCategory,
+  isSheqResponse,
 };

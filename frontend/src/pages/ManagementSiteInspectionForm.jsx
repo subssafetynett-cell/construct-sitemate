@@ -15,7 +15,10 @@ import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSu
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
 import api from "../services/api";
-import { appendSitepackToAnswers } from "../utils/sitepackContext";
+import {
+    appendSitepackToAnswers,
+    resolveFormCategoryFromSearchParams,
+} from "../utils/sitepackContext";
 import { getOrCreateTemplateForm } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
 import { useRef } from "react";
@@ -57,7 +60,7 @@ export default function ManagementSiteInspectionForm() {
     const { isDarkMode } = useTheme();
     const { persistedResponseId, seedSubmissionId, fromTemplateId } = useGeneralFormRouteSubmissionIds();
     const [searchParams] = useSearchParams();
-    const category = searchParams.get("category") || "General forms";
+    const category = resolveFormCategoryFromSearchParams(searchParams);
     const action = searchParams.get("action");
     const containerRef = useRef(null);
     

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Layout from "../components/Layout";
+import PageContent from "../components/PageContent";
 import api from "../services/api";
 import {
     AreaChart,
@@ -382,10 +383,11 @@ export default function ConcernReportDashboard() {
                 style={{
                     background: T.bg,
                     minHeight: "100vh",
+                    width: "100%",
                     fontFamily: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
                 }}
             >
-                <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 20px 40px" }}>
+                <PageContent sx={{ py: { xs: 2.5, md: 3.5 }, pb: { xs: 4, md: 5 } }}>
                     <div style={{ marginBottom: 24 }}>
                         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: T.ink, letterSpacing: "-0.02em" }}>
                             Dashboard
@@ -414,7 +416,7 @@ export default function ConcernReportDashboard() {
                     <div
                         style={{
                             display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                             gap: 12,
                             marginBottom: 16,
                         }}
@@ -559,7 +561,13 @@ export default function ConcernReportDashboard() {
                         </Card>
                     ) : null}
 
-                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 520px), 1fr))",
+                            gap: 16,
+                        }}
+                    >
                         <Card>
                             <div
                                 style={{
@@ -1143,7 +1151,7 @@ export default function ConcernReportDashboard() {
                             </div>
                         </Card>
                     </div>
-                </div>
+                </PageContent>
             </div>
         </Layout>
     );

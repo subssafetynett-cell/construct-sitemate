@@ -8,7 +8,11 @@ const {
   assertFormResponseAccess,
   canViewFormResponse,
 } = require("../utils/formResponseAccess");
-const { sanitizeVisibilityOnSave } = require("../utils/generalFormVisibility");
+const {
+  sanitizeVisibilityOnSave,
+  isSheqCategory,
+} = require("../utils/generalFormVisibility");
+const { matchesSitepackScope } = require("../utils/sitepackScope");
 const {
   STATIC_CONCERN_FORM_ID,
   assertAuthenticatedForm,
@@ -18,6 +22,46 @@ const {
 
 const STATIC_CONCERN_FORM_TITLE = "Concern Form";
 
+/** Category filter for list queries (includes legacy SHEQ rows with null category). */
+function buildCategoryWhere(categoryParam) {
+  if (!categoryParam) return null;
+
+  const parts = String(categoryParam).split(",").map((c) => c.trim());
+  const categories = [];
+  let matchNullOrEmpty = false;
+  parts.forEach((p) => {
+    if (p === "" || p === "null" || p === "undefined") {
+      matchNullOrEmpty = true;
+    } else {
+      categories.push(p);
+    }
+  });
+
+  if (
+    categories.length === 1 &&
+    isSheqCategory(categories[0]) &&
+    !matchNullOrEmpty
+  ) {
+    const cat = categories[0];
+    return {
+      OR: [
+        { category: cat },
+        { category: null, form: { title: cat } },
+        { category: "", form: { title: cat } },
+      ],
+    };
+  }
+
+  if (matchNullOrEmpty) {
+    const orConditions = [{ category: "" }, { category: null }];
+    if (categories.length > 0) {
+      orConditions.push({ category: { in: categories } });
+    }
+    return { OR: orConditions };
+  }
+
+  return { category: { in: categories } };
+}
 
 // ✅ Save new form
 exports.saveForm = async (req, res, next) => {
@@ -211,7 +255,16 @@ exports.saveResponse = async (req, res) => {
   try {
     const { answers, category } = req.body;
     const formId = req.params.id;
-    const sanitizedAnswers = sanitizeVisibilityOnSave(answers, req.body);
+    let sanitizedAnswers = sanitizeVisibilityOnSave(answers, req.body);
+    if (req.body?.siteId && !sanitizedAnswers.siteId) {
+      sanitizedAnswers = { ...sanitizedAnswers, siteId: String(req.body.siteId).trim() };
+    }
+    if (req.body?.subfolderId && !sanitizedAnswers.subfolderId) {
+      sanitizedAnswers = {
+        ...sanitizedAnswers,
+        subfolderId: String(req.body.subfolderId).trim(),
+      };
+    }
 
     const gate = assertGeneralFormTemplateWrite(req, sanitizedAnswers, req.body, {
       formId,
@@ -242,10 +295,15 @@ exports.saveResponse = async (req, res) => {
       return res.status(404).json({ success: false, message: "Form not found" });
     }
 
+    const resolvedCategory =
+      category != null && String(category).trim() !== ""
+        ? String(category).trim()
+        : null;
+
     const response = await prisma.formResponse.create({
       data: {
         answers: sanitizedAnswers,
-        category,
+        category: resolvedCategory,
         formId: form.id,
         submittedById: submitterId,
       }
@@ -275,56 +333,29 @@ exports.getAllResponses = async (req, res) => {
     const actingClientId = req.actingClient?.id || null;
     const clientId = actingClientId || req.scopedUser?.clientId || req.user?.clientId;
     const readScope = getFormResponseReadScope(req.user, actingClientId);
-    const filter = buildCompanyFormResponseWhere(
+    const companyWhere = buildCompanyFormResponseWhere(
       userId,
       clientId,
       actingClientId,
       readScope
     );
-    if (req.query.category) {
-      const parts = String(req.query.category).split(",").map(c => c.trim());
-      const categories = [];
-      let matchNullOrEmpty = false;
-      parts.forEach(p => {
-        if (p === "" || p === "null" || p === "undefined") {
-          matchNullOrEmpty = true;
-        } else {
-          categories.push(p);
-        }
-      });
+    const categoryWhere = buildCategoryWhere(req.query.category);
+    const where = categoryWhere
+      ? { AND: [companyWhere, categoryWhere] }
+      : companyWhere;
 
-      if (matchNullOrEmpty) {
-        const orConditions = [
-          { category: "" },
-          { category: null }
-        ];
-        if (categories.length > 0) {
-          orConditions.push({ category: { in: categories } });
-        }
-        filter.OR = orConditions;
-      } else {
-        filter.category = { in: categories };
-      }
-    }
+    const querySiteId =
+      req.query.siteId && !["null", "undefined"].includes(String(req.query.siteId).trim())
+        ? String(req.query.siteId).trim()
+        : null;
+    const querySubfolderId =
+      req.query.subfolderId &&
+      !["null", "undefined"].includes(String(req.query.subfolderId).trim())
+        ? String(req.query.subfolderId).trim()
+        : null;
 
-    const querySiteId = req.query.siteId ? String(req.query.siteId).trim() : null;
-    const querySubfolderId = req.query.subfolderId ? String(req.query.subfolderId).trim() : null;
-    if ((querySiteId && querySiteId !== "null" && querySiteId !== "undefined") || 
-        (querySubfolderId && querySubfolderId !== "null" && querySubfolderId !== "undefined")) {
-      const jsonFilter = {};
-      if (querySiteId && querySiteId !== "null" && querySiteId !== "undefined") {
-        jsonFilter.siteId = querySiteId;
-      }
-      if (querySubfolderId && querySubfolderId !== "null" && querySubfolderId !== "undefined") {
-        jsonFilter.subfolderId = querySubfolderId;
-      }
-      filter.answers = {
-        contains: jsonFilter,
-      };
-    }
-
-    const responses = await prisma.formResponse.findMany({
-      where: filter,
+    let responses = await prisma.formResponse.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       include: {
         form: { select: { title: true } },
@@ -333,6 +364,15 @@ exports.getAllResponses = async (req, res) => {
         },
       },
     });
+
+    if (querySiteId || querySubfolderId) {
+      responses = responses.filter((row) =>
+        matchesSitepackScope(row, {
+          siteId: querySiteId,
+          subfolderId: querySubfolderId,
+        })
+      );
+    }
 
     const visible = responses.filter((row) =>
       canViewFormResponse(row, userId, clientId, readScope)
@@ -404,7 +444,16 @@ exports.updateResponse = async (req, res) => {
       return res.status(owned.status).json({ success: false, message: owned.message });
     }
     const { answers, category } = req.body;
-    const sanitizedAnswers = sanitizeVisibilityOnSave(answers || {}, req.body);
+    let sanitizedAnswers = sanitizeVisibilityOnSave(answers || {}, req.body);
+    if (req.body?.siteId && !sanitizedAnswers.siteId) {
+      sanitizedAnswers = { ...sanitizedAnswers, siteId: String(req.body.siteId).trim() };
+    }
+    if (req.body?.subfolderId && !sanitizedAnswers.subfolderId) {
+      sanitizedAnswers = {
+        ...sanitizedAnswers,
+        subfolderId: String(req.body.subfolderId).trim(),
+      };
+    }
     const gate = assertGeneralFormTemplateWrite(req, sanitizedAnswers, req.body, {
       formId: owned.row.formId,
       category: owned.row.category,

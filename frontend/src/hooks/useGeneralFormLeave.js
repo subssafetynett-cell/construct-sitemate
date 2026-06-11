@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAutoFormDirty } from "./useAutoFormDirty";
 import { useUnsavedFormGuard } from "./useUnsavedFormGuard.jsx";
+import { resolveSitepackModuleTitle } from "../utils/sitepackContext";
 
 /**
  * Standard leave/save guard for general forms and site-pack form fills.
@@ -24,7 +25,10 @@ export function useGeneralFormLeave({
 
     const navigateBack = useCallback(() => {
         if (siteId) {
-            const state = { siteId, moduleTitle: category };
+            const state = {
+                siteId,
+                moduleTitle: resolveSitepackModuleTitle(category, { siteId, subfolderId }),
+            };
             if (subfolderId) state.subfolderId = subfolderId;
             navigate("/sitepack-management", { state });
         } else if (listPath) {

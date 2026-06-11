@@ -1155,7 +1155,7 @@ export default function FormBuilderPage() {
 
   return (
     <Layout>
-      <Container maxWidth="xl" sx={{ py: 0, position: "relative", height: "100%" }}>
+      <Container maxWidth={false} disableGutters sx={{ py: 0, position: "relative", height: "100%", width: "100%" }}>
         {/* Header Actions */}
         <Box
           sx={{
@@ -1288,10 +1288,9 @@ export default function FormBuilderPage() {
                   sx={{
                     p: { xs: 2, sm: 4, md: 5 },
                     minHeight: "100%",
-                    mx: "auto",
                     height: "fit-content",
                     width: "100%",
-                    maxWidth: 1200,
+                    maxWidth: "100%",
                     display: "flex",
                     flexDirection: "column",
                     border: "1px solid #e5e7eb",

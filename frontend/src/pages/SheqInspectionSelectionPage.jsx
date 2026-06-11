@@ -6,12 +6,13 @@ import {
     CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions,
     Tooltip, Menu, MenuItem, ListItemIcon, ListItemText
 } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { 
     ClipboardList, Layout as LayoutIcon, Pencil, Trash2, 
     Download, Eye, Search, Plus
 } from "lucide-react";
 import Layout from "../components/Layout";
+import PageContent from "../components/PageContent";
 import { formatSubmitterDisplay, showSubmissionCreatorColumn } from "../utils/submitterDisplay";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
@@ -22,6 +23,7 @@ import SheqInstallationForm from "./SheqInstallationForm";
 
 const SheqInspectionSelectionPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { isDarkMode } = useTheme();
     const { role } = useAuth();
     const showCreatorColumn = showSubmissionCreatorColumn(role);
@@ -61,7 +63,7 @@ const SheqInspectionSelectionPage = () => {
 
     useEffect(() => {
         fetchSubmissions();
-    }, [fetchSubmissions]);
+    }, [fetchSubmissions, location.key]);
 
     const handleDelete = async () => {
         if (!deleteId) return;
@@ -138,7 +140,7 @@ const SheqInspectionSelectionPage = () => {
 
     return (
         <Layout disablePadding={true}>
-            <Box sx={{ p: 3 }}>
+            <PageContent>
                 {/* Header Section */}
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 4, flexWrap: "wrap", gap: 2 }}>
                     <Box>
@@ -274,7 +276,7 @@ const SheqInspectionSelectionPage = () => {
                         </>
                     )}
                 </Paper>
-            </Box>
+            </PageContent>
 
             {/* Delete Confirmation */}
             <Dialog 
