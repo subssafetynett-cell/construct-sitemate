@@ -5,8 +5,9 @@ import {
     IconButton,
 } from "@mui/material";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
-import { ArrowLeft } from "lucide-react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Download, ArrowLeft } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
 import api from "../services/api";
@@ -26,10 +27,10 @@ import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissi
 export default function SiteInductionForm() {
   const logoUrl = useCompanyLogo();
     const { isDarkMode } = useTheme();
-    const { id } = useParams();
+    const { persistedResponseId, seedSubmissionId, fromTemplateId } = useGeneralFormRouteSubmissionIds();
     const [searchParams] = useSearchParams();
-    const siteId = searchParams.get("siteId");
-    const subfolderId = searchParams.get("subfolderId");
+    const [persistedSiteId, setPersistedSiteId] = useState(null);
+    const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
     const category = searchParams.get("category") || "General forms";
     const action = searchParams.get("action");
     const containerRef = useRef(null);
@@ -93,7 +94,7 @@ export default function SiteInductionForm() {
         Array.from({ length: 10 }, () => ({ date: "", name: "", signature: "", employedBy: "", occupation: "", competencyCard: "", cardDetails: "", inductor: "" }))
     );
 
-    const { canEdit } = useGeneralFormTemplateAccess(action, downloading);
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
 
     const performSave = async (
         asNew = false,
@@ -117,8 +118,11 @@ export default function SiteInductionForm() {
                 hasSiteContext: Boolean(siteId),
             });
 
-            if (id && !asNew) {
-                await api.put(`/forms/responses/${id}`, { answers: payload });
+            if (persistedResponseId && !asNew) {
+                await api.put(`/forms/responses/${persistedResponseId}`, {
+                    answers: payload,
+                    category,
+                });
             } else {
                 const formId = await getOrCreateTemplateForm("Site Induction Register");
                 await api.post(`/forms/${formId}/responses`, {
@@ -156,30 +160,38 @@ export default function SiteInductionForm() {
         subfolderId,
         category,
         saving,
-        canQuickSave: Boolean(id && formMetadata.name?.trim()),
+        canQuickSave: Boolean(persistedResponseId && formMetadata.name?.trim()),
         onQuickSave: () =>
             performSave(false, formMetadata.name, formMetadata.tags, formMetadata.visibility),
         onOpenSaveDialog: () => setSaveDialogOpen(true),
     });
 
     useEffect(() => {
-        if (id) {
-            loadSubmission(id);
+        if (!persistedResponseId && !fromTemplateId) {
+            setPersistedSiteId(null);
+            setPersistedSubfolderId(null);
         }
-    }, [id]);
+    }, [persistedResponseId, fromTemplateId]);
 
     useEffect(() => {
-        if (!loading && action === "download" && id) {
+        if (seedSubmissionId) {
+            loadSubmission(seedSubmissionId);
+        }
+    }, [seedSubmissionId]);
+
+    useEffect(() => {
+        const docKey = persistedResponseId || seedSubmissionId;
+        if (!loading && action === "download" && docKey) {
             setDownloading(true);
             setTimeout(() => {
-                downloadPdfFromRef(containerRef, `SiteInduction_${id}`, () => {
+                downloadPdfFromRef(containerRef, `SiteInduction_${docKey}`, () => {
                     setDownloading(false);
                     // Close the newly opened tab
                     window.close();
                 });
             }, 300);
         }
-    }, [loading, action, id]);
+    }, [loading, action, persistedResponseId, seedSubmissionId]);
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);
@@ -189,6 +201,8 @@ export default function SiteInductionForm() {
             if (res.data?.success) {
                 const submission = res.data.data;
                 if (submission && submission.answers) {
+                    setPersistedSiteId(submission.answers.siteId ?? null);
+                    setPersistedSubfolderId(submission.answers.subfolderId ?? null);
                     if (submission.answers.docInfo) setDocInfo(submission.answers.docInfo);
                     if (submission.answers.headerData) setHeaderData(submission.answers.headerData);
                     if (submission.answers.headerLabels) setHeaderLabels(submission.answers.headerLabels);
@@ -218,9 +232,23 @@ export default function SiteInductionForm() {
         setAttendees(newAttendees);
     };
 
+    const handleDownloadClick = () => {
+        const docKey = persistedResponseId || seedSubmissionId || "NewForm";
+        setDownloading(true);
+        setTimeout(() => {
+            downloadPdfFromRef(
+                containerRef,
+                `SiteInduction_${docKey}`,
+                () => {
+                    setDownloading(false);
+                }
+            );
+        }, 300);
+    };
+
     const handleSaveClick = () => {
         if (!canEdit) return;
-        if (id) {
+        if (persistedResponseId) {
             setSaveDialogOpen(true);
         } else {
             executeSave(false);
@@ -262,18 +290,32 @@ export default function SiteInductionForm() {
                         Site Induction Register
                     </Typography>
                 </Box>
-                {canEdit && (
                 <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
                     <GeneralFormSubmissionDeleteButton
-                        responseId={id}
+                        responseId={persistedResponseId}
                         canEdit={canEdit}
-                        isSitePackContext={Boolean(siteId)}
+                        isSitePackContext={isSitePackContext}
                         disabled={saving || downloading}
                     />
                     <Button 
+                        variant="outlined" 
+                        onClick={handleDownloadClick}
+                        disabled={saving || downloading}
+                        sx={{ 
+                            borderColor: "#E89F17", 
+                            color: "#E89F17", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            "&:hover": { borderColor: "#cc8b14", color: "#cc8b14" } 
+                        }}
+                    >
+                        {downloading ? "Downloading..." : "Download PDF"}
+                    </Button>
+                    {canEdit && (
+                    <Button 
                         variant="contained" 
                         onClick={handleSaveClick}
-                        disabled={saving}
+                        disabled={saving || !canEdit || downloading}
                         sx={{ 
                             bgcolor: "#E89F17", 
                             color: "#FFFFFF", 
@@ -285,8 +327,8 @@ export default function SiteInductionForm() {
                     >
                         {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
                     </Button>
+                    )}
                 </Box>
-                )}
             </Box>
 
             <Box sx={{ width: '100%', overflowX: 'auto', mb: 8 }}>
@@ -854,7 +896,7 @@ export default function SiteInductionForm() {
                 open={saveDialogOpen}
                 onClose={() => setSaveDialogOpen(false)}
                 onSave={executeSave}
-                existingId={id}
+                existingId={persistedResponseId}
                 defaultName={formMetadata.name || `Site Induction - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 defaultVisibility={formMetadata.visibility}

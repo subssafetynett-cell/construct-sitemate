@@ -9,6 +9,7 @@ const {
   canViewFormResponse,
 } = require("../utils/formResponseAccess");
 const { sanitizeVisibilityOnSave } = require("../utils/generalFormVisibility");
+const { pruneAnswers } = require("../utils/formResponsePruner");
 const {
   STATIC_CONCERN_FORM_ID,
   assertAuthenticatedForm,
@@ -338,9 +339,17 @@ exports.getAllResponses = async (req, res) => {
       canViewFormResponse(row, userId, clientId, readScope)
     );
 
+    // Prune answers to avoid sending huge base64 signatures/images on listing
+    const prunedVisible = visible.map((row) => {
+      if (row.answers) {
+        row.answers = pruneAnswers(row.answers);
+      }
+      return row;
+    });
+
     res.json({
       success: true,
-      data: visible,
+      data: prunedVisible,
     });
   } catch (err) {
     console.error("Get responses error:", err);

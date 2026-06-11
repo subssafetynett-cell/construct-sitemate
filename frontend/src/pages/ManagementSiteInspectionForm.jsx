@@ -9,7 +9,7 @@ import SignatureCapture from "../components/SignatureCapture";
 import GeneralFormTableRowControls, {
     GeneralFormTableRowControlsHeaderSpacer,
 } from "../components/GeneralFormTableRowControls";
-import { ArrowLeft } from "lucide-react";
+import { Download, ArrowLeft } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useGeneralFormRouteSubmissionIds } from "../hooks/useGeneralFormRouteSubmissionIds";
 import Layout from "../components/Layout";
@@ -113,7 +113,7 @@ export default function ManagementSiteInspectionForm() {
     const [persistedSiteId, setPersistedSiteId] = useState(null);
     const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
-    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
+    const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
 
     const performSave = async (
         asNew = false,
@@ -139,7 +139,10 @@ export default function ManagementSiteInspectionForm() {
             });
 
             if (persistedResponseId && !asNew) {
-                await api.put(`/forms/responses/${persistedResponseId}`, { answers: payload });
+                await api.put(`/forms/responses/${persistedResponseId}`, {
+                    answers: payload,
+                    category,
+                });
             } else {
                 const formId = await getOrCreateTemplateForm("Management Site Inspection Report");
                 await api.post(`/forms/${formId}/responses`, {
@@ -246,6 +249,20 @@ export default function ManagementSiteInspectionForm() {
         }
     };
 
+    const handleDownloadClick = () => {
+        const docKey = persistedResponseId || seedSubmissionId || "NewForm";
+        setDownloading(true);
+        setTimeout(() => {
+            downloadPdfFromRef(
+                containerRef,
+                `ManagementInspection_${docKey}`,
+                () => {
+                    setDownloading(false);
+                }
+            );
+        }, 300);
+    };
+
     const handleSaveClick = () => {
         setSaveDialogOpen(true);
     };
@@ -306,15 +323,32 @@ export default function ManagementSiteInspectionForm() {
                     <IconButton onClick={navigateBack} sx={{ bgcolor: isDarkMode ? '#374151' : '#E5E7EB' }}>
                         <ArrowLeft size={20} color={isDarkMode ? '#F9FAFB' : '#111827'} />
                     </IconButton>
+                    <Typography variant="h4" sx={{ fontWeight: 700, color: isDarkMode ? "#F9FAFB" : "#111827" }}>
+                        Management Site Inspection Report
+                    </Typography>
                 </Box>
-                {canEdit && (
                 <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
                     <GeneralFormSubmissionDeleteButton
                         responseId={persistedResponseId}
                         canEdit={canEdit}
-                        isSitePackContext={Boolean(siteId)}
+                        isSitePackContext={isSitePackContext}
                         disabled={saving || downloading}
                     />
+                    <Button 
+                        variant="outlined" 
+                        onClick={handleDownloadClick}
+                        disabled={saving || downloading}
+                        sx={{ 
+                            borderColor: "#E89F17", 
+                            color: "#E89F17", 
+                            fontWeight: 600, 
+                            borderRadius: "8px",
+                            "&:hover": { borderColor: "#cc8b14", color: "#cc8b14" } 
+                        }}
+                    >
+                        {downloading ? "Downloading..." : "Download PDF"}
+                    </Button>
+                    {canEdit && (
                     <Button 
                         variant="contained" 
                         onClick={handleSaveClick}
@@ -330,8 +364,8 @@ export default function ManagementSiteInspectionForm() {
                     >
                         {downloading ? "Downloading PDF..." : (saving ? "Saving..." : "Save Form")}
                     </Button>
+                    )}
                 </Box>
-                )}
             </Box>
 
             <Box sx={{ width: '100%', overflowX: 'auto', mb: 8 }}>
