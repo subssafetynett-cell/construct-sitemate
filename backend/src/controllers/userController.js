@@ -1,5 +1,5 @@
 const asyncHandler = require("express-async-handler");
-const crypto = require("crypto");
+const crypto = require("node:crypto");
 const prisma = require("../prismaClient");
 const bcrypt = require("bcryptjs");
 const { validatePlainName } = require("../utils/plainTextName");
@@ -65,6 +65,219 @@ function assertActorMayAssignRole(effectiveRole, role) {
     };
   }
   return { ok: true };
+}
+
+const VALID_USER_ROLES = ["superadmin", "company_admin", "site_manager", "supervisor", "worker"];
+
+/** @returns {{ ok: true, value?: string } | { ok: false, message: string }} */
+function optionalPlainName(raw, label) {
+  if (raw === undefined || raw === null) return { ok: true };
+  const r = validatePlainName(raw, label);
+  if (!r.ok) return { ok: false, message: r.message };
+  return { ok: true, value: r.value };
+}
+
+/** @returns {{ ok: true, value?: string } | { ok: false, message: string }} */
+function optionalPlainCompany(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return { ok: true };
+  const cn = validatePlainCompanyName(raw, "Company name");
+  if (!cn.ok) return { ok: false, message: cn.message };
+  return { ok: true, value: cn.value };
+}
+
+function isInvalidSafetynettSuperadmin(data, target) {
+  const role = data.role ?? target.role;
+  return (
+    Boolean(data.companyname)
+    && isSafetynettCompanyName(data.companyname)
+    && role === "superadmin"
+    && !isPlatformSuperadminEmail(target.email)
+  );
+}
+
+/** @returns {{ ok: true } | { ok: false, status: number, message: string }} */
+function applyRoleToUpdate(data, { role, actor, target }) {
+  const normalizedRole = String(role).toLowerCase();
+  if (!VALID_USER_ROLES.includes(normalizedRole)) return { ok: true };
+
+  const roleGate = assertActorMayAssignRole(actor.effectiveRole, normalizedRole);
+  if (!roleGate.ok) {
+    return { ok: false, status: roleGate.status, message: roleGate.message };
+  }
+
+  const companyForRole =
+    data.companyname ?? target.companyname ?? target.client?.name ?? "";
+  const roleCheck = assertRoleAllowedForCompany(
+    normalizedRole,
+    companyForRole,
+    data.email ?? target.email
+  );
+  if (!roleCheck.ok) {
+    return { ok: false, status: 400, message: roleCheck.message };
+  }
+  data.role = normalizedRole;
+  return { ok: true };
+}
+
+/** @returns {{ ok: true } | { ok: false, status: number, message: string }} */
+function applyAccessFieldsToUpdate(data, { accessMode, allowedPages, target }) {
+  if (accessMode !== undefined) {
+    const mode = String(accessMode).toLowerCase();
+    if (!["standard", "view_only"].includes(mode)) {
+      return {
+        ok: false,
+        status: 400,
+        message: "accessMode must be 'standard' or 'view_only'",
+      };
+    }
+    if (mode === "view_only" && target.role === "superadmin" && !isPlatformSuperadminEmail(target.email)) {
+      return {
+        ok: false,
+        status: 400,
+        message: "View-only page access cannot be applied to superadmin accounts.",
+      };
+    }
+    data.accessMode = mode;
+    if (mode === "standard") {
+      data.allowedPages = null;
+    }
+  }
+
+  if (allowedPages !== undefined) {
+    const effectiveMode = data.accessMode ?? target.accessMode ?? "standard";
+    const pages = normalizeAllowedPages(allowedPages, {
+      forViewOnly: effectiveMode === "view_only",
+    });
+    if (effectiveMode === "view_only" && pages.length === 0) {
+      return {
+        ok: false,
+        status: 400,
+        message: "Select at least one page for view-only access.",
+      };
+    }
+    data.allowedPages =
+      effectiveMode === "view_only"
+        ? mergeWithAlwaysOn(pages, { forViewOnly: true })
+        : null;
+    return { ok: true };
+  }
+
+  if (data.accessMode !== "view_only") return { ok: true };
+
+  const existing = normalizeAllowedPages(target.allowedPages, { forViewOnly: true });
+  if (existing.length === 0) {
+    data.allowedPages = mergeWithAlwaysOn(["dashboard"], { forViewOnly: true });
+  }
+  return { ok: true };
+}
+
+/** @returns {{ ok: true, data: object } | { ok: false, status: number, message: string }} */
+function buildUserUpdateData(body, target, actor) {
+  const { email, role, jobTitle, companyname, mobile, accessMode, allowedPages } = body;
+  const data = {};
+
+  for (const [field, label] of [
+    ["firstName", "First name"],
+    ["lastName", "Last name"],
+  ]) {
+    const r = optionalPlainName(body[field], label);
+    if (!r.ok) return { ok: false, status: 400, message: r.message };
+    if (r.value !== undefined) data[field] = r.value;
+  }
+
+  if (email) data.email = email.trim().toLowerCase();
+  if (jobTitle) data.jobTitle = jobTitle.trim();
+
+  const companyResult = optionalPlainCompany(companyname);
+  if (!companyResult.ok) return { ok: false, status: 400, message: companyResult.message };
+  if (companyResult.value !== undefined) data.companyname = companyResult.value;
+
+  if (mobile) data.mobile = mobile.trim();
+
+  if (role) {
+    const roleResult = applyRoleToUpdate(data, { role, actor, target });
+    if (!roleResult.ok) return roleResult;
+  }
+
+  if (isInvalidSafetynettSuperadmin(data, target)) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Safetynett company users cannot have the superadmin role.",
+    };
+  }
+
+  const accessResult = applyAccessFieldsToUpdate(data, { accessMode, allowedPages, target });
+  if (!accessResult.ok) return accessResult;
+
+  return { ok: true, data };
+}
+
+/** @returns {Promise<{ ok: true, clientId: string, resolvedCompany: string } | { ok: false, status: number, message: string }>} */
+async function resolveInviteClientAndCompany(inviter, { bodyClientId, companyname }) {
+  if (inviter.role === "superadmin") {
+    const clientId = (bodyClientId && String(bodyClientId).trim()) || inviter.clientId;
+    if (!clientId) {
+      return { ok: false, status: 400, message: "Select a company for this user" };
+    }
+
+    if (bodyClientId && bodyClientId !== inviter.clientId) {
+      const client = await prisma.client.findUnique({
+        where: { id: bodyClientId },
+        select: { name: true },
+      });
+      if (!client) {
+        return { ok: false, status: 400, message: "Selected company not found" };
+      }
+      return { ok: true, clientId, resolvedCompany: client.name };
+    }
+
+    return {
+      ok: true,
+      clientId,
+      resolvedCompany: companyname?.trim() || inviter.companyname || "",
+    };
+  }
+
+  if (inviter.role === "company_admin") {
+    if (!inviter.clientId) {
+      return { ok: false, status: 400, message: "Your account is not linked to a company" };
+    }
+    if (bodyClientId && bodyClientId !== inviter.clientId) {
+      return {
+        ok: false,
+        status: 403,
+        message: "You can only add users to your own company",
+      };
+    }
+    return {
+      ok: true,
+      clientId: inviter.clientId,
+      resolvedCompany: inviter.companyname || "",
+    };
+  }
+
+  return { ok: false, status: 403, message: "Insufficient permissions" };
+}
+
+/** @returns {Promise<{ ok: true, value: string | null } | { ok: false, status: number, message: string }>} */
+async function normalizeInviteCompanyName(clientId, resolvedCompany) {
+  let company = String(resolvedCompany || "").trim();
+  if (!company && clientId) {
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { name: true },
+    });
+    if (client?.name) company = client.name;
+  }
+
+  if (!company) return { ok: true, value: null };
+
+  const companyCheck = validatePlainCompanyName(company, "Company name");
+  if (!companyCheck.ok) {
+    return { ok: false, status: 400, message: companyCheck.message };
+  }
+  return { ok: true, value: companyCheck.value };
 }
 
 exports.getAdminStats = asyncHandler(async (req, res) => {
@@ -191,110 +404,15 @@ exports.updateUser = asyncHandler(async (req, res) => {
     });
   }
 
-  const data = {};
-  if (firstName !== undefined && firstName !== null) {
-    const r = validatePlainName(firstName, "First name");
-    if (!r.ok) {
-      return res.status(400).json({ success: false, message: r.message });
-    }
-    data.firstName = r.value;
+  const built = buildUserUpdateData(
+    { firstName, lastName, email, role, jobTitle, companyname, mobile, accessMode, allowedPages },
+    target,
+    actor
+  );
+  if (!built.ok) {
+    return res.status(built.status).json({ success: false, message: built.message });
   }
-  if (lastName !== undefined && lastName !== null) {
-    const r = validatePlainName(lastName, "Last name");
-    if (!r.ok) {
-      return res.status(400).json({ success: false, message: r.message });
-    }
-    data.lastName = r.value;
-  }
-  if (email) data.email = email.trim().toLowerCase();
-
-  if (jobTitle) data.jobTitle = jobTitle.trim();
-  if (companyname !== undefined && companyname !== null && String(companyname).trim() !== "") {
-    const cn = validatePlainCompanyName(companyname, "Company name");
-    if (!cn.ok) {
-      return res.status(400).json({ success: false, message: cn.message });
-    }
-    data.companyname = cn.value;
-  }
-  if (mobile) data.mobile = mobile.trim();
-
-  if (role) {
-    const normalizedRole = String(role).toLowerCase();
-    if (["superadmin", "company_admin", "site_manager", "supervisor", "worker"].includes(normalizedRole)) {
-      const roleGate = assertActorMayAssignRole(actor.effectiveRole, normalizedRole);
-      if (!roleGate.ok) {
-        return res.status(roleGate.status).json({ success: false, message: roleGate.message });
-      }
-      const companyForRole =
-        data.companyname ??
-        target.companyname ??
-        target.client?.name ??
-        "";
-      const roleCheck = assertRoleAllowedForCompany(
-        normalizedRole,
-        companyForRole,
-        data.email ?? target.email
-      );
-      if (!roleCheck.ok) {
-        return res.status(400).json({ success: false, message: roleCheck.message });
-      }
-      data.role = normalizedRole;
-    }
-  }
-
-  if (
-    data.companyname &&
-    isSafetynettCompanyName(data.companyname) &&
-    (data.role ?? target.role) === "superadmin" &&
-    !isPlatformSuperadminEmail(target.email)
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Safetynett company users cannot have the superadmin role.",
-    });
-  }
-
-  if (accessMode !== undefined) {
-    const mode = String(accessMode).toLowerCase();
-    if (!["standard", "view_only"].includes(mode)) {
-      return res.status(400).json({
-        success: false,
-        message: "accessMode must be 'standard' or 'view_only'",
-      });
-    }
-    if (mode === "view_only" && target.role === "superadmin" && !isPlatformSuperadminEmail(target.email)) {
-      return res.status(400).json({
-        success: false,
-        message: "View-only page access cannot be applied to superadmin accounts.",
-      });
-    }
-    data.accessMode = mode;
-    if (mode === "standard") {
-      data.allowedPages = null;
-    }
-  }
-
-  if (allowedPages !== undefined) {
-    const effectiveMode = data.accessMode ?? target.accessMode ?? "standard";
-    const pages = normalizeAllowedPages(allowedPages, {
-      forViewOnly: effectiveMode === "view_only",
-    });
-    if (effectiveMode === "view_only" && pages.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Select at least one page for view-only access.",
-      });
-    }
-    data.allowedPages =
-      effectiveMode === "view_only"
-        ? mergeWithAlwaysOn(pages, { forViewOnly: true })
-        : null;
-  } else if (data.accessMode === "view_only") {
-    const existing = normalizeAllowedPages(target.allowedPages, { forViewOnly: true });
-    if (existing.length === 0) {
-      data.allowedPages = mergeWithAlwaysOn(["dashboard"], { forViewOnly: true });
-    }
-  }
+  const { data } = built;
 
   const updated = await prisma.user.update({
     where: { id: targetId },
@@ -1020,63 +1138,18 @@ exports.inviteUser = asyncHandler(async (req, res) => {
     return res.status(roleGate.status).json({ success: false, message: roleGate.message });
   }
 
-  let clientId;
-  let resolvedCompany;
-
-  if (inviter.role === "superadmin") {
-    clientId = (bodyClientId && String(bodyClientId).trim()) || inviter.clientId;
-    if (!clientId) {
-      return res.status(400).json({ success: false, message: "Select a company for this user" });
-    }
-    if (bodyClientId && bodyClientId !== inviter.clientId) {
-      const client = await prisma.client.findUnique({
-        where: { id: bodyClientId },
-        select: { name: true },
-      });
-      if (!client) {
-        return res.status(400).json({ success: false, message: "Selected company not found" });
-      }
-      resolvedCompany = client.name;
-    } else {
-      resolvedCompany = companyname?.trim() || inviter.companyname || "";
-    }
-  } else if (inviter.role === "company_admin") {
-    if (!inviter.clientId) {
-      return res.status(400).json({ success: false, message: "Your account is not linked to a company" });
-    }
-    if (bodyClientId && bodyClientId !== inviter.clientId) {
-      return res.status(403).json({
-        success: false,
-        message: "You can only add users to your own company",
-      });
-    }
-    clientId = inviter.clientId;
-    resolvedCompany = inviter.companyname || "";
-  } else {
-    return res.status(403).json({ success: false, message: "Insufficient permissions" });
+  const scope = await resolveInviteClientAndCompany(inviter, { bodyClientId, companyname });
+  if (!scope.ok) {
+    return res.status(scope.status).json({ success: false, message: scope.message });
   }
 
-  // Admins may have null companyname; use the linked Client name when available.
-  if (!String(resolvedCompany || "").trim() && clientId) {
-    const client = await prisma.client.findUnique({
-      where: { id: clientId },
-      select: { name: true },
-    });
-    if (client?.name) {
-      resolvedCompany = client.name;
-    }
+  const companyResult = await normalizeInviteCompanyName(scope.clientId, scope.resolvedCompany);
+  if (!companyResult.ok) {
+    return res.status(companyResult.status).json({ success: false, message: companyResult.message });
   }
 
-  const trimmedCompany = String(resolvedCompany || "").trim();
-  if (trimmedCompany) {
-    const companyCheck = validatePlainCompanyName(trimmedCompany, "Company name");
-    if (!companyCheck.ok) {
-      return res.status(400).json({ success: false, message: companyCheck.message });
-    }
-    resolvedCompany = companyCheck.value;
-  } else {
-    resolvedCompany = null;
-  }
+  const clientId = scope.clientId;
+  const resolvedCompany = companyResult.value;
 
   const roleCheck = assertRoleAllowedForCompany(assignedRole, resolvedCompany, email);
   if (!roleCheck.ok) {

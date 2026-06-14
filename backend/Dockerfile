@@ -20,10 +20,9 @@ COPY . .
 # Generate Prisma client (dummy URLs only for this RUN — must not persist in the image).
 RUN DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build" \
     DIRECT_URL="postgresql://build:build@127.0.0.1:5432/build" \
-    npx prisma generate
-
-RUN chmod +x docker-entrypoint.sh
-RUN chmod +x docker-migrate.sh
+    npx prisma generate && \
+    chmod +x docker-entrypoint.sh && \
+    chmod +x docker-migrate.sh
 
 # Expose the port the app runs on
 EXPOSE 4000

@@ -1,4 +1,4 @@
-const crypto = require("crypto");
+const crypto = require("node:crypto");
 const prisma = require("../prismaClient");
 
 /** Max forgot-password requests per email or IP within the rolling window. */

@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Button, Typography } from "@mui/material";
+import { resolveDocLogoSrc } from "../utils/formLogoUrl";
 
 export function readImageFileAsDataUrl(file, onLoad) {
   if (!file || typeof onLoad !== "function") return;
@@ -14,25 +15,29 @@ export function readImageFileAsDataUrl(file, onLoad) {
 export default function FormLogoUploadSlot({
   imageSrc,
   onImageChange,
+  companyLogoUrl = null,
   readOnly = false,
   exportMode = false,
   alt = "Uploaded logo",
   uploadLabel = "Upload Logo",
 }) {
-  if (exportMode && !imageSrc) {
+  const displaySrc = resolveDocLogoSrc(imageSrc, companyLogoUrl);
+  const showingCompanyDefault = !imageSrc && Boolean(companyLogoUrl);
+
+  if (exportMode && !displaySrc) {
     return <Box sx={{ minHeight: 48, width: "100%" }} aria-hidden />;
   }
 
-  if (readOnly && !imageSrc) {
+  if (readOnly && !displaySrc) {
     return <Typography variant="caption" color="text.secondary">No Logo</Typography>;
   }
 
-  if (imageSrc) {
+  if (displaySrc) {
     return (
       <>
         <Box
           component="img"
-          src={imageSrc}
+          src={displaySrc}
           alt={alt}
           sx={{
             width: { xs: "100%", md: "80%" },
@@ -55,15 +60,17 @@ export default function FormLogoUploadSlot({
                 }}
               />
             </Button>
-            <Button
-              variant="text"
-              color="error"
-              size="small"
-              sx={{ fontSize: "0.7rem" }}
-              onClick={() => onImageChange("")}
-            >
-              Remove
-            </Button>
+            {!showingCompanyDefault && (
+              <Button
+                variant="text"
+                color="error"
+                size="small"
+                sx={{ fontSize: "0.7rem" }}
+                onClick={() => onImageChange("")}
+              >
+                Remove
+              </Button>
+            )}
           </Box>
         )}
       </>

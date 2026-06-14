@@ -2,8 +2,8 @@
  * Run Prisma CLI with DATABASE_URL from the monorepo root `.env` (same as server.js / docker-migrate.sh).
  * Usage: node scripts/prisma-with-env.cjs migrate deploy
  */
-const path = require("path");
-const { spawnSync } = require("child_process");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const dotenv = require("dotenv");
 
 const backendDir = path.join(__dirname, "..");

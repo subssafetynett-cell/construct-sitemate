@@ -26,6 +26,7 @@ import {
     GENERAL_FORM_VISIBILITY,
 } from "../utils/generalFormVisibility";
 import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
+import FormLogoUploadSlot from "../components/FormLogoUploadSlot";
 
 export default function SiteInductionForm() {
   const logoUrl = useCompanyLogo();
@@ -328,40 +329,13 @@ export default function SiteInductionForm() {
                         <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, border: `1px solid ${borderColor}`, mb: 4, width: '100%', maxWidth: '800px', mx: 'auto' }}>
                                                 {/* Left Logo / Upload */}
                         <Box sx={{ width: { xs: '100%', md: '30%' }, p: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: `1px solid ${borderColor}` }}>
-                            {docInfo.logo ? (
-                                <>
-                                    <Box component="img" src={docInfo.logo} alt="Uploaded Logo" sx={{ width: { xs: '100%', md: '80%' }, maxHeight: '100px', objectFit: 'contain', mb: (action !== 'download') ? 1 : 0 }} />
-                                    {(action !== 'download') && (
-                                        <Button variant="text" size="small" component="label" sx={{ fontSize: '0.7rem' }}>
-                                            Change Logo
-                                            <input type="file" hidden accept="image/*" onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => setDocInfo({...docInfo, logo: ev.target.result});
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            }} />
-                                        </Button>
-                                    )}
-                                </>
-                            ) : (
-                                (action !== 'download') ? (
-                                    <Button variant="outlined" component="label" size="small">
-                                        Upload Logo
-                                        <input type="file" hidden accept="image/*" onChange={(e) => {
-                                            const file = e.target.files[0];
-                                            if (file) {
-                                                const reader = new FileReader();
-                                                reader.onload = (ev) => setDocInfo({...docInfo, logo: ev.target.result});
-                                                reader.readAsDataURL(file);
-                                            }
-                                        }} />
-                                    </Button>
-                                ) : (
-                                    <Typography variant="caption" color="text.secondary">No Logo</Typography>
-                                )
-                            )}
+                            <FormLogoUploadSlot
+                                imageSrc={docInfo.logo}
+                                companyLogoUrl={logoUrl}
+                                onImageChange={(url) => setDocInfo((prev) => ({ ...prev, logo: url }))}
+                                readOnly={action === 'download'}
+                                exportMode={downloading || action === 'download'}
+                            />
                         </Box>
                         
                         {/* Center Info */}

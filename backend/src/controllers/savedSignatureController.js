@@ -1,4 +1,4 @@
-const crypto = require("crypto");
+const crypto = require("node:crypto");
 const asyncHandler = require("express-async-handler");
 const prisma = require("../prismaClient");
 

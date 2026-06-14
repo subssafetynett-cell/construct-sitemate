@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { getBackendOrigin } from '../utils/backendOrigin.js';
 
+import { getActingClient } from "../utils/actingClient";
+
 export function computeLogoUrl(logo) {
     if (!logo) return null;
     if (/^https?:\/\//i.test(logo)) return logo;
@@ -21,14 +23,19 @@ export const useCompanyLogo = (fallback = "/sitemate-logo.svg") => {
                 const user = JSON.parse(userStr);
                 let rawLogo = null;
 
+                const acting = getActingClient();
+                if (acting?.logo) {
+                    rawLogo = acting.logo;
+                }
+
                 // 1. Try to get it from nested objects first
-                if (user.clientId && typeof user.clientId === 'object' && user.clientId.logo) {
+                if (!rawLogo && user.clientId && typeof user.clientId === 'object' && user.clientId.logo) {
                     rawLogo = user.clientId.logo;
-                } else if (user.companyLogo) {
+                } else if (!rawLogo && user.companyLogo) {
                     rawLogo = user.companyLogo;
-                } else if (user.logo) {
+                } else if (!rawLogo && user.logo) {
                     rawLogo = user.logo;
-                } else if (user.client && user.client.logo) { // in case backend populated 'client' instead
+                } else if (!rawLogo && user.client && user.client.logo) {
                     rawLogo = user.client.logo;
                 }
                 

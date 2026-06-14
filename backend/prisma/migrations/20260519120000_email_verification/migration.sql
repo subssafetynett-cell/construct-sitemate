@@ -2,7 +2,7 @@
 ALTER TABLE "User" ADD COLUMN "emailVerified" BOOLEAN NOT NULL DEFAULT false;
 
 -- Existing accounts were created before invite verification existed
-UPDATE "User" SET "emailVerified" = true;
+UPDATE "User" SET "emailVerified" = true WHERE "emailVerified" = false;
 
 CREATE TABLE "EmailVerificationToken" (
     "id" TEXT NOT NULL,

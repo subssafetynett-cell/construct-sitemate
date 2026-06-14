@@ -1,7 +1,7 @@
 /**
  * Fail fast on Coolify / production deploy when required env vars are missing.
  */
-const path = require("path");
+const path = require("node:path");
 const dotenv = require("dotenv");
 
 const backendDir = path.join(__dirname, "..");

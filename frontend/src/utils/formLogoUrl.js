@@ -20,6 +20,11 @@ export function resolveFormLogoSrc(values = {}, companyLogoUrl = null) {
   return companyLogoUrl || null;
 }
 
+/** Resolve left header logo: saved upload first, then company branding from Clients. */
+export function resolveDocLogoSrc(storedLogo, companyLogoUrl = null) {
+  return resolveFormLogoSrc({ logo: storedLogo }, companyLogoUrl);
+}
+
 /** Restore logo_preview from persisted base64/url after save or load from API. */
 export function withLogoPreviewFields(answers = {}) {
   if (!answers || typeof answers !== "object") return answers;

@@ -17,7 +17,7 @@ if [ -z "$DATABASE_URL" ]; then
 fi
 
 if [ -z "$DATABASE_URL" ]; then
-  echo "ERROR: DATABASE_URL is not set. Set it in Coolify / .env (PostgreSQL connection string)."
+  echo "ERROR: DATABASE_URL is not set. Set it in Coolify / .env (PostgreSQL connection string)." >&2
   exit 1
 fi
 
@@ -28,8 +28,8 @@ node "$SCRIPT_DIR/scripts/export-db-env.cjs" "$DB_ENV_FILE"
 . "$DB_ENV_FILE"
 rm -f "$DB_ENV_FILE"
 
-echo "Running Prisma migrations..."
-echo "Connecting to database (Neon may take up to 90s to wake)..."
+echo "Running Prisma migrations..." >&2
+echo "Connecting to database (Neon may take up to 90s to wake)..." >&2
 
 set +e
 BASELINE_OUT="$(node "$SCRIPT_DIR/prisma-baseline.js" 2>&1)"
@@ -37,8 +37,8 @@ BASELINE_EXIT=$?
 set -e
 
 if [ "$BASELINE_EXIT" -ne 0 ]; then
-  echo "$BASELINE_OUT"
-  echo "ERROR: Could not reach the database. Wake Neon at console.neon.tech and verify DATABASE_URL in Coolify."
+  echo "$BASELINE_OUT" >&2
+  echo "ERROR: Could not reach the database. Wake Neon at console.neon.tech and verify DATABASE_URL in Coolify." >&2
   exit 1
 fi
 
@@ -47,74 +47,61 @@ STATE="$BASELINE_OUT"
 case "$STATE" in
   client=0*|client=1*) ;;
   *)
-    echo "Warning: prisma-baseline returned unexpected output; using safe default."
+    echo "Warning: prisma-baseline returned unexpected output; using safe default." >&2
     STATE="client=0 lastLogin=0 siteClientId=0 passwordReset=0 emailVerified=0 viewInviteOtp=0"
     ;;
 esac
-echo "Database state: $STATE"
+echo "Database state: $STATE" >&2
 
 baseline_migration() {
   migration_name="$1"
-  echo "Marking migration as applied: $migration_name"
+  echo "Marking migration as applied: $migration_name" >&2
   npx prisma migrate resolve --applied "$migration_name" 2>/dev/null || true
 }
 
+BASELINE_MIGRATIONS="
+client=1|20250513180000_init|Existing schema detected (Client table). Baselining init migration...
+lastLogin=1|20260513120000_user_last_activity|Existing lastLoginAt column detected. Baselining user_last_activity migration...
+siteClientId=1|20260515130000_site_client_id|Existing Site.clientId column detected. Baselining site_client_id migration...
+passwordReset=1|20260515140000_password_reset_tokens|Existing PasswordResetToken table detected. Baselining password_reset_tokens migration...
+emailVerified=1|20260519120000_email_verification|Existing User.emailVerified column detected. Baselining email_verification migration...
+viewInviteOtp=1|20260601120000_view_access_invite_otp|Existing EmailVerificationToken view-invite columns detected. Baselining view_access_invite_otp migration...
+"
+
 baseline_from_state() {
-  if echo "$STATE" | grep -q 'client=1'; then
-    echo "Existing schema detected (Client table). Baselining init migration..."
-    baseline_migration "20250513180000_init"
-  fi
-
-  if echo "$STATE" | grep -q 'lastLogin=1'; then
-    echo "Existing lastLoginAt column detected. Baselining user_last_activity migration..."
-    baseline_migration "20260513120000_user_last_activity"
-  fi
-
-  if echo "$STATE" | grep -q 'siteClientId=1'; then
-    echo "Existing Site.clientId column detected. Baselining site_client_id migration..."
-    baseline_migration "20260515130000_site_client_id"
-  fi
-
-  if echo "$STATE" | grep -q 'passwordReset=1'; then
-    echo "Existing PasswordResetToken table detected. Baselining password_reset_tokens migration..."
-    baseline_migration "20260515140000_password_reset_tokens"
-  fi
-
-  if echo "$STATE" | grep -q 'emailVerified=1'; then
-    echo "Existing User.emailVerified column detected. Baselining email_verification migration..."
-    baseline_migration "20260519120000_email_verification"
-  fi
-
-  if echo "$STATE" | grep -q 'viewInviteOtp=1'; then
-    echo "Existing EmailVerificationToken view-invite columns detected. Baselining view_access_invite_otp migration..."
-    baseline_migration "20260601120000_view_access_invite_otp"
-  fi
+  echo "$BASELINE_MIGRATIONS" | while IFS='|' read -r pattern migration message; do
+    [ -z "$pattern" ] && continue
+    if echo "$STATE" | grep -q "$pattern"; then
+      echo "$message" >&2
+      baseline_migration "$migration"
+    fi
+  done
 }
 
 baseline_from_state
 
-echo "Applying migrations..."
+echo "Applying migrations..." >&2
 set +e
 MIGRATION_OUTPUT="$(npx prisma migrate deploy 2>&1)"
 MIGRATION_EXIT_CODE=$?
 set -e
 
-echo "$MIGRATION_OUTPUT"
+echo "$MIGRATION_OUTPUT" >&2
 
 if [ "$MIGRATION_EXIT_CODE" -ne 0 ]; then
   if echo "$MIGRATION_OUTPUT" | grep -q 'P1010'; then
-    echo ""
-    echo "Hint: P1010 often means DATABASE_URL points at the wrong Postgres."
-    echo "  - Docker stack (this repo): use localhost:5434 in .env (see docker-compose.local.yaml)."
-    echo "  - Or run migrations inside the container: npm run db:init:docker"
-    echo "  - Mac with Postgres.app/Homebrew on 5432: keep that on 5432; use 5434 for Docker only."
+    echo "" >&2
+    echo "Hint: P1010 often means DATABASE_URL points at the wrong Postgres." >&2
+    echo "  - Docker stack (this repo): use localhost:5434 in .env (see docker-compose.local.yaml)." >&2
+    echo "  - Or run migrations inside the container: npm run db:init:docker" >&2
+    echo "  - Mac with Postgres.app/Homebrew on 5432: keep that on 5432; use 5434 for Docker only." >&2
   fi
   if echo "$MIGRATION_OUTPUT" | grep -q 'P3005'; then
-    echo "Prisma P3005: non-empty database without migration history. Baselining and retrying..."
+    echo "Prisma P3005: non-empty database without migration history. Baselining and retrying..." >&2
     baseline_from_state
     npx prisma migrate deploy
   elif echo "$MIGRATION_OUTPUT" | grep -qiE 'already exists|duplicate column'; then
-    echo "Schema drift detected (objects already exist). Baselining known migrations and retrying..."
+    echo "Schema drift detected (objects already exist). Baselining known migrations and retrying..." >&2
     baseline_from_state
     npx prisma migrate deploy
   else
@@ -122,4 +109,4 @@ if [ "$MIGRATION_EXIT_CODE" -ne 0 ]; then
   fi
 fi
 
-echo "Migrations complete."
+echo "Migrations complete." >&2

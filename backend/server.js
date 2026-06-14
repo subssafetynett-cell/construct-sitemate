@@ -23,8 +23,8 @@ const responseRoutes = require("./src/routes/responseRoutes");
 const dashboardRoutes = require("./src/routes/dashboardRoutes");
 const savedSignatureRoutes = require("./src/routes/savedSignatureRoutes");
 
-const path = require("path");
-const fs = require("fs");
+const path = require("node:path");
+const fs = require("node:fs");
 
 const app = express();
 

@@ -1,6 +1,10 @@
 const prisma = require("../prismaClient");
 const { reqUserDbId, resolveTokenRole } = require("./userAuthorization");
-const { canViewFormResponse } = require("./generalFormVisibility");
+const {
+  canViewFormResponse,
+  isSheqResponse,
+  siteContextPresent,
+} = require("./generalFormVisibility");
 const { getActingClientId, getScopedUser } = require("./actingClientScope");
 const { isGlobalSiteAccess } = require("./siteAccess");
 
@@ -116,14 +120,30 @@ async function assertFormResponseAccess(req, responseId, { write = false } = {})
   }
 
   if (write) {
-    if (row.submittedById !== userId) {
-      return {
-        ok: false,
-        status: 403,
-        message: "You can only update or delete your own submissions",
-      };
+    if (row.submittedById === userId) {
+      return { ok: true, row };
     }
-    return { ok: true, row };
+
+    const actingClientId = getActingClientId(req);
+    const scoped = getScopedUser(req);
+    const clientId = actingClientId || scoped?.clientId || req.user?.clientId;
+    const readScope = getFormResponseReadScope(req.user, actingClientId);
+
+    // SHEQ Installation / Inspection list reports — admins may edit/delete like they can view.
+    if (isSheqResponse(row) && !siteContextPresent(row.answers)) {
+      const submitterClientId = row.submittedBy?.clientId;
+      const sameCompany =
+        Boolean(clientId && submitterClientId) && clientId === submitterClientId;
+      if (readScope.globalAccess || (readScope.companyWideRead && sameCompany)) {
+        return { ok: true, row };
+      }
+    }
+
+    return {
+      ok: false,
+      status: 403,
+      message: "You can only update or delete your own submissions",
+    };
   }
 
   const actingClientId = getActingClientId(req);

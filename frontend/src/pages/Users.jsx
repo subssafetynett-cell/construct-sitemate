@@ -133,6 +133,23 @@ function normalizeUserActivityFields(u) {
   };
 }
 
+function userMatchesSearchFilters(u, { searchName, searchCompany, searchStatus, searchRole }) {
+  const query = searchName.toLowerCase();
+  const fullName = `${u.firstName || ""} ${u.lastName || ""} ${u.username || ""}`.toLowerCase();
+  const email = (u.email || "").toLowerCase();
+  const matchesName = !query || fullName.includes(query) || email.includes(query);
+
+  const companyQuery = searchCompany ? searchCompany.toLowerCase() : "";
+  const company = (u.companyname || u.company || "").toLowerCase();
+  const matchesCompany = !companyQuery || company.includes(companyQuery);
+
+  if (searchStatus === "active") return matchesName && matchesCompany && u.active === true;
+  if (searchStatus === "inactive") return matchesName && matchesCompany && u.active === false;
+
+  const matchesRole = searchRole === "all" || (u.role && u.role === searchRole);
+  return matchesName && matchesCompany && matchesRole;
+}
+
 export default function UsersPage() {
   const { isDarkMode } = useTheme();
   const { id } = useParams(); // optional client id
@@ -179,28 +196,9 @@ export default function UsersPage() {
   // ... (existing state)
 
   // Derived filtered list
-  const filteredUsers = users.filter((u) => {
-    // 1. Name/Email Filter
-    const query = searchName.toLowerCase();
-    const fullName = `${u.firstName || ""} ${u.lastName || ""} ${u.username || ""}`.toLowerCase();
-    const email = (u.email || "").toLowerCase();
-    const matchesName = !query || fullName.includes(query) || email.includes(query);
-
-    // 2. Company Filter
-    const companyQuery = searchCompany ? searchCompany.toLowerCase() : "";
-    const company = (u.companyname || u.company || "").toLowerCase();
-    const matchesCompany = !companyQuery || company.includes(companyQuery);
-
-    // 3. Status Filter
-    let matchesStatus = true;
-    if (searchStatus === "active") matchesStatus = u.active === true;
-    if (searchStatus === "inactive") matchesStatus = u.active === false;
-
-    // 4. Role Filter
-    const matchesRole = searchRole === "all" || (u.role && u.role === searchRole);
-
-    return matchesName && matchesCompany && matchesStatus && matchesRole;
-  });
+  const filteredUsers = users.filter((u) =>
+    userMatchesSearchFilters(u, { searchName, searchCompany, searchStatus, searchRole })
+  );
 
   const paginatedUsers = stableSort(filteredUsers, getComparator(order, orderBy)).slice(
     page * rowsPerPage,

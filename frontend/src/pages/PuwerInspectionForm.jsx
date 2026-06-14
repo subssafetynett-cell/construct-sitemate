@@ -323,6 +323,7 @@ export default function PuwerInspectionForm() {
                         borderColor={borderColor}
                         readOnly={contentReadOnly}
                         leftImageSrc={docInfo.logo}
+                        leftCompanyLogoUrl={logoUrl}
                         onLeftImageChange={(url) => setDocInfo((prev) => ({ ...prev, logo: url }))}
                         rightImageSrc={docInfo.logoRight}
                         onRightImageChange={(url) => setDocInfo((prev) => ({ ...prev, logoRight: url }))}

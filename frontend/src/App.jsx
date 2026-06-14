@@ -41,7 +41,6 @@ import SiteInductionRecordForm from './pages/SiteInductionRecordForm';
 import LolerInspectionForm from './pages/LolerInspectionForm';
 import PuwerInspectionForm from './pages/PuwerInspectionForm';
 import CreateForm from './pages/CreateForm';
-import AdstoneSiteInductionForm from './pages/AdstoneSiteInductionForm';
 import SheqInstallationForm from './pages/SheqInstallationForm';
 import SheqInspectionSelectionPage from './pages/SheqInspectionSelectionPage';
 import ShqInstallationSelectionPage from './pages/ShqInstallationSelectionPage';
@@ -200,8 +199,6 @@ function App() {
           <Route path="/general-forms/loler-inspection-form/:id" element={<RequireAuth><LolerInspectionForm /></RequireAuth>} />
           <Route path="/general-forms/puwer-inspection-form" element={<RequireAuth><PuwerInspectionForm /></RequireAuth>} />
           <Route path="/general-forms/puwer-inspection-form/:id" element={<RequireAuth><PuwerInspectionForm /></RequireAuth>} />
-          <Route path="/general-forms/adstone-site-induction" element={<RequireAuth><AdstoneSiteInductionForm /></RequireAuth>} />
-          <Route path="/general-forms/adstone-site-induction/:id" element={<RequireAuth><AdstoneSiteInductionForm /></RequireAuth>} />
           <Route path="/frida-forms" element={<RequireAuth><GenericReportPage pageTitle="Friday pack forms" /></RequireAuth>} />
 
           {/* Dashboards */}

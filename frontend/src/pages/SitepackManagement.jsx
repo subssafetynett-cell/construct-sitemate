@@ -29,7 +29,7 @@ import {
 import { 
     Building2, ClipboardList, FileText, DraftingCompass, BookOpen, 
     Award, ShieldCheck, UploadCloud, Eye, Download, Trash2, X,
-    AlertTriangle, AlertOctagon, UserCheck, Folder, ChevronDown, ChevronUp
+    AlertTriangle, UserCheck, Folder, ChevronDown, ChevronUp
 } from "lucide-react";
 import SearchIcon from "@mui/icons-material/Search";
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
@@ -57,7 +57,6 @@ import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurned
 import CollectionsOutlinedIcon from '@mui/icons-material/CollectionsOutlined'; // Drawings
 import BookOutlinedIcon from '@mui/icons-material/BookOutlined'; // Site Diary
 import AppRegistrationOutlinedIcon from '@mui/icons-material/AppRegistrationOutlined'; // Register
-import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined'; // Meeting Minutes
 import PolicyOutlinedIcon from '@mui/icons-material/PolicyOutlined'; // Audit
 
 import Layout from '../components/Layout';
@@ -278,16 +277,6 @@ const MODULES_CONFIG_DEFAULT = [
     { title: "General Uploads", icon: <UploadCloud size={32} /> },
 ];
 
-const MODULES_CONFIG_ADSTONE = [
-    { title: "Induction", icon: <ShieldCheck size={32} /> },
-    { title: "RAMS", icon: <FileText size={32} /> },
-    { title: "Quality - handover ITP", icon: <Award size={32} /> },
-    { title: "Toolbox talks", icon: <GroupsOutlinedIcon sx={{ fontSize: 32 }} /> },
-    { title: "Inspections", icon: <ClipboardList size={32} /> },
-    { title: "NCRs and dayworks", icon: <AlertTriangle size={32} /> },
-    { title: "Incident reporting", icon: <AlertOctagon size={32} /> },
-];
-
 /** Cards may show a custom saved name; routing must use the real template title from the API. */
 function getSitepackFormTemplateTitle(menuDoc) {
     if (!menuDoc) return "";
@@ -309,7 +298,6 @@ function getSitepackStandardFormPath(menuDoc, responseId) {
         "Daily Safe Start Briefing Sheet": `/general-forms/daily-safe-start-briefing/${responseId}`,
         "Audit Action Form": `/general-forms/audit-action-form/${responseId}`,
         "Site Induction Form": `/general-forms/site-induction-form/${responseId}`,
-        "Adstone Site Induction Form": `/general-forms/adstone-site-induction/${responseId}`,
         "LOLER Inspection Form": `/general-forms/loler-inspection-form/${responseId}`,
         "PUWER Inspection Form": `/general-forms/puwer-inspection-form/${responseId}`,
     };
@@ -344,13 +332,7 @@ function getSitepackReportFormPath(menuDoc, responseId, sitepackQuery) {
 export default function SitepackManagement() {
     const { isDarkMode } = useTheme();
     const { role } = useAuth();
-    // Get user and determine modules config
-    const userString = localStorage.getItem("user");
-    const user = userString ? JSON.parse(userString) : null;
-    const isAdstone = user?.companyname?.trim()?.toLowerCase() === "adstone";
-    const activeConfig = isAdstone ? MODULES_CONFIG_ADSTONE : MODULES_CONFIG_DEFAULT;
 
-    // State
     const [sites, setSites] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchParams] = useSearchParams();
@@ -365,7 +347,9 @@ export default function SitepackManagement() {
     const [newSubfolderName, setNewSubfolderName] = useState("");
     const [subfolderError, setSubfolderError] = useState("");
     const [creatingSubfolder, setCreatingSubfolder] = useState(false);
-    const [modules, setModules] = useState(activeConfig.map(m => ({ ...m, count: '0 documents', id: m.title })));
+    const [modules, setModules] = useState(
+        MODULES_CONFIG_DEFAULT.map((m) => ({ ...m, count: "0 documents", id: m.title }))
+    );
     const [reportCounts, setReportCounts] = useState(
         () => Object.fromEntries(SITEPACK_REPORT_MODULES.map((m) => [m.title, "0 documents"]))
     );
@@ -536,13 +520,10 @@ export default function SitepackManagement() {
         }
     }, [selectedSite, selectedSubfolder, selectedModule, location.key]);
 
-    const generalFormTitleToPath = useMemo(() => {
-        const m = Object.fromEntries(TEMPLATES.map((t) => [t.title, t.path]));
-        if (isAdstone) {
-            m["Adstone Site Induction Form"] = "/general-forms/adstone-site-induction";
-        }
-        return m;
-    }, [isAdstone]);
+    const generalFormTitleToPath = useMemo(
+        () => Object.fromEntries(TEMPLATES.map((t) => [t.title, t.path])),
+        []
+    );
 
     // Load custom form definitions + saved general-form responses for the Create Form dialog
     useEffect(() => {
@@ -989,7 +970,7 @@ export default function SitepackManagement() {
             handleMenuClose();
             const resId = menuDoc.id || menuDoc._id;
             const templateTitle = getSitepackFormTemplateTitle(menuDoc);
-            const standardForms = ['Tool Box Talk Register', 'RAMS Briefing Form', 'Site Induction Register', 'Management Site Inspection Report', 'Daily Safe Start Briefing Sheet', 'Audit Action Form', 'Site Induction Form', 'LOLER Inspection Form', 'PUWER Inspection Form', 'Adstone Site Induction Form'];
+            const standardForms = ['Tool Box Talk Register', 'RAMS Briefing Form', 'Site Induction Register', 'Management Site Inspection Report', 'Daily Safe Start Briefing Sheet', 'Audit Action Form', 'Site Induction Form', 'LOLER Inspection Form', 'PUWER Inspection Form'];
             
             // Only supported for custom form builder forms
             if (!standardForms.includes(templateTitle)) {
@@ -1148,29 +1129,6 @@ export default function SitepackManagement() {
                         >
                             Upload Document
                         </Button>
-                        {isAdstone && (selectedModule.title === "Induction" || selectedModule.title === "Toolbox talks") && (
-                            <Button 
-                                variant="contained"
-                                onClick={() => {
-                                    const category = selectedModule.title === "Induction" ? "Induction" : "Toolbox talks";
-                                    const path = selectedModule.title === "Induction"
-                                        ? "/general-forms/adstone-site-induction"
-                                        : "/general-forms/tool-box-talk";
-                                    navigate(pathWithSearchParams(path, sitepackParams({ category })));
-                                }}
-                                sx={{ 
-                                    bgcolor: "#111827", 
-                                    color: "#FFFFFF", 
-                                    "&:hover": { bgcolor: "#374151" }, 
-                                    borderRadius: 3, 
-                                    textTransform: 'none', 
-                                    fontWeight: 600,
-                                    boxShadow: "none"
-                                }}
-                            >
-                                Select Form
-                            </Button>
-                        )}
                     </Box>
                 ) : selectedSubfolder && !selectedModule ? (
                     <Button
@@ -1799,7 +1757,7 @@ export default function SitepackManagement() {
                         <ListItemText primary="Download as PDF" primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }} />
                     </MenuItem>
                 )}
-                {selectedModule?.title !== "Induction" && menuDoc?.isFormBase && !['Tool Box Talk Register', 'RAMS Briefing Form', 'Site Induction Register', 'Management Site Inspection Report', 'Daily Safe Start Briefing Sheet', 'Audit Action Form', 'Site Induction Form', 'LOLER Inspection Form', 'PUWER Inspection Form', 'Adstone Site Induction Form'].includes(getSitepackFormTemplateTitle(menuDoc)) && (
+                {selectedModule?.title !== "Induction" && menuDoc?.isFormBase && !['Tool Box Talk Register', 'RAMS Briefing Form', 'Site Induction Register', 'Management Site Inspection Report', 'Daily Safe Start Briefing Sheet', 'Audit Action Form', 'Site Induction Form', 'LOLER Inspection Form', 'PUWER Inspection Form'].includes(getSitepackFormTemplateTitle(menuDoc)) && (
                     <MenuItem onClick={handleDownloadWord} sx={{ gap: 1.5, py: 1.5 }}>
                         <FileText size={18} color="#6B7280" />
                         <ListItemText primary="Download as Word" primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }} />

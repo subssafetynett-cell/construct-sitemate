@@ -1,4 +1,4 @@
-const crypto = require("crypto");
+const crypto = require("node:crypto");
 const prisma = require("../prismaClient");
 const { sendEmail } = require("./emailService");
 const { buildAppUrl } = require("../utils/appBaseUrl");

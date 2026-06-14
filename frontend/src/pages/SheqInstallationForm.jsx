@@ -26,6 +26,8 @@ import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import SignatureCapture from "../components/SignatureCapture";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import { useGeneralFormAutoSave } from "../hooks/useGeneralFormAutoSave";
+import { useCompanyLogo } from "../hooks/useCompanyLogo";
+import { resolveDocLogoSrc } from "../utils/formLogoUrl";
 import {
     compressImageFile,
     compressLogoFile,
@@ -1242,6 +1244,7 @@ export default function SheqInstallationForm({
     onClose,
 }) {
     const { isDarkMode } = useTheme();
+    const companyLogoUrl = useCompanyLogo();
     const { id: urlId } = useParams();
     const id = propsId || urlId;
     
@@ -2032,10 +2035,13 @@ export default function SheqInstallationForm({
     const activeDocInfo = pdfAssets
         ? {
               ...docInfo,
-              logo: pdfAssets.logo ?? docInfo.logo,
+              logo: resolveDocLogoSrc(pdfAssets.logo ?? docInfo.logo, companyLogoUrl),
               logoRight: pdfAssets.logoRight ?? docInfo.logoRight,
           }
-        : docInfo;
+        : {
+              ...docInfo,
+              logo: resolveDocLogoSrc(docInfo.logo, companyLogoUrl),
+          };
     const displayImages = normalizeFormImages(pdfAssets?.images ?? formData.images);
     const exportBg = downloading ? "#FFFFFF" : (isDarkMode ? "#1B212C" : "#FFFFFF");
     const exportText = downloading ? "#111827" : textColor;

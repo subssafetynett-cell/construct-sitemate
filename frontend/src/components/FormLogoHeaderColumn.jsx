@@ -8,6 +8,7 @@ import FormLogoUploadSlot from "./FormLogoUploadSlot";
 export default function FormLogoHeaderColumn({
   imageSrc,
   onImageChange,
+  companyLogoUrl = null,
   readOnly,
   exportMode = false,
   side = "left",
@@ -32,6 +33,7 @@ export default function FormLogoHeaderColumn({
       <FormLogoUploadSlot
         imageSrc={imageSrc}
         onImageChange={onImageChange}
+        companyLogoUrl={companyLogoUrl}
         readOnly={readOnly}
         exportMode={exportMode}
         alt={side === "left" ? "Left logo" : "Right logo"}

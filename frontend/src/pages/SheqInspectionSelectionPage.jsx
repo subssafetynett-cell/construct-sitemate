@@ -4,7 +4,7 @@ import {
     Box, Typography, Button, Paper, Table, TableBody, TableCell, 
     TableContainer, TableHead, TableRow, TablePagination, IconButton, 
     CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions,
-    Tooltip, Menu, MenuItem, ListItemIcon, ListItemText
+    Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Snackbar, Alert
 } from "@mui/material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { 
@@ -33,6 +33,8 @@ const SheqInspectionSelectionPage = () => {
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [deleteId, setDeleteId] = useState(null);
+    const [deleteInFlight, setDeleteInFlight] = useState(false);
+    const [snack, setSnack] = useState({ open: false, message: "", severity: "success" });
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedItem, setSelectedItem] = useState(null);
     const [formDialogOpen, setFormDialogOpen] = useState(false);
@@ -64,14 +66,35 @@ const SheqInspectionSelectionPage = () => {
     }, [fetchSubmissions, location.key]);
 
     const handleDelete = async () => {
-        if (!deleteId) return;
+        if (!deleteId || deleteInFlight) return;
+
+        const idToDelete = deleteId;
+        const removed = submissions.find((s) => (s.id || s._id) === idToDelete);
+        setDeleteInFlight(true);
+        setDeleteId(null);
+        setSubmissions((prev) => prev.filter((s) => (s.id || s._id) !== idToDelete));
+        setSnack({ open: true, message: "Report deleted successfully", severity: "success" });
+
         try {
-            await api.delete(`/forms/responses/${deleteId}`);
-            setSubmissions(prev => prev.filter(s => (s.id || s._id) !== deleteId));
-            setDeleteId(null);
+            const res = await api.delete(`/forms/responses/${idToDelete}`);
+            if (!res?.data?.success) {
+                throw new Error(res?.data?.message || "Failed to delete report");
+            }
         } catch (err) {
             console.error("Delete failed", err);
-            alert("Failed to delete report.");
+            if (removed) {
+                setSubmissions((prev) => {
+                    if (prev.some((s) => (s.id || s._id) === idToDelete)) return prev;
+                    return [removed, ...prev];
+                });
+            }
+            setSnack({
+                open: true,
+                message: err?.response?.data?.message || err?.message || "Failed to delete report",
+                severity: "error",
+            });
+        } finally {
+            setDeleteInFlight(false);
         }
     };
 
@@ -291,7 +314,8 @@ const SheqInspectionSelectionPage = () => {
                 <DialogActions sx={{ p: 2, pt: 0 }}>
                     <Button onClick={() => setDeleteId(null)} sx={{ color: subTextColor, textTransform: "none", fontWeight: 600 }}>Cancel</Button>
                     <Button 
-                        onClick={handleDelete} 
+                        onClick={handleDelete}
+                        disabled={deleteInFlight}
                         variant="contained" 
                         sx={{ bgcolor: "#ef4444", borderRadius: "10px", textTransform: "none", fontWeight: 600, "&:hover": { bgcolor: "#dc2626" } }}
                     >
@@ -299,6 +323,22 @@ const SheqInspectionSelectionPage = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <Snackbar
+                open={snack.open}
+                autoHideDuration={4000}
+                onClose={() => setSnack((s) => ({ ...s, open: false }))}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+            >
+                <Alert
+                    onClose={() => setSnack((s) => ({ ...s, open: false }))}
+                    severity={snack.severity}
+                    variant="filled"
+                    sx={{ width: "100%" }}
+                >
+                    {snack.message}
+                </Alert>
+            </Snackbar>
 
             <FormSelectionDialog 
                 open={formDialogOpen} 

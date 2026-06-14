@@ -1,8 +1,8 @@
 /**
  * Normalize DATABASE_URL / DIRECT_URL and write shell exports for docker-migrate.sh.
  */
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 const { applyDatabaseUrlEnv } = require("../src/utils/databaseUrl");
 
 applyDatabaseUrlEnv();

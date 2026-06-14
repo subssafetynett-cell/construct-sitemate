@@ -1,6 +1,6 @@
-const fs = require("fs");
-const path = require("path");
-const { Readable } = require("stream");
+const fs = require("node:fs");
+const path = require("node:path");
+const { Readable } = require("node:stream");
 const { v4: uuidv4 } = require("uuid");
 const {
   extensionFromName,

@@ -1,8 +1,8 @@
 const asyncHandler = require('express-async-handler');
-const fs = require('fs');
-const http = require('http');
-const https = require('https');
-const path = require('path');
+const fs = require('node:fs');
+const http = require('node:http');
+const https = require('node:https');
+const path = require('node:path');
 const prisma = require("../prismaClient");
 const {
   normalizeDocumentType,
