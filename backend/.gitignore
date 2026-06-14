@@ -2,4 +2,7 @@ node_modules
 # Canonical env is the repo root `.env` (loaded via loadEnv.js). Ignore any local copy here.
 .env
 
+# macOS
+.DS_Store
+
 /src/generated/prisma

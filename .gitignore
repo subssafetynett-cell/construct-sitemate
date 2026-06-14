@@ -1,2 +1,6 @@
 .env
 backend/.db-env.sh
+
+# macOS
+.DS_Store
+**/.DS_Store
