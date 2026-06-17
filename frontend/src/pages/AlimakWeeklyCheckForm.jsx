@@ -33,10 +33,24 @@ import FormLogoHeaderColumn from "../components/FormLogoHeaderColumn";
 import { formHeaderCenterColumnSx } from "../components/FormDocumentHeader";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
+import SignatureCapture from "../components/SignatureCapture";
 
 const FORM_TITLE = "Alimak Weekly Check";
 
 const DAYS = ["MON", "TUE", "WED", "THUR", "FRI", "SAT", "SUN"];
+const DAY_COL_WIDTH = 118;
+const TABLE_MIN_WIDTH = 980;
+
+function isSignatureImage(value) {
+    return (
+        value &&
+        typeof value === "string" &&
+        (value.startsWith("data:image/") ||
+            value.startsWith("http://") ||
+            value.startsWith("https://") ||
+            value.startsWith("blob:"))
+    );
+}
 
 const CHECKLIST_ITEMS = [
     "The hoist must have a valid safety certificate",
@@ -131,6 +145,7 @@ export default function AlimakWeeklyCheckForm() {
             persistedSiteId,
             persistedSubfolderId
         );
+    const canFillFields = !contentReadOnly;
 
     const performSave = async (
         asNew = false,
@@ -305,6 +320,10 @@ export default function AlimakWeeklyCheckForm() {
         );
     };
 
+    const setSignatureForDay = (day, url) => {
+        setSignatures((prev) => ({ ...prev, [day]: url || "" }));
+    };
+
     const borderColor = isDarkMode ? "#374151" : "#CCC";
     const textColor = isDarkMode ? "#F9FAFB" : "#111827";
     const headerBg = isDarkMode ? "rgba(255,255,255,0.06)" : "#F3F4F6";
@@ -459,8 +478,8 @@ export default function AlimakWeeklyCheckForm() {
                     elevation={pdfLayout ? 0 : 3}
                     sx={{
                         width: "100%",
-                        minWidth: pdfLayout ? "1000px" : "100%",
-                        maxWidth: "1000px",
+                        minWidth: pdfLayout ? "1050px" : "100%",
+                        maxWidth: "1050px",
                         p: { xs: 2, md: 4 },
                         bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
                         color: textColor,
@@ -761,7 +780,7 @@ export default function AlimakWeeklyCheckForm() {
                         <Box
                             sx={{
                                 display: "flex",
-                                minWidth: 720,
+                                minWidth: TABLE_MIN_WIDTH,
                                 bgcolor: headerBg,
                                 borderBottom: `1px solid ${borderColor}`,
                             }}
@@ -792,7 +811,8 @@ export default function AlimakWeeklyCheckForm() {
                                 <Box
                                     key={day}
                                     sx={{
-                                        width: 44,
+                                        width: DAY_COL_WIDTH,
+                                        flexShrink: 0,
                                         p: cellPadding,
                                         borderRight: `1px solid ${borderColor}`,
                                         fontWeight: 700,
@@ -810,7 +830,7 @@ export default function AlimakWeeklyCheckForm() {
                                 key={row.id}
                                 sx={{
                                     display: "flex",
-                                    minWidth: 720,
+                                    minWidth: TABLE_MIN_WIDTH,
                                     borderBottom: `1px solid ${borderColor}`,
                                 }}
                             >
@@ -839,7 +859,8 @@ export default function AlimakWeeklyCheckForm() {
                                     <Box
                                         key={day}
                                         sx={{
-                                            width: 44,
+                                            width: DAY_COL_WIDTH,
+                                            flexShrink: 0,
                                             borderRight: `1px solid ${borderColor}`,
                                             display: "flex",
                                             alignItems: "center",
@@ -855,7 +876,7 @@ export default function AlimakWeeklyCheckForm() {
                             </Box>
                         ))}
 
-                        <Box sx={{ display: "flex", minWidth: 720 }}>
+                        <Box sx={{ display: "flex", minWidth: TABLE_MIN_WIDTH }}>
                             <Box
                                 sx={{
                                     width: 36,
@@ -878,19 +899,48 @@ export default function AlimakWeeklyCheckForm() {
                                 <Box
                                     key={day}
                                     sx={{
-                                        width: 44,
+                                        width: DAY_COL_WIDTH,
+                                        flexShrink: 0,
                                         borderRight: `1px solid ${borderColor}`,
+                                        p: 0.5,
+                                        minHeight: 88,
+                                        verticalAlign: "top",
                                     }}
                                 >
-                                    <CellField
-                                        value={signatures[day]}
-                                        onChange={(e) =>
-                                            setSignatures({
-                                                ...signatures,
-                                                [day]: e.target.value,
-                                            })
-                                        }
-                                    />
+                                    {canFillFields ? (
+                                        <SignatureCapture
+                                            value={
+                                                isSignatureImage(signatures[day])
+                                                    ? signatures[day]
+                                                    : null
+                                            }
+                                            onChange={(url) =>
+                                                setSignatureForDay(day, url)
+                                            }
+                                            readOnly={false}
+                                            compact
+                                            savedLibraryEnabled
+                                            helperText=""
+                                        />
+                                    ) : isSignatureImage(signatures[day]) ? (
+                                        <SignatureCapture
+                                            value={signatures[day]}
+                                            onChange={() => {}}
+                                            readOnly
+                                            compact
+                                        />
+                                    ) : (
+                                        <Typography
+                                            sx={{
+                                                px: 0.5,
+                                                py: 0.75,
+                                                fontSize: "0.75rem",
+                                                minHeight: "1.5em",
+                                            }}
+                                        >
+                                            {signatures[day] || " "}
+                                        </Typography>
+                                    )}
                                 </Box>
                             ))}
                         </Box>
