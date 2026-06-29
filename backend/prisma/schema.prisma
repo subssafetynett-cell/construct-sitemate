@@ -194,11 +194,17 @@ model FormResponse {
   submittedById String?
   submittedBy   User?   @relation(fields: [submittedById], references: [id])
 
+  siteId      String?
+  subfolderId String?
+
   @@index([createdAt])
   @@index([category])
   @@index([submittedById])
   @@index([formId])
   @@index([submittedById, createdAt])
+  @@index([siteId])
+  @@index([subfolderId])
+  @@index([siteId, subfolderId])
 }
 
 enum Role {

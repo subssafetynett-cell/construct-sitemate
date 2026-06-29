@@ -16,6 +16,7 @@ import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { validateSignupForm } from "../utils/signupFormValidation";
+import RedirectIfAuthenticated from "../components/RedirectIfAuthenticated";
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -138,6 +139,7 @@ export default function SignupPage() {
         overflow: "hidden",
       }}
     >
+      <RedirectIfAuthenticated />
       {/* Illustration — public/signup.svg; root path matches Vite/nginx; visible on all breakpoints */}
       <Box
         sx={{

@@ -266,7 +266,7 @@ const defaultDashboard = {
 const DASHBOARD_SECTIONS = {
     default: {
         title: "Dashboard",
-        subtitle: "reports over time and by category.",
+        subtitle: "Forms completed, sites, inspections, SHEQ activity, and reports over time.",
     },
     ohs: {
         title: "Occupational Health and Safety",

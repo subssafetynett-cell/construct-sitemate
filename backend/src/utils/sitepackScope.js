@@ -4,15 +4,36 @@ function normalizeSitepackId(value) {
   return t !== "" ? t : null;
 }
 
-function matchesSitepackScope(record, { siteId, subfolderId }) {
+function resolveRecordSitepackIds(record) {
   const answers =
     record?.answers && typeof record.answers === "object" ? record.answers : {};
-  const rSiteId = answers.siteId ?? record.siteId;
-  const rSubfolderId = normalizeSitepackId(answers.subfolderId ?? record.subfolderId);
+  return {
+    siteId: normalizeSitepackId(answers.siteId ?? record?.siteId),
+    subfolderId: normalizeSitepackId(answers.subfolderId ?? record?.subfolderId),
+  };
+}
+
+/** Persisted columns derived from answers JSON (kept in sync on save/update). */
+function sitepackColumnsForAnswers(answers) {
+  const { siteId, subfolderId } = resolveRecordSitepackIds({ answers });
+  return { siteId, subfolderId };
+}
+
+function buildSitepackFieldEquals(field, value) {
+  return {
+    OR: [
+      { answers: { path: [field], equals: value } },
+      { [field]: value },
+    ],
+  };
+}
+
+function matchesSitepackScope(record, { siteId, subfolderId }) {
+  const { siteId: rSiteId, subfolderId: rSubfolderId } = resolveRecordSitepackIds(record);
   const wantSite = normalizeSitepackId(siteId);
   const wantSubfolder = normalizeSitepackId(subfolderId);
 
-  if (wantSite && normalizeSitepackId(rSiteId) !== wantSite) return false;
+  if (wantSite && rSiteId !== wantSite) return false;
   if (wantSubfolder) return rSubfolderId === wantSubfolder;
   // Site-only filter: include responses in any subfolder (matches JSON contains { siteId }).
   if (wantSite) return true;
@@ -26,10 +47,10 @@ function buildSitepackScopeWhere({ siteId, subfolderId }) {
 
   const clauses = [];
   if (wantSite) {
-    clauses.push({ answers: { path: ["siteId"], equals: wantSite } });
+    clauses.push(buildSitepackFieldEquals("siteId", wantSite));
   }
   if (wantSubfolder) {
-    clauses.push({ answers: { path: ["subfolderId"], equals: wantSubfolder } });
+    clauses.push(buildSitepackFieldEquals("subfolderId", wantSubfolder));
   }
   if (clauses.length === 1) return clauses[0];
   return { AND: clauses };
@@ -37,6 +58,8 @@ function buildSitepackScopeWhere({ siteId, subfolderId }) {
 
 module.exports = {
   normalizeSitepackId,
+  resolveRecordSitepackIds,
+  sitepackColumnsForAnswers,
   matchesSitepackScope,
   buildSitepackScopeWhere,
 };

@@ -13,7 +13,7 @@ const {
   sanitizeVisibilityOnSave,
   isSheqCategory,
 } = require("../utils/generalFormVisibility");
-const { buildSitepackScopeWhere } = require("../utils/sitepackScope");
+const { buildSitepackScopeWhere, sitepackColumnsForAnswers } = require("../utils/sitepackScope");
 const {
   compactFormResponseRow,
   isCompactListRequest,
@@ -306,12 +306,16 @@ exports.saveResponse = async (req, res) => {
       return res.status(404).json({ success: false, message: "Form not found" });
     }
 
+    const sitepackColumns = sitepackColumnsForAnswers(sanitizedAnswers);
+
     const response = await prisma.formResponse.create({
       data: {
         answers: sanitizedAnswers,
         category: resolveFormResponseCategory(category),
         formId: form.id,
         submittedById: submitterId,
+        siteId: sitepackColumns.siteId,
+        subfolderId: sitepackColumns.subfolderId,
       }
     });
 
@@ -476,7 +480,12 @@ exports.updateResponse = async (req, res) => {
     if (!gate.ok) {
       return res.status(gate.status).json({ success: false, message: gate.message });
     }
-    const data = { answers: sanitizedAnswers };
+    const sitepackColumns = sitepackColumnsForAnswers(sanitizedAnswers);
+    const data = {
+      answers: sanitizedAnswers,
+      siteId: sitepackColumns.siteId,
+      subfolderId: sitepackColumns.subfolderId,
+    };
     if (category != null && String(category).trim() !== "") {
       data.category = String(category).trim();
     }

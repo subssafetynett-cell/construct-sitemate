@@ -52,7 +52,7 @@ export default function Setup2FA() {
                     } catch {
                         user = null;
                     }
-                    navigate(getPostAuthPath());
+                    navigate(getPostAuthPath(user), { replace: true });
                 }, 1500);
             }
         } catch (err) {

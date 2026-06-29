@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -43,6 +43,33 @@ const COMPANY_ADMINS = ["superadmin", "company_admin"];
 const MANAGER_PLUS = ["superadmin", "company_admin", "site_manager"];
 const SUPERVISOR_PLUS = ["superadmin", "company_admin", "site_manager", "supervisor"];
 
+const KPI_MENU_ITEMS = [
+  {
+    id: "ohs-kpis",
+    pageKey: "dashboard",
+    label: "Occupational Health and Safety KPIs",
+    to: MONITORING_SECTIONS.ohs.dashboardPath,
+  },
+  {
+    id: "environmental-kpis",
+    pageKey: "dashboard",
+    label: "Environmental Management KPI",
+    to: MONITORING_SECTIONS.environmental.dashboardPath,
+  },
+  {
+    id: "quality-kpis",
+    pageKey: "dashboard",
+    label: "Quality Management KPI",
+    to: MONITORING_SECTIONS.quality.dashboardPath,
+  },
+  {
+    id: "food-safety",
+    pageKey: "dashboard",
+    label: "Food Safety Management KPI",
+    to: MONITORING_SECTIONS["food-safety"].dashboardPath,
+  },
+];
+
 const MENU_GROUPS = [
   {
     id: "dashboard",
@@ -51,28 +78,16 @@ const MENU_GROUPS = [
     roles: ALL_ROLES,
     items: [
       {
-        id: "ohs-kpis",
+        id: "overall-dashboard",
         pageKey: "dashboard",
-        label: "Occupational Health and Safety KPIs",
-        to: MONITORING_SECTIONS.ohs.dashboardPath,
+        label: "Dashboard",
+        to: "/dashboard",
+        exact: true,
       },
       {
-        id: "environmental-kpis",
-        pageKey: "dashboard",
-        label: "Environmental Management KPI",
-        to: MONITORING_SECTIONS.environmental.dashboardPath,
-      },
-      {
-        id: "quality-kpis",
-        pageKey: "dashboard",
-        label: "Quality Management KPI",
-        to: MONITORING_SECTIONS.quality.dashboardPath,
-      },
-      {
-        id: "food-safety",
-        pageKey: "dashboard",
-        label: "Food Safety Management KPI",
-        to: MONITORING_SECTIONS["food-safety"].dashboardPath,
+        id: "kpi",
+        label: "KPI",
+        items: KPI_MENU_ITEMS,
       },
     ],
   },
@@ -179,10 +194,22 @@ const MENU_GROUPS = [
 let globalCachedStats = { userCount: 0, clientCount: 0 };
 let globalStatsLastFetch = 0;
 
+function isMenuLink(item) {
+  return Boolean(item?.to);
+}
+
+function isMenuEntryActive(item, isActive, canSeeItem = () => true) {
+  if (isMenuLink(item)) return isActive(item.to, item.exact);
+  return (
+    item.items?.some((sub) => canSeeItem(sub) && isActive(sub.to, sub.exact)) ?? false
+  );
+}
+
 export default function Sidebar({ sx = {} }) {
   const { isDarkMode, toggleTheme } = useTheme();
   const location = useLocation();
   const [openGroup, setOpenGroup] = useState(null);
+  const [openSubGroups, setOpenSubGroups] = useState(() => new Set());
   const { role, currentUser, isViewOnly, canAccessPage } = useAuth();
   const [stats, setStats] = useState(globalCachedStats);
 
@@ -213,15 +240,27 @@ export default function Sidebar({ sx = {} }) {
     setOpenGroup((prev) => (prev === id ? null : id));
   };
 
-  const isActive = (to) => {
+  const toggleSubGroup = (id) => {
+    setOpenSubGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const isActive = (to, exact = false) => {
     const path = location.pathname || "";
+    if (exact) {
+      return path === to || (to === "/dashboard" && path === "/concern-reports");
+    }
     return path === to || path.startsWith(to + "/");
   };
 
   const canSeeGroup = (group) => {
     if (isViewOnly) {
       if (group.pageKey && canAccessPage(group.pageKey)) return true;
-      if (group.items?.some((item) => canAccessPage(item.pageKey))) return true;
+      if (group.items?.some((item) => canSeeMenuEntry(item))) return true;
       return false;
     }
     if (group.id === "users") {
@@ -232,13 +271,24 @@ export default function Sidebar({ sx = {} }) {
     return group.roles.includes(role);
   };
 
-  const canSeeItem = (item) => {
-    if (isViewOnly) {
-      return item.pageKey ? canAccessPage(item.pageKey) : true;
-    }
-    if (!item.roles) return true;
-    return item.roles.includes(role);
-  };
+  const canSeeItem = useCallback(
+    (item) => {
+      if (isViewOnly) {
+        return item.pageKey ? canAccessPage(item.pageKey) : true;
+      }
+      if (!item.roles) return true;
+      return item.roles.includes(role);
+    },
+    [isViewOnly, role, canAccessPage]
+  );
+
+  const canSeeMenuEntry = useCallback(
+    (item) => {
+      if (item.items) return item.items.some((sub) => canSeeItem(sub));
+      return canSeeItem(item);
+    },
+    [canSeeItem]
+  );
 
   const getInitials = () =>
     currentUser?.firstName
@@ -252,21 +302,37 @@ export default function Sidebar({ sx = {} }) {
 
   useEffect(() => {
     const path = location.pathname || "";
+    let nextOpenGroup = null;
+    const nextSubGroups = new Set();
 
     for (const group of MENU_GROUPS) {
-      if (group.items?.some((item) => isActive(item.to))) {
-        setOpenGroup(group.id);
-        return;
+      if (group.items) {
+        for (const item of group.items) {
+          if (item.items?.some((sub) => canSeeItem(sub) && isActive(sub.to, sub.exact))) {
+            nextOpenGroup = group.id;
+            nextSubGroups.add(item.id);
+            break;
+          }
+          if (isMenuLink(item) && canSeeItem(item) && isActive(item.to, item.exact)) {
+            nextOpenGroup = group.id;
+            break;
+          }
+        }
+        if (nextOpenGroup) break;
       }
       if (group.to && isActive(group.to)) {
-        setOpenGroup(group.id);
-        return;
+        nextOpenGroup = group.id;
+        break;
       }
     }
-    if (path === "/dashboard" || path === "/concern-reports") {
-      setOpenGroup("dashboard");
+
+    if (!nextOpenGroup && (path === "/dashboard" || path === "/concern-reports")) {
+      nextOpenGroup = "dashboard";
     }
-  }, [location.pathname]);
+
+    setOpenGroup(nextOpenGroup);
+    setOpenSubGroups(nextSubGroups);
+  }, [location.pathname, canSeeItem]);
 
   return (
     <Box
@@ -361,7 +427,36 @@ export default function Sidebar({ sx = {} }) {
             );
           }
 
-          const isGroupActive = group.items.some((item) => isActive(item.to));
+          const isGroupActive = group.items.some((item) =>
+            isMenuEntryActive(item, isActive, canSeeItem)
+          );
+
+          const renderMenuLink = (item, nested = false) => {
+            const active = isActive(item.to, item.exact);
+            return (
+              <ListItemButton
+                key={item.id}
+                component={RouterLink}
+                to={item.to}
+                sx={{
+                  borderRadius: 1.5,
+                  mb: 0.5,
+                  py: 0.5,
+                  px: 1.5,
+                  bgcolor: "transparent",
+                  color: active ? "#E89F17" : TEXT_COLOR,
+                  "&:hover": {
+                    bgcolor: "rgba(255,255,255,0.05)",
+                  },
+                }}
+              >
+                <ListItemText
+                  primary={item.label}
+                  primaryTypographyProps={{ fontSize: nested ? "0.8rem" : "0.8125rem" }}
+                />
+              </ListItemButton>
+            );
+          };
 
           return (
             <Box key={group.id}>
@@ -393,28 +488,50 @@ export default function Sidebar({ sx = {} }) {
 
               <Collapse in={expanded}>
                 <Box sx={{ ml: 3, pl: 1, borderLeft: "1px solid #4B5563" }}>
-                  {group.items.filter(canSeeItem).map((item) => {
-                    const active = isActive(item.to);
-                    return (
-                      <ListItemButton
-                        key={item.id}
-                        component={RouterLink}
-                        to={item.to}
-                        sx={{
-                          borderRadius: 1.5,
-                          mb: 0.5,
-                          py: 0.5,
-                          px: 1.5,
-                          bgcolor: "transparent",
-                          color: active ? "#E89F17" : TEXT_COLOR,
-                          "&:hover": {
-                            bgcolor: "rgba(255,255,255,0.05)",
-                          },
-                        }}
-                      >
-                        <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: '0.8125rem' }} />
-                      </ListItemButton>
-                    );
+                  {group.items.filter(canSeeMenuEntry).map((item) => {
+                    if (item.items) {
+                      const visibleChildren = item.items.filter(canSeeItem);
+                      const subExpanded = openSubGroups.has(item.id);
+                      const subActive = visibleChildren.some((sub) =>
+                        isActive(sub.to, sub.exact)
+                      );
+
+                      return (
+                        <Box key={item.id} sx={{ mb: 0.5 }}>
+                          <ListItemButton
+                            onClick={() => toggleSubGroup(item.id)}
+                            sx={{
+                              borderRadius: 1.5,
+                              py: 0.5,
+                              px: 1.5,
+                              bgcolor: "transparent",
+                              color: subActive ? "#E89F17" : TEXT_COLOR,
+                              "&:hover": { bgcolor: "rgba(255,255,255,0.05)" },
+                            }}
+                          >
+                            <ListItemText
+                              primary={item.label}
+                              primaryTypographyProps={{ fontSize: "0.8125rem", fontWeight: 600 }}
+                            />
+                            <ChevronDown
+                              size={16}
+                              color={subActive ? "#E89F17" : TEXT_COLOR}
+                              style={{
+                                transform: subExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                transition: "transform 0.2s",
+                              }}
+                            />
+                          </ListItemButton>
+                          <Collapse in={subExpanded}>
+                            <Box sx={{ ml: 1.5, pl: 1, borderLeft: "1px solid #4B5563" }}>
+                              {visibleChildren.map((sub) => renderMenuLink(sub, true))}
+                            </Box>
+                          </Collapse>
+                        </Box>
+                      );
+                    }
+
+                    return renderMenuLink(item);
                   })}
                 </Box>
               </Collapse>

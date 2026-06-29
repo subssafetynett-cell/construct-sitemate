@@ -20,6 +20,7 @@ import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { getPostAuthPath } from "../utils/postAuthRedirect";
 import { setStoredToken, scheduleTokenExpiryLogout } from "../utils/authSession";
+import RedirectIfAuthenticated from "../components/RedirectIfAuthenticated";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -107,7 +108,7 @@ export default function LoginPage() {
           scheduleTokenExpiryLogout(res.data.token);
           refreshUser();
 
-          navigate(getPostAuthPath());
+          navigate(getPostAuthPath(user), { replace: true });
         }
       }
 
@@ -133,6 +134,7 @@ export default function LoginPage() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#fff", display: "flex", alignItems: "center", justifyContent: "center", px: { xs: 2, sm: 4, md: 8, lg: 12 } }}>
+      <RedirectIfAuthenticated />
       <Grid container alignItems="center" justifyContent="center" sx={{ flexGrow: 1, maxWidth: "1600px" }}>
         {/* LEFT: Form */}
         <Grid item xs={12} md={6} sx={{ display: "flex", flexDirection: "column", justifyContent: "center", px: { xs: 2, sm: 4, md: 6 }, py: { xs: 4, md: 0 } }}>

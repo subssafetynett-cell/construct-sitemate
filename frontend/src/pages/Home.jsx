@@ -27,9 +27,12 @@ import IsoTrustSection from "../components/IsoTrustSection";
 import IsoFeaturesSection from "../components/IsoFeaturesSection";
 import IsoFooter from "../components/IsoFooter";
 import FAQSection from "../components/FAQSection";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { getPostAuthPath } from "../utils/postAuthRedirect";
 
 export default function Home() {
+    const { currentUser } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
@@ -76,6 +79,10 @@ export default function Home() {
         }),
     };
 
+
+    if (currentUser) {
+        return <Navigate to={getPostAuthPath(currentUser)} replace />;
+    }
 
     return (
         <>
