@@ -141,7 +141,13 @@ export default function EnvironmentalScorecard({ statRows, targets, onUpdateTarg
               return (
                 <tr key={row.id} style={{ background: rowBg }}>
                   <td style={tdStyle}>
-                    <ScorecardCell value={row.indicator} editable={false} tone="readonly" />
+                    <ScorecardCell
+                      value={row.indicator}
+                      onChange={(val) => onUpdateTarget(row.id, "indicator", val)}
+                      placeholder="Indicator"
+                      editable
+                      tone="default"
+                    />
                   </td>
                   <td style={tdStyle}>
                     <ScorecardCell

@@ -22,13 +22,16 @@ import {
   DashboardChartTooltip,
   DashboardMiniStat,
 } from "./dashboard/dashboardUi";
+import KpiMonthlyChartsSection from "./dashboard/KpiMonthlyChartsSection";
 import {
   buildAttendancePieData,
   buildBoardCompositionBars,
   buildBoardGenderPieData,
   buildLawsuitsWhistleblowerSeries,
   buildMeetingsTrendSeries,
+  buildQualityMonthlySeries,
   computeAttendanceRate,
+  getChartableQualityRows,
   hasAttendancePieData,
   hasBoardCompositionData,
   hasBoardGenderPieData,
@@ -162,6 +165,7 @@ export default function QualityChartsDashboard({ statRows, attendance, targets, 
   );
 
   const attendanceRate = useMemo(() => computeAttendanceRate(attendance), [attendance]);
+  const monthlyChartRows = useMemo(() => getChartableQualityRows(statRows), [statRows]);
 
   const showGovernance = hasLawsuitsWhistleblowerData(statRows);
   const showMeetings = hasMeetingsTrendData(statRows);
@@ -195,7 +199,17 @@ export default function QualityChartsDashboard({ statRows, attendance, targets, 
       </Box>
       ) : null}
 
-      <QualityChartSection icon={Users} title="Quality — Board Composition & Attendance" exportMode={exportMode} breakBefore>
+      <KpiMonthlyChartsSection
+        title="Monthly KPI Statistics"
+        rows={monthlyChartRows}
+        buildSeries={buildQualityMonthlySeries}
+        barColor="#2563eb"
+        headerColor={QUALITY_HEADER}
+        exportMode={exportMode}
+        breakBefore
+      />
+
+      <QualityChartSection icon={Users} title="Quality — Board Composition & Attendance" exportMode={exportMode}>
         <Box
           sx={{
             display: "grid",

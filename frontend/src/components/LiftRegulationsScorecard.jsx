@@ -4,12 +4,12 @@ import { Scale } from "lucide-react";
 import { DASHBOARD_THEME } from "./dashboard/dashboardUi";
 import KpiStatusBadge, { kpiStatusCellStyle } from "./dashboard/KpiStatusBadge";
 import {
-  buildFoodSafetyScorecardRows,
-  fsScorecardVarianceStatus,
-} from "../utils/foodSafetyDashboardUtils";
+  buildLiftRegulationsScorecardRows,
+  lrScorecardVarianceStatus,
+} from "../utils/liftRegulationsDashboardUtils";
 
 const T = DASHBOARD_THEME;
-const ORANGE = "#ea580c";
+const BRAND = "#2563eb";
 
 const thStyle = {
   padding: "10px 12px",
@@ -33,8 +33,8 @@ const tdStyle = {
 
 function cellInputStyle({ editable, tone }) {
   const toneStyles = {
-    target: { bg: "#fffbeb", color: "#c2410c", fontWeight: 600 },
-    actual: { bg: "#eff6ff", color: "#1d4ed8", fontWeight: 600 },
+    target: { bg: "#eff6ff", color: "#1d4ed8", fontWeight: 600 },
+    actual: { bg: "#f0fdf4", color: "#15803d", fontWeight: 600 },
     default: { bg: "#fff", color: T.ink, fontWeight: 400 },
     readonly: { bg: "#f9fafb", color: T.inkMid, fontWeight: 500 },
     note: { bg: "#fff", color: T.inkMid, fontWeight: 400 },
@@ -69,9 +69,9 @@ function ScorecardCell({ value, onChange, placeholder, editable = true, tone = "
   );
 }
 
-export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget }) {
+export default function LiftRegulationsScorecard({ statRows, targets, onUpdateTarget }) {
   const rows = useMemo(
-    () => buildFoodSafetyScorecardRows(statRows, targets),
+    () => buildLiftRegulationsScorecardRows(statRows, targets),
     [statRows, targets]
   );
 
@@ -81,7 +81,7 @@ export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget 
         sx={{
           borderRadius: "8px 8px 0 0",
           overflow: "hidden",
-          border: "1px solid #fdba74",
+          border: "1px solid #93c5fd",
           borderBottom: "none",
         }}
       >
@@ -92,13 +92,13 @@ export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget 
             gap: 1,
             px: 2,
             py: 1.25,
-            bgcolor: ORANGE,
+            bgcolor: BRAND,
             color: "#fff",
           }}
         >
           <Scale size={18} strokeWidth={2.5} />
           <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.06em" }}>
-            FOOD SAFETY SCORECARD
+            LIFT REGULATIONS SCORECARD
           </span>
         </Box>
       </Box>
@@ -132,7 +132,7 @@ export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget 
           </thead>
           <tbody>
             {rows.map((row, index) => {
-              const { style: v, status } = fsScorecardVarianceStatus(
+              const { style: v, status } = lrScorecardVarianceStatus(
                 row.target,
                 row.actual,
                 row.lowerBetter

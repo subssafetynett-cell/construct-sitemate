@@ -19,13 +19,16 @@ import {
   DashboardChartTooltip,
   DashboardMiniStat,
 } from "./dashboard/dashboardUi";
+import KpiMonthlyChartsSection from "./dashboard/KpiMonthlyChartsSection";
 import {
   buildCo2EnergyTrendSeries,
+  buildEnvMonthlySeries,
   buildFuelTrendSeries,
   buildGhgScopeStackedSeries,
   buildPaperTrendSeries,
   buildRenewableMixSeries,
   buildWasteChartSeries,
+  getChartableEnvRows,
   hasCo2EnergyTrendData,
   hasEnvironmentalChartData,
   hasFuelTrendData,
@@ -161,6 +164,7 @@ export default function EnvironmentalChartsDashboard({ statRows, waste, targets,
     () => summarizeEnvironmentalScorecard(statRows, targets),
     [statRows, targets]
   );
+  const monthlyChartRows = useMemo(() => getChartableEnvRows(statRows), [statRows]);
 
   const showCo2Energy = hasCo2EnergyTrendData(statRows);
   const showScope = hasGhgScopeData(statRows);
@@ -192,7 +196,17 @@ export default function EnvironmentalChartsDashboard({ statRows, waste, targets,
       </Box>
       ) : null}
 
-      <EnvChartSection icon={Leaf} title="Environmental — CO2, Energy & Fuel Trends" exportMode={exportMode} breakBefore>
+      <KpiMonthlyChartsSection
+        title="Monthly KPI Statistics"
+        rows={monthlyChartRows}
+        buildSeries={buildEnvMonthlySeries}
+        barColor="#2563eb"
+        headerColor={ENV_HEADER}
+        exportMode={exportMode}
+        breakBefore
+      />
+
+      <EnvChartSection icon={Leaf} title="Environmental — CO2, Energy & Fuel Trends" exportMode={exportMode}>
         <Box
           sx={{
             display: "grid",

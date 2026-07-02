@@ -24,7 +24,7 @@ export const APP_PAGES = [
 ];
 
 export const PAGE_PATH_PREFIXES = [
-  { key: "dashboard", paths: ["/dashboard", "/concern-reports", "/audit-reports", "/dashboard/occupational-health-safety-kpis", "/dashboard/environmental-management-kpis", "/dashboard/quality-management-kpis", "/dashboard/food-safety-management", "/monitoring/ohs", "/monitoring/environmental", "/monitoring/quality", "/monitoring/food-safety"] },
+  { key: "dashboard", paths: ["/dashboard", "/concern-reports", "/audit-reports", "/dashboard/occupational-health-safety-kpis", "/dashboard/environmental-management-kpis", "/dashboard/quality-management-kpis", "/dashboard/food-safety-management", "/dashboard/lift-regulations-management-kpis", "/monitoring/ohs", "/monitoring/environmental", "/monitoring/quality", "/monitoring/food-safety", "/monitoring/lift"] },
   { key: "clients", paths: ["/clients"] },
   { key: "users", paths: ["/users"] },
   { key: "user-view-access", paths: ["/user-view-access"] },

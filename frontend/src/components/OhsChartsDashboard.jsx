@@ -19,14 +19,17 @@ import {
   DashboardChartTooltip,
   DashboardMiniStat,
 } from "./dashboard/dashboardUi";
+import KpiMonthlyChartsSection from "./dashboard/KpiMonthlyChartsSection";
 import {
   buildClassificationChartSeries,
   buildEmployeeHeadcountSeries,
   buildInjuriesTrendSeries,
   buildInvestmentPayrollSeries,
   buildInvestmentTrendSeries,
+  buildMonthlySeriesForRow,
   buildPayrollTrendSeries,
   buildTurnoverTrendSeries,
+  getChartableStatRows,
   hasEmployeeHeadcountData,
   hasInjuriesTrendData,
   hasInvestmentPayrollData,
@@ -205,6 +208,7 @@ export default function OhsChartsDashboard({ statRows, classification, targets, 
   );
 
   const summary = useMemo(() => summarizeScorecard(statRows, targets), [statRows, targets]);
+  const monthlyChartRows = useMemo(() => getChartableStatRows(statRows), [statRows]);
 
   const showTurnover = hasTurnoverTrendData(statRows);
   const showInjuries = hasInjuriesTrendData(statRows);
@@ -238,7 +242,17 @@ export default function OhsChartsDashboard({ statRows, classification, targets, 
       </Box>
       ) : null}
 
-      <OhsChartSection icon={Shield} title="Occupational — Turnover & Injury Trends" exportMode={exportMode} breakBefore>
+      <KpiMonthlyChartsSection
+        title="Monthly KPI Statistics"
+        rows={monthlyChartRows}
+        buildSeries={buildMonthlySeriesForRow}
+        barColor="#2563eb"
+        headerColor={OHS_HEADER}
+        exportMode={exportMode}
+        breakBefore
+      />
+
+      <OhsChartSection icon={Shield} title="Occupational — Turnover & Injury Trends" exportMode={exportMode}>
         <Box
           sx={{
             display: "grid",

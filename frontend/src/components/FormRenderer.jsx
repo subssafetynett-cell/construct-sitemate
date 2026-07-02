@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "../context/ThemeContext";
 import SignatureCapture from "./SignatureCapture";
+import ImageEvidenceDescriptionField from "./ImageEvidenceDescriptionField";
 
 export default function FormRenderer({
     form,
@@ -487,10 +488,17 @@ export default function FormRenderer({
                                 alt="uploaded"
                                 sx={{ display: 'block', maxWidth: '100%', maxHeight: isNested ? 150 : 300, borderRadius: 2, border: '1px solid #ddd' }}
                             />
+                            <ImageEvidenceDescriptionField
+                                value={values[f.id + "_description"]}
+                                onChange={(text) => handleChange(f.id + "_description", text)}
+                                readOnly={readOnly}
+                                exportMode={exportMode}
+                            />
                             {!readOnly && (
                                 <Button size="small" color="error" onClick={() => {
                                     handleChange(f.id, null);
                                     handleChange(f.id + "_preview", null);
+                                    handleChange(f.id + "_description", null);
                                 }} sx={{ display: 'block', mt: 1 }}>Remove</Button>
                             )}
                         </Box>

@@ -18,6 +18,8 @@ const CameraIcon = () => (
 
 const PhotoUpload = ({ fieldId, readOnly, values, handleChange, previewImg, styles }) => {
   const preview = values[fieldId + "_preview"] || (typeof values[fieldId] === "string" ? values[fieldId] : null);
+  const description = values[fieldId + "_description"] || "";
+  const descriptionTrimmed = description.trim();
   
   if (readOnly && !preview) return <p style={{fontSize: 14, color: "#cbd5e1", fontStyle: "italic", marginTop: 10}}>No photo provided</p>;
 
@@ -26,10 +28,28 @@ const PhotoUpload = ({ fieldId, readOnly, values, handleChange, previewImg, styl
       {preview ? (
         <>
           <img src={preview} alt="preview" style={styles.photoBoxImg} />
+          {readOnly ? (
+            descriptionTrimmed ? (
+              <p style={{ fontSize: 13, color: "#475569", margin: "10px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+                {descriptionTrimmed}
+              </p>
+            ) : null
+          ) : (
+            <textarea
+              style={{ ...styles.textarea, marginTop: 10, minHeight: 56, fontSize: 13 }}
+              placeholder="Describe this evidence (optional)"
+              value={description}
+              onChange={(e) => handleChange(fieldId + "_description", e.target.value)}
+            />
+          )}
           {!readOnly && (
             <button
               style={styles.removeBtn}
-              onClick={() => { handleChange(fieldId, null); handleChange(fieldId + "_preview", null); }}
+              onClick={() => {
+                handleChange(fieldId, null);
+                handleChange(fieldId + "_preview", null);
+                handleChange(fieldId + "_description", null);
+              }}
             >
               REMOVE
             </button>

@@ -39,6 +39,17 @@ export const MONITORING_SECTIONS = {
     dashboardPath: "/dashboard/food-safety-management",
     basePath: "/monitoring/food-safety",
   },
+  lift: {
+    key: "lift",
+    title: "Lift Regulations Management Monitoring",
+    dashboardTitle: "Lift Regulations Management",
+    dashboardSubtitle:
+      "Track LOLER, PUWER, compliance rates, defects, and year-to-date lift regulation performance.",
+    subtitle: "Select a site to fill monitoring forms and review saved submissions.",
+    category: "Lift Regulations Management Monitoring",
+    dashboardPath: "/dashboard/lift-regulations-management-kpis",
+    basePath: "/monitoring/lift",
+  },
 };
 
 export function getMonitoringSection(sectionKey) {

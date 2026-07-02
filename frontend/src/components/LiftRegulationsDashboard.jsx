@@ -2,43 +2,43 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, Snackbar } from "@mui/material";
 import { useAuth } from "../context/AuthContext";
 import { downloadKpiReportPdf, downloadKpiReportWord } from "../utils/kpiReportExporter";
-import OhsMonthlyStatistics from "./OhsMonthlyStatistics";
-import OhsScorecard from "./OhsScorecard";
-import OhsChartsDashboard from "./OhsChartsDashboard";
-import OhsReportDocument from "./OhsReportDocument";
+import LiftRegulationsMonthlyStatistics from "./LiftRegulationsMonthlyStatistics";
+import LiftRegulationsScorecard from "./LiftRegulationsScorecard";
+import LiftRegulationsChartsDashboard from "./LiftRegulationsChartsDashboard";
+import LiftRegulationsReportDocument from "./LiftRegulationsReportDocument";
 import KpiTrackingLegend from "./dashboard/KpiTrackingLegend";
 import KpiReportDownloadBar from "./dashboard/KpiReportDownloadBar";
 import { getActingClient } from "../utils/actingClient";
 import {
-  createDefaultStatRows,
-  createEmptyClassification,
-  normalizeClassification,
-  isOhsScorecardRow,
-  shouldSeedDefaultKpis,
-} from "../utils/ohsDashboardUtils";
+  createDefaultLrStatRows,
+  createEmptyIncidentSnapshot,
+  isLrStatRow,
+  normalizeIncidentSnapshot,
+  shouldSeedDefaultLrKpis,
+} from "../utils/liftRegulationsDashboardUtils";
 
-const STATS_STORAGE_PREFIX = "site-mate:ohs-monthly-stats:";
-const CLASSIFICATION_STORAGE_PREFIX = "site-mate:ohs-classification:";
-const TARGETS_STORAGE_PREFIX = "site-mate:ohs-scorecard-targets:";
-const META_STORAGE_PREFIX = "site-mate:ohs-dashboard-meta:";
+const STATS_STORAGE_PREFIX = "site-mate:lr-monthly-stats:";
+const INCIDENTS_STORAGE_PREFIX = "site-mate:lr-incidents:";
+const TARGETS_STORAGE_PREFIX = "site-mate:lr-scorecard-targets:";
+const META_STORAGE_PREFIX = "site-mate:lr-dashboard-meta:";
 
 function persistDashboardData({
   statsKey,
-  classificationKey,
+  incidentsKey,
   targetsKey,
   metaKey,
   statRows,
-  classification,
+  incidents,
   targets,
   savedAt,
 }) {
   localStorage.setItem(statsKey, JSON.stringify(statRows));
-  localStorage.setItem(classificationKey, JSON.stringify(classification));
+  localStorage.setItem(incidentsKey, JSON.stringify(incidents));
   localStorage.setItem(targetsKey, JSON.stringify(targets));
   localStorage.setItem(metaKey, JSON.stringify({ lastSavedAt: savedAt }));
 }
 
-export default function OhsDashboard() {
+export default function LiftRegulationsDashboard() {
   const { currentUser } = useAuth();
   const reportRef = useRef(null);
 
@@ -46,12 +46,12 @@ export default function OhsDashboard() {
     currentUser?.actingClientId || currentUser?.clientId || currentUser?.id || "default";
 
   const statsKey = `${STATS_STORAGE_PREFIX}${scope}`;
-  const classificationKey = `${CLASSIFICATION_STORAGE_PREFIX}${scope}`;
+  const incidentsKey = `${INCIDENTS_STORAGE_PREFIX}${scope}`;
   const targetsKey = `${TARGETS_STORAGE_PREFIX}${scope}`;
   const metaKey = `${META_STORAGE_PREFIX}${scope}`;
 
-  const [statRows, setStatRows] = useState(() => createDefaultStatRows());
-  const [classification, setClassification] = useState(() => createEmptyClassification());
+  const [statRows, setStatRows] = useState(() => createDefaultLrStatRows());
+  const [incidents, setIncidents] = useState(() => createEmptyIncidentSnapshot());
   const [targets, setTargets] = useState({});
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [hydrated, setHydrated] = useState(false);
@@ -72,20 +72,19 @@ export default function OhsDashboard() {
       if (rawStats) {
         const parsed = JSON.parse(rawStats);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setStatRows(shouldSeedDefaultKpis(parsed) ? createDefaultStatRows() : parsed);
+          setStatRows(shouldSeedDefaultLrKpis(parsed) ? createDefaultLrStatRows() : parsed);
         }
+      }
+
+      const rawIncidents = localStorage.getItem(incidentsKey);
+      if (rawIncidents) {
+        setIncidents(normalizeIncidentSnapshot(JSON.parse(rawIncidents)));
       }
 
       const rawTargets = localStorage.getItem(targetsKey);
       if (rawTargets) {
         const parsed = JSON.parse(rawTargets);
         if (parsed && typeof parsed === "object") setTargets(parsed);
-      }
-
-      const rawClassification = localStorage.getItem(classificationKey);
-      if (rawClassification) {
-        const parsed = JSON.parse(rawClassification);
-        setClassification(normalizeClassification(parsed));
       }
 
       const rawMeta = localStorage.getItem(metaKey);
@@ -97,7 +96,7 @@ export default function OhsDashboard() {
       /* ignore corrupt storage */
     }
     setHydrated(true);
-  }, [statsKey, classificationKey, targetsKey, metaKey]);
+  }, [statsKey, incidentsKey, targetsKey, metaKey]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -106,27 +105,13 @@ export default function OhsDashboard() {
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(classificationKey, JSON.stringify(classification));
-  }, [classification, classificationKey, hydrated]);
+    localStorage.setItem(incidentsKey, JSON.stringify(incidents));
+  }, [incidents, incidentsKey, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
     localStorage.setItem(targetsKey, JSON.stringify(targets));
   }, [targets, targetsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const ids = new Set(statRows.map((row) => row.id));
-    setTargets((prev) => {
-      const next = {};
-      let changed = false;
-      for (const [id, value] of Object.entries(prev)) {
-        if (ids.has(id)) next[id] = value;
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [statRows, hydrated]);
 
   const updateTarget = useCallback((rowId, field, value) => {
     setTargets((prev) => ({
@@ -135,13 +120,7 @@ export default function OhsDashboard() {
     }));
   }, []);
 
-  const updateIndicator = useCallback((rowId, value) => {
-    setStatRows((prev) =>
-      prev.map((row) => (row.id === rowId ? { ...row, indicator: value } : row))
-    );
-  }, []);
-
-  const hasReportData = useMemo(() => statRows.some(isOhsScorecardRow), [statRows]);
+  const hasReportData = useMemo(() => statRows.some(isLrStatRow), [statRows]);
 
   const handleSave = () => {
     if (!hasReportData) {
@@ -159,22 +138,18 @@ export default function OhsDashboard() {
     try {
       persistDashboardData({
         statsKey,
-        classificationKey,
+        incidentsKey,
         targetsKey,
         metaKey,
         statRows,
-        classification,
+        incidents,
         targets,
         savedAt,
       });
       setLastSavedAt(savedAt);
-      setSnackbar({
-        open: true,
-        message: "Dashboard saved successfully.",
-        severity: "success",
-      });
+      setSnackbar({ open: true, message: "Dashboard saved successfully.", severity: "success" });
     } catch (err) {
-      console.error("OHS save failed:", err);
+      console.error("Lift regulations save failed:", err);
       setSnackbar({
         open: true,
         message: "Could not save dashboard. Please try again.",
@@ -202,11 +177,11 @@ export default function OhsDashboard() {
       const savedAt = new Date().toISOString();
       persistDashboardData({
         statsKey,
-        classificationKey,
+        incidentsKey,
         targetsKey,
         metaKey,
         statRows,
-        classification,
+        incidents,
         targets,
         savedAt,
       });
@@ -215,7 +190,7 @@ export default function OhsDashboard() {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const year = new Date().getFullYear();
-      const fileName = `OHS_Report_${year}`;
+      const fileName = `Lift_Regulations_Report_${year}`;
       if (format === "pdf") {
         await downloadKpiReportPdf(reportRef, fileName);
       } else {
@@ -228,7 +203,7 @@ export default function OhsDashboard() {
         severity: "success",
       });
     } catch (err) {
-      console.error("OHS report download failed:", err);
+      console.error("Lift regulations report download failed:", err);
       setSnackbar({
         open: true,
         message: `${format === "pdf" ? "PDF" : "Word"} download failed. Please try again.`,
@@ -256,19 +231,18 @@ export default function OhsDashboard() {
   return (
     <>
       <KpiTrackingLegend />
-      <OhsMonthlyStatistics
+      <LiftRegulationsMonthlyStatistics
         rows={statRows}
         onRowsChange={setStatRows}
-        classification={classification}
-        onClassificationChange={setClassification}
+        incidents={incidents}
+        onIncidentsChange={setIncidents}
       />
-      <OhsScorecard
+      <LiftRegulationsScorecard
         statRows={statRows}
         targets={targets}
         onUpdateTarget={updateTarget}
-        onUpdateIndicator={updateIndicator}
       />
-      <OhsChartsDashboard statRows={statRows} classification={classification} targets={targets} />
+      <LiftRegulationsChartsDashboard statRows={statRows} incidents={incidents} targets={targets} />
 
       <KpiReportDownloadBar
         saving={saving}
@@ -278,6 +252,9 @@ export default function OhsDashboard() {
         onSave={handleSave}
         onDownloadPdf={handleDownloadPdf}
         onDownloadWord={handleDownloadWord}
+        saveColor="#2563eb"
+        saveHoverColor="#1d4ed8"
+        accentColor="#2563eb"
         helpText="Save updates your dashboard. Download exports statistics, scorecard, and performance charts as PDF or Word."
       />
 
@@ -292,17 +269,17 @@ export default function OhsDashboard() {
         }}
       >
         <div ref={reportRef} className="pdf-export-root" style={{ width: 1100, background: "#fff" }}>
-          <OhsReportDocument
+          <LiftRegulationsReportDocument
             statRows={statRows}
-            classification={classification}
+            incidents={incidents}
             targets={targets}
             organisationName={organisationName}
             savedAt={lastSavedAt}
           />
-          <OhsChartsDashboard
+          <LiftRegulationsChartsDashboard
             exportMode
             statRows={statRows}
-            classification={classification}
+            incidents={incidents}
             targets={targets}
           />
         </div>

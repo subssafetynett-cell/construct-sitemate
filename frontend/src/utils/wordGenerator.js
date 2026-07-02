@@ -260,6 +260,20 @@ export const downloadWordFromForm = async (form, values, fileName = "document", 
                                 spacing: { after: isNested ? 100 : 200 }
                             })
                         );
+                        const evidenceDescription = String(values[`${field.id}_description`] || "").trim();
+                        if (evidenceDescription) {
+                            childrenElements.push(
+                                new Paragraph({
+                                    children: [
+                                        new TextRun({
+                                            text: evidenceDescription,
+                                            italics: true,
+                                        }),
+                                    ],
+                                    spacing: { after: isNested ? 100 : 200 },
+                                })
+                            );
+                        }
                     } else {
                         childrenElements.push(
                             new Paragraph({

@@ -525,11 +525,27 @@ const WeeklySupervisorInspectionForm = ({ values: externalValues, onChange, read
           </div>
         )}
         {(values[`${prefix}_file_preview`] || (typeof values[`${prefix}_file`] === 'string' && values[`${prefix}_file`])) && (
-           <img 
-            src={values[`${prefix}_file_preview`] || values[`${prefix}_file`]} 
-            alt="Upload preview" 
-            style={{ maxWidth: "100%", maxHeight: 200, marginTop: 12, borderRadius: 8, objectFit: "contain" }} 
-           />
+          <>
+            <img
+              src={values[`${prefix}_file_preview`] || values[`${prefix}_file`]}
+              alt="Upload preview"
+              style={{ maxWidth: "100%", maxHeight: 200, marginTop: 12, borderRadius: 8, objectFit: "contain" }}
+            />
+            {readOnly ? (
+              (values[`${prefix}_file_description`] || "").trim() ? (
+                <p style={{ fontSize: 13, color: "#475569", margin: "10px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+                  {(values[`${prefix}_file_description`] || "").trim()}
+                </p>
+              ) : null
+            ) : (
+              <textarea
+                style={{ ...styles.textarea, marginTop: 10, minHeight: 56, fontSize: 13 }}
+                placeholder="Describe this evidence (optional)"
+                value={values[`${prefix}_file_description`] || ""}
+                onChange={(e) => handleChange(`${prefix}_file_description`, e.target.value)}
+              />
+            )}
+          </>
         )}
       </div>
 

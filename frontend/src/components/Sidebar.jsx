@@ -17,11 +17,14 @@ import {
   Building2,
   ChevronDown,
   LayoutDashboard,
-  TrendingUp,
   ListChecks,
   Sun,
   Moon,
   PenLine,
+  BarChart3,
+  MessageSquareWarning,
+  TrendingUp,
+  ClipboardList,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
@@ -43,7 +46,7 @@ const COMPANY_ADMINS = ["superadmin", "company_admin"];
 const MANAGER_PLUS = ["superadmin", "company_admin", "site_manager"];
 const SUPERVISOR_PLUS = ["superadmin", "company_admin", "site_manager", "supervisor"];
 
-const KPI_MENU_ITEMS = [
+const PERFORMANCE_MONITORING_ITEMS = [
   {
     id: "ohs-kpis",
     pageKey: "dashboard",
@@ -53,51 +56,98 @@ const KPI_MENU_ITEMS = [
   {
     id: "environmental-kpis",
     pageKey: "dashboard",
-    label: "Environmental Management KPI",
+    label: "Environmental Management KPIs",
     to: MONITORING_SECTIONS.environmental.dashboardPath,
   },
   {
     id: "quality-kpis",
     pageKey: "dashboard",
-    label: "Quality Management KPI",
+    label: "Quality Management KPIs",
     to: MONITORING_SECTIONS.quality.dashboardPath,
   },
   {
-    id: "food-safety",
+    id: "lift-kpis",
     pageKey: "dashboard",
-    label: "Food Safety Management KPI",
-    to: MONITORING_SECTIONS["food-safety"].dashboardPath,
+    label: "Lift Regulations Management KPIs",
+    to: MONITORING_SECTIONS.lift.dashboardPath,
   },
 ];
+
+const PERFORMANCE_MONITORING_NAV_ITEMS = [
+  {
+    id: "pm-ohs",
+    pageKey: "dashboard",
+    label: "Occupational Health and Safety Management",
+    to: MONITORING_SECTIONS.ohs.basePath,
+  },
+  {
+    id: "pm-environmental",
+    pageKey: "dashboard",
+    label: "Environmental Management",
+    to: MONITORING_SECTIONS.environmental.basePath,
+  },
+  {
+    id: "pm-quality",
+    pageKey: "dashboard",
+    label: "Quality Management",
+    to: MONITORING_SECTIONS.quality.basePath,
+  },
+];
+
+const SHEQ_FORMS_ITEMS = [
+  {
+    id: "sheq-service",
+    pageKey: "sheq",
+    label: "SHEQ Service",
+    to: "/sheq-inspection",
+  },
+  {
+    id: "sheq-installation",
+    pageKey: "shq-installation",
+    label: "SHEQ Installation",
+    to: "/shq-installation",
+  },
+];
+
+const REPORTING_CONCERNS_ITEMS = [
+  {
+    id: "report-ohs",
+    pageKey: "report-health-safety",
+    label: "Occupational Health and Safety",
+    to: "/report-health-safety",
+  },
+  {
+    id: "report-quality",
+    pageKey: "report-quality",
+    label: "Quality Management",
+    to: "/report-quality",
+  },
+  {
+    id: "report-positive",
+    pageKey: "report-positive",
+    label: "Good Practice",
+    to: "/report-positive",
+  },
+];
+
+const KPI_MENU_ITEMS = PERFORMANCE_MONITORING_ITEMS;
 
 const MENU_GROUPS = [
   {
     id: "dashboard",
+    pageKey: "dashboard",
     heading: "Dashboard",
     icon: <LayoutDashboard size={20} />,
+    to: "/dashboard",
+    exact: true,
     roles: ALL_ROLES,
-    items: [
-      {
-        id: "overall-dashboard",
-        pageKey: "dashboard",
-        label: "Dashboard",
-        to: "/dashboard",
-        exact: true,
-      },
-      {
-        id: "kpi",
-        label: "KPI",
-        items: KPI_MENU_ITEMS,
-      },
-    ],
   },
   {
-    id: "clients",
-    pageKey: "clients",
-    heading: "Clients",
-    icon: <Users size={20} />,
-    to: "/clients",
-    roles: ["superadmin"],
+    id: "kpi",
+    heading: "KPI",
+    icon: <BarChart3 size={20} />,
+    roles: ALL_ROLES,
+    items: KPI_MENU_ITEMS,
   },
   {
     id: "users",
@@ -108,9 +158,17 @@ const MENU_GROUPS = [
     roles: COMPANY_ADMINS,
   },
   {
+    id: "clients",
+    pageKey: "clients",
+    heading: "Clients",
+    icon: <Users size={20} />,
+    to: "/clients",
+    roles: ["superadmin"],
+  },
+  {
     id: "user-view-access",
     pageKey: "user-view-access",
-    heading: "View access",
+    heading: "View Access",
     icon: <UserCog size={20} />,
     to: "/user-view-access",
     roles: COMPANY_ADMINS,
@@ -134,10 +192,17 @@ const MENU_GROUPS = [
   {
     id: "saved-signatures",
     pageKey: "saved-signatures",
-    heading: "Saved signatures",
+    heading: "Saved Signatures",
     icon: <PenLine size={20} />,
     to: "/saved-signatures",
     roles: ALL_ROLES,
+  },
+  {
+    id: "reporting-concerns",
+    heading: "Reporting Concerns",
+    icon: <MessageSquareWarning size={20} />,
+    roles: ALL_ROLES,
+    items: REPORTING_CONCERNS_ITEMS,
   },
   {
     id: "sites",
@@ -145,46 +210,40 @@ const MENU_GROUPS = [
     icon: <Building2 size={20} />,
     roles: ALL_ROLES,
     items: [
-      { id: "create-sites", pageKey: "create-sites", label: "Create Sites", to: "/create-sites", roles: COMPANY_ADMINS },
-      { id: "sitepack-management", pageKey: "sitepack-management", label: "Sitepack Management", to: "/sitepack-management", roles: ALL_ROLES },
+      {
+        id: "create-sites",
+        pageKey: "create-sites",
+        label: "Create Sites",
+        to: "/create-sites",
+        roles: COMPANY_ADMINS,
+      },
+      {
+        id: "sitepack-management",
+        pageKey: "sitepack-management",
+        label: "Site Pack Management",
+        to: "/sitepack-management",
+        roles: ALL_ROLES,
+      },
     ],
   },
   {
-    id: "ohs-monitoring",
-    pageKey: "dashboard",
-    heading: "Occupational Health and Safety Monitoring",
+    id: "performance-monitoring",
+    heading: "Performance Monitoring",
     icon: <TrendingUp size={20} />,
-    to: MONITORING_SECTIONS.ohs.basePath,
     roles: ALL_ROLES,
+    items: PERFORMANCE_MONITORING_NAV_ITEMS,
   },
   {
-    id: "environmental-monitoring",
-    pageKey: "dashboard",
-    heading: "Environmental Management Monitoring",
-    icon: <TrendingUp size={20} />,
-    to: MONITORING_SECTIONS.environmental.basePath,
+    id: "sheq-forms",
+    heading: "SHEQ Forms",
+    icon: <ClipboardList size={20} />,
     roles: ALL_ROLES,
-  },
-  {
-    id: "quality-monitoring",
-    pageKey: "dashboard",
-    heading: "Quality Management Monitoring",
-    icon: <TrendingUp size={20} />,
-    to: MONITORING_SECTIONS.quality.basePath,
-    roles: ALL_ROLES,
-  },
-  {
-    id: "food-safety-monitoring",
-    pageKey: "dashboard",
-    heading: "Food Safety Management Monitoring",
-    icon: <TrendingUp size={20} />,
-    to: MONITORING_SECTIONS["food-safety"].basePath,
-    roles: ALL_ROLES,
+    items: SHEQ_FORMS_ITEMS,
   },
   {
     id: "action-tracker",
     pageKey: "action-tracker",
-    heading: "Action tracker",
+    heading: "Action Tracker",
     icon: <ListChecks size={20} />,
     to: "/action-tracker",
     roles: ALL_ROLES,
@@ -320,14 +379,10 @@ export default function Sidebar({ sx = {} }) {
         }
         if (nextOpenGroup) break;
       }
-      if (group.to && isActive(group.to)) {
+      if (group.to && isActive(group.to, group.exact)) {
         nextOpenGroup = group.id;
         break;
       }
-    }
-
-    if (!nextOpenGroup && (path === "/dashboard" || path === "/concern-reports")) {
-      nextOpenGroup = "dashboard";
     }
 
     setOpenGroup(nextOpenGroup);
@@ -403,7 +458,7 @@ export default function Sidebar({ sx = {} }) {
           const expanded = openGroup === group.id;
 
           if (!group.items) {
-            const active = isActive(group.to);
+            const active = isActive(group.to, group.exact);
             return (
               <ListItemButton
                 key={group.id}

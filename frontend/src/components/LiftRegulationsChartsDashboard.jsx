@@ -20,34 +20,34 @@ import {
 } from "./dashboard/dashboardUi";
 import KpiMonthlyChartsSection from "./dashboard/KpiMonthlyChartsSection";
 import {
-  buildFsMonthlySeries,
   buildIncidentChartSeries,
-  getChartableFsRows,
+  buildLrMonthlySeries,
+  getChartableLrRows,
   hasIncidentData,
-  hasFoodSafetyChartData,
-  summarizeFoodSafetyScorecard,
-} from "../utils/foodSafetyDashboardUtils";
+  hasLiftRegulationsChartData,
+  summarizeLiftRegulationsScorecard,
+} from "../utils/liftRegulationsDashboardUtils";
 
 const T = DASHBOARD_THEME;
-const ORANGE = "#ea580c";
-const HEADER = "#c2410c";
+const BRAND = "#2563eb";
+const HEADER = "#1e40af";
 
-export default function FoodSafetyChartsDashboard({
+export default function LiftRegulationsChartsDashboard({
   statRows,
   incidents,
   targets,
   exportMode = false,
 }) {
-  const chartableRows = useMemo(() => getChartableFsRows(statRows), [statRows]);
+  const chartableRows = useMemo(() => getChartableLrRows(statRows), [statRows]);
   const incidentData = useMemo(() => buildIncidentChartSeries(incidents), [incidents]);
 
   const summary = useMemo(
-    () => summarizeFoodSafetyScorecard(statRows, targets),
+    () => summarizeLiftRegulationsScorecard(statRows, targets),
     [statRows, targets]
   );
 
   const hasIncidentChart = hasIncidentData(incidents);
-  const hasChartData = hasFoodSafetyChartData(statRows, incidents);
+  const hasChartData = hasLiftRegulationsChartData(statRows, incidents);
 
   if (!hasChartData) {
     if (exportMode) return null;
@@ -56,7 +56,7 @@ export default function FoodSafetyChartsDashboard({
         <DashboardSectionHeader
           icon={BarChart3}
           title="Performance dashboard"
-          hint="Enter food safety statistics and incident data to generate charts."
+          hint="Enter lift regulations statistics and incident data to generate charts."
         />
       </DashboardCard>
     );
@@ -90,8 +90,8 @@ export default function FoodSafetyChartsDashboard({
       <KpiMonthlyChartsSection
         title="Monthly KPI Statistics"
         rows={chartableRows}
-        buildSeries={buildFsMonthlySeries}
-        barColor="#2563eb"
+        buildSeries={buildLrMonthlySeries}
+        barColor={BRAND}
         headerColor={HEADER}
         exportMode={exportMode}
         breakBefore
@@ -127,8 +127,8 @@ export default function FoodSafetyChartsDashboard({
                   axisLine={false}
                   tickLine={false}
                 />
-                <Tooltip content={<DashboardChartTooltip />} cursor={{ fill: "rgba(234, 88, 12, 0.06)" }} />
-                <Bar dataKey="value" name="Count" fill={ORANGE} radius={[0, 4, 4, 0]} barSize={20} />
+                <Tooltip content={<DashboardChartTooltip />} cursor={{ fill: "rgba(37, 99, 235, 0.06)" }} />
+                <Bar dataKey="value" name="Count" fill={BRAND} radius={[0, 4, 4, 0]} barSize={20} />
               </BarChart>
             </ResponsiveContainer>
           </DashboardChartBox>
@@ -143,7 +143,7 @@ export default function FoodSafetyChartsDashboard({
     <div data-pdf-block data-pdf-break-before style={{ marginBottom: 0 }}>
       <Box sx={{ p: 2, border: "1px solid #d1d5db", borderRadius: 2, bgcolor: "#fff" }}>
         <p style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700, color: T.ink }}>
-          Food Safety — Performance Dashboard
+          Lift Regulations — Performance Dashboard
         </p>
         {charts}
       </Box>

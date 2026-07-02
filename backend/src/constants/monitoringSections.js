@@ -32,6 +32,13 @@ const MONITORING_SECTIONS = {
     concernCategories: [],
     sheqCategories: [],
   },
+  lift: {
+    key: "lift",
+    title: "Lift Regulations Management Monitoring",
+    category: "Lift Regulations Management Monitoring",
+    concernCategories: [],
+    sheqCategories: ["LOLER Inspection", "PUWER Inspection"],
+  },
 };
 
 function getMonitoringSection(key) {

@@ -67,7 +67,7 @@ function ScorecardCell({ value, onChange, placeholder, editable = true, tone = "
   );
 }
 
-export default function OhsScorecard({ statRows, targets, onUpdateTarget }) {
+export default function OhsScorecard({ statRows, targets, onUpdateTarget, onUpdateIndicator }) {
   const rows = useMemo(() => buildScorecardRows(statRows, targets), [statRows, targets]);
 
   return (
@@ -145,8 +145,10 @@ export default function OhsScorecard({ statRows, targets, onUpdateTarget }) {
                     <td style={tdStyle}>
                       <ScorecardCell
                         value={row.indicator}
-                        editable={false}
-                        tone="readonly"
+                        onChange={(val) => onUpdateIndicator?.(row.id, val)}
+                        placeholder="Indicator"
+                        editable
+                        tone="default"
                       />
                     </td>
                     <td style={tdStyle}>

@@ -7,6 +7,7 @@ import OhsDashboard from "../components/OhsDashboard";
 import EnvironmentalDashboard from "../components/EnvironmentalDashboard";
 import QualityDashboard from "../components/QualityDashboard";
 import FoodSafetyDashboard from "../components/FoodSafetyDashboard";
+import LiftRegulationsDashboard from "../components/LiftRegulationsDashboard";
 import { DASHBOARD_THEME } from "../components/dashboard/dashboardUi";
 import { getMonitoringSection } from "../constants/monitoringSections";
 
@@ -61,6 +62,8 @@ export default function MonitoringSectionDashboardPage({ section: sectionKey }) 
             <QualityDashboard />
           ) : sectionKey === "food-safety" ? (
             <FoodSafetyDashboard />
+          ) : sectionKey === "lift" ? (
+            <LiftRegulationsDashboard />
           ) : (
             <MonitoringDashboardOverview sectionKey={sectionKey} />
           )}

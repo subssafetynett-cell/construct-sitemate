@@ -49,7 +49,6 @@ import {
 } from "lucide-react";
 import Layout from "../components/Layout";
 import { useTheme } from "../context/ThemeContext";
-import { useAuth } from "../context/AuthContext";
 import api, {
   createSiteSubfolder,
   deleteSiteSubfolder,
@@ -74,7 +73,6 @@ import {
   monitoringFolderPath,
   monitoringSitePath,
 } from "../utils/monitoringContext";
-import { formatUserDisplayName } from "../utils/plainName";
 import { isGeneralFormsPageSubmission } from "../utils/generalFormSubmissions";
 import { fetchWithCache } from "../utils/fetchCache";
 
@@ -87,20 +85,8 @@ function getSiteId(site) {
   return site?._id || site?.id;
 }
 
-function formatSiteCreatedBy(site) {
-  const managers = site?.managers?.length
-    ? site.managers
-    : (site?.siteManagers || []).map((row) => row.user).filter(Boolean);
-  if (managers.length) {
-    return managers.map((user) => formatUserDisplayName(user)).join(", ");
-  }
-  if (site?.manager) return formatUserDisplayName(site.manager);
-  return "—";
-}
-
 export default function MonitoringSectionPage({ section: sectionKey }) {
   const { isDarkMode } = useTheme();
-  const { role } = useAuth();
   const navigate = useNavigate();
   const { siteId: routeSiteId, folderId: routeFolderId } = useParams();
 
@@ -114,7 +100,6 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   const [loadingSites, setLoadingSites] = useState(true);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
-  const [siteSearch, setSiteSearch] = useState("");
   const [templateSearch, setTemplateSearch] = useState("");
   const [templatePickerTab, setTemplatePickerTab] = useState(TEMPLATE_TAB_LIBRARY);
   const [savedSubmissions, setSavedSubmissions] = useState([]);
@@ -221,8 +206,8 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   );
 
   useEffect(() => {
-    loadSites();
-  }, [loadSites]);
+    if (routeSiteId) loadSites();
+  }, [loadSites, routeSiteId]);
 
   useEffect(() => {
     if (!routeSiteId) {
@@ -258,17 +243,6 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
     if (match) setSelectedFolder(match);
     else setSelectedFolder({ id: routeFolderId, name: "Folder" });
   }, [routeFolderId, folders, loadingFolders]);
-
-  const filteredSites = useMemo(() => {
-    const q = siteSearch.trim().toLowerCase();
-    if (!q) return sites;
-    return sites.filter((site) => {
-      const name = (site.name || "").toLowerCase();
-      const address = (site.address || "").toLowerCase();
-      const createdBy = formatSiteCreatedBy(site).toLowerCase();
-      return name.includes(q) || address.includes(q) || createdBy.includes(q);
-    });
-  }, [sites, siteSearch]);
 
   const filteredTemplates = useMemo(
     () => filterMonitoringTemplates(templateSearch),
@@ -339,10 +313,6 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
     );
   }
 
-  const handleOpenSite = (site) => {
-    navigate(monitoringSitePath(sectionKey, getSiteId(site)));
-  };
-
   const handleOpenFolder = (folder) => {
     navigate(monitoringFolderPath(sectionKey, routeSiteId, folder.id));
   };
@@ -382,6 +352,10 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   const openTemplateDialog = () => {
     setTemplatePickerTab(TEMPLATE_TAB_LIBRARY);
     setTemplateSearch("");
+    if (!routeSiteId) {
+      setTemplateDialogOpen(true);
+      return;
+    }
     if (insideFolder) {
       setTemplateFolderId(routeFolderId);
       setTemplateDialogOpen(true);
@@ -416,11 +390,11 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   const activeTemplateFolderId = routeFolderId || templateFolderId;
 
   const handleUseTemplate = (template) => {
-    if (!routeSiteId || !activeTemplateFolderId) return;
+    if (routeSiteId && !activeTemplateFolderId) return;
     const url = buildMonitoringFormUrl(template, {
       sectionKey,
-      siteId: routeSiteId,
-      folderId: activeTemplateFolderId,
+      siteId: routeSiteId || undefined,
+      folderId: activeTemplateFolderId || undefined,
       preview: false,
     });
     closeTemplateDialog();
@@ -428,11 +402,11 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handlePreviewTemplate = (template) => {
-    if (!routeSiteId || !activeTemplateFolderId) return;
+    if (routeSiteId && !activeTemplateFolderId) return;
     const url = buildMonitoringFormUrl(template, {
       sectionKey,
-      siteId: routeSiteId,
-      folderId: activeTemplateFolderId,
+      siteId: routeSiteId || undefined,
+      folderId: activeTemplateFolderId || undefined,
       preview: true,
     });
     setPreviewUrl(url);
@@ -440,11 +414,11 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handleUseSavedTemplate = (submission) => {
-    if (!routeSiteId || !activeTemplateFolderId) return;
+    if (routeSiteId && !activeTemplateFolderId) return;
     const url = buildMonitoringSavedTemplateUrl(submission, {
       sectionKey,
-      siteId: routeSiteId,
-      folderId: activeTemplateFolderId,
+      siteId: routeSiteId || undefined,
+      folderId: activeTemplateFolderId || undefined,
       preview: false,
     });
     if (!url) {
@@ -460,11 +434,11 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handlePreviewSavedTemplate = (submission) => {
-    if (!routeSiteId || !activeTemplateFolderId) return;
+    if (routeSiteId && !activeTemplateFolderId) return;
     const url = buildMonitoringSavedTemplateUrl(submission, {
       sectionKey,
-      siteId: routeSiteId,
-      folderId: activeTemplateFolderId,
+      siteId: routeSiteId || undefined,
+      folderId: activeTemplateFolderId || undefined,
       preview: true,
     });
     if (!url) return;
@@ -473,13 +447,13 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handleUseBuilderForm = (form) => {
-    if (!routeSiteId || !activeTemplateFolderId) return;
+    if (routeSiteId && !activeTemplateFolderId) return;
     const formId = form._id || form.id;
     if (!formId) return;
     const url = buildMonitoringBuilderFormUrl(formId, {
       sectionKey,
-      siteId: routeSiteId,
-      folderId: activeTemplateFolderId,
+      siteId: routeSiteId || undefined,
+      folderId: activeTemplateFolderId || undefined,
       preview: false,
     });
     closeTemplateDialog();
@@ -487,13 +461,13 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handlePreviewBuilderForm = (form) => {
-    if (!routeSiteId || !activeTemplateFolderId) return;
+    if (routeSiteId && !activeTemplateFolderId) return;
     const formId = form._id || form.id;
     if (!formId) return;
     const url = buildMonitoringBuilderFormUrl(formId, {
       sectionKey,
-      siteId: routeSiteId,
-      folderId: activeTemplateFolderId,
+      siteId: routeSiteId || undefined,
+      folderId: activeTemplateFolderId || undefined,
       preview: true,
     });
     setPreviewUrl(url);
@@ -655,7 +629,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   const insideFolder = Boolean(routeSiteId && routeFolderId);
   const insideSite = Boolean(routeSiteId && !routeFolderId);
 
-  const actionButtons = insideFolder || insideSite ? (
+  const actionButtons = insideFolder || insideSite || !routeSiteId ? (
     <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", justifyContent: "flex-end" }}>
       {insideSite ? (
         <Button
@@ -674,18 +648,19 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
       ) : null}
       <Button
         variant="contained"
-        startIcon={<Plus size={18} />}
+        startIcon={<FileText size={18} />}
         onClick={openTemplateDialog}
         sx={{
           bgcolor: "#E89F17",
           textTransform: "none",
           fontWeight: 600,
-          borderRadius: "8px",
+          borderRadius: "10px",
+          px: 2.5,
           boxShadow: "none",
           "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
         }}
       >
-        Select template / form
+        Select Template
       </Button>
     </Box>
   ) : null;
@@ -740,7 +715,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
                   ? `${section.title} — select a template to fill, or review saved forms in this folder.`
                   : routeSiteId
                     ? `${section.title} — open a folder or create one to organise forms for this site.`
-                    : section.subtitle}
+                    : "Choose a template to start filling and saving monitoring forms."}
               </Typography>
             </Box>
           </Box>
@@ -748,115 +723,67 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
         </Box>
 
         {!routeSiteId ? (
-          <>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Search sites..."
-              value={siteSearch}
-              onChange={(e) => setSiteSearch(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search size={18} color={subColor} />
-                  </InputAdornment>
-                ),
-                sx: { borderRadius: 2, bgcolor: surfaceBg },
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: 3,
+              border: `1px solid ${borderColor}`,
+              bgcolor: surfaceBg,
+              overflow: "hidden",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                py: { xs: 8, md: 10 },
+                px: 3,
               }}
-              sx={{ mb: 3, maxWidth: 420 }}
-            />
-
-            {loadingSites ? (
-              <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-                <CircularProgress sx={{ color: "#E89F17" }} />
-              </Box>
-            ) : (
-              <Paper
-                elevation={0}
+            >
+              <Box
                 sx={{
+                  p: 2,
                   borderRadius: 3,
-                  border: `1px solid ${borderColor}`,
-                  bgcolor: surfaceBg,
-                  overflow: "hidden",
+                  bgcolor: "rgba(232, 159, 23, 0.12)",
+                  color: "#E89F17",
+                  display: "flex",
+                  mb: 2.5,
                 }}
               >
-                {filteredSites.length === 0 ? (
-                  <Box sx={{ p: 6, textAlign: "center" }}>
-                    <Typography sx={{ color: subColor }}>
-                      {siteSearch.trim() || role === "company_admin" || role === "superadmin"
-                        ? "No sites found."
-                        : "No sites assigned to you yet. Ask your company admin to create a site."}
-                    </Typography>
-                  </Box>
-                ) : (
-                  <TableContainer>
-                    <Table>
-                      <TableHead>
-                        <TableRow
-                          sx={{
-                            bgcolor: isDarkMode ? "rgba(255,255,255,0.04)" : "#F9FAFB",
-                            "& th": {
-                              fontWeight: 600,
-                              color: subColor,
-                              fontSize: "0.8rem",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.04em",
-                              borderBottom: `1px solid ${borderColor}`,
-                            },
-                          }}
-                        >
-                          <TableCell width={72}>SL No</TableCell>
-                          <TableCell>Site</TableCell>
-                          <TableCell>Address</TableCell>
-                          <TableCell width={200}>Created by</TableCell>
-                          <TableCell width={140} align="right">
-                            Action
-                          </TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {filteredSites.map((site, index) => (
-                          <TableRow
-                            key={getSiteId(site)}
-                            hover
-                            sx={{ "& td": { borderBottom: `1px solid ${borderColor}` } }}
-                          >
-                            <TableCell sx={{ color: headingColor, fontWeight: 500 }}>
-                              {index + 1}
-                            </TableCell>
-                            <TableCell sx={{ color: headingColor, fontWeight: 600 }}>
-                              {site.name}
-                            </TableCell>
-                            <TableCell sx={{ color: subColor }}>{site.address || "—"}</TableCell>
-                            <TableCell sx={{ color: subColor }}>
-                              {formatSiteCreatedBy(site)}
-                            </TableCell>
-                            <TableCell align="right">
-                              <Button
-                                variant="contained"
-                                size="small"
-                                endIcon={<ArrowRight size={16} />}
-                                onClick={() => handleOpenSite(site)}
-                                sx={{
-                                  bgcolor: "#E89F17",
-                                  textTransform: "none",
-                                  fontWeight: 600,
-                                  boxShadow: "none",
-                                  "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
-                                }}
-                              >
-                                Open site
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                )}
-              </Paper>
-            )}
-          </>
+                <FileText size={32} />
+              </Box>
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 700, color: headingColor, mb: 1, maxWidth: 480 }}
+              >
+                Start with a template
+              </Typography>
+              <Typography sx={{ color: subColor, fontSize: "0.95rem", mb: 4, maxWidth: 520 }}>
+                Browse the template library, your saved templates, or form builder forms to begin
+                monitoring for {section.dashboardTitle || section.title}.
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<FileText size={18} />}
+                onClick={openTemplateDialog}
+                sx={{
+                  bgcolor: "#E89F17",
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: "10px",
+                  px: 3,
+                  py: 1.25,
+                  boxShadow: "none",
+                  "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
+                }}
+              >
+                Select Template
+              </Button>
+            </Box>
+          </Paper>
         ) : insideSite ? (
           loadingFolders ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -993,7 +920,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
                   No saved forms yet
                 </Typography>
                 <Typography sx={{ color: subColor, fontSize: "0.9rem", mb: 3 }}>
-                  Select a template or form to fill in fields and save for this folder.
+                  Select a template to fill in fields and save for this folder.
                 </Typography>
                 <Button
                   variant="contained"
@@ -1006,7 +933,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
                     "&:hover": { bgcolor: "#cc8b14" },
                   }}
                 >
-                  Select template / form
+                  Select Template
                 </Button>
               </Box>
             ) : (
@@ -1154,11 +1081,53 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
         onClose={closeTemplateDialog}
         fullWidth
         maxWidth="md"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+            border: `1px solid ${borderColor}`,
+            overflow: "hidden",
+            boxShadow: isDarkMode
+              ? "0 24px 48px rgba(0,0,0,0.45)"
+              : "0 24px 48px rgba(15,23,42,0.12)",
+          },
+        }}
       >
-        <DialogTitle sx={{ fontWeight: 700, color: headingColor, pb: 1 }}>
-          Select template / form
+        <DialogTitle
+          sx={{
+            fontWeight: 700,
+            color: headingColor,
+            pb: 1.5,
+            pt: 2.5,
+            px: 3,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1.5,
+          }}
+        >
+          <Box
+            sx={{
+              p: 1,
+              borderRadius: 2,
+              bgcolor: "rgba(232, 159, 23, 0.12)",
+              color: "#E89F17",
+              display: "flex",
+              flexShrink: 0,
+              mt: 0.25,
+            }}
+          >
+            <FileText size={20} />
+          </Box>
+          <Box>
+            <Typography sx={{ fontWeight: 700, color: headingColor, fontSize: "1.1rem" }}>
+              Select Template
+            </Typography>
+            <Typography variant="body2" sx={{ color: subColor, mt: 0.5 }}>
+              Choose from templates, saved templates, or form builder forms.
+            </Typography>
+          </Box>
         </DialogTitle>
-        <Box sx={{ px: 3, borderBottom: `1px solid ${borderColor}` }}>
+        <Box sx={{ px: 3, borderBottom: `1px solid ${borderColor}`, bgcolor: isDarkMode ? "#111827" : "#F9FAFB" }}>
           <Tabs
             value={templatePickerTab}
             onChange={(_, value) => setTemplatePickerTab(value)}
@@ -1178,7 +1147,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
               value={TEMPLATE_TAB_LIBRARY}
               label={
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  Template library
+                  Templates
                   <Chip size="small" label={filteredTemplates.length} sx={{ height: 20, fontSize: "0.7rem" }} />
                 </Box>
               }
@@ -1187,7 +1156,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
               value={TEMPLATE_TAB_SAVED}
               label={
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  Saved templates
+                  Saved Templates
                   <Chip size="small" label={filteredSavedSubmissions.length} sx={{ height: 20, fontSize: "0.7rem" }} />
                 </Box>
               }
@@ -1196,14 +1165,22 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
               value={TEMPLATE_TAB_BUILDER}
               label={
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  Form builder
+                  Formbuilder Template
                   <Chip size="small" label={filteredBuilderForms.length} sx={{ height: 20, fontSize: "0.7rem" }} />
                 </Box>
               }
             />
           </Tabs>
         </Box>
-        <DialogContent dividers sx={{ maxHeight: "70vh" }}>
+        <DialogContent
+          dividers
+          sx={{
+            maxHeight: "70vh",
+            bgcolor: isDarkMode ? "#111827" : "#FFFFFF",
+            px: 3,
+            py: 2.5,
+          }}
+        >
           <TextField
             fullWidth
             size="small"
@@ -1222,7 +1199,10 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
                   <Search size={18} color={subColor} />
                 </InputAdornment>
               ),
-              sx: { borderRadius: 2 },
+              sx: {
+                borderRadius: 2,
+                bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+              },
             }}
             sx={{ mb: 2.5 }}
           />
@@ -1488,8 +1468,18 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={closeTemplateDialog} sx={{ textTransform: "none" }}>
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2,
+            borderTop: `1px solid ${borderColor}`,
+            bgcolor: isDarkMode ? "#1B212C" : "#F9FAFB",
+          }}
+        >
+          <Button
+            onClick={closeTemplateDialog}
+            sx={{ textTransform: "none", fontWeight: 600, color: subColor }}
+          >
             Cancel
           </Button>
         </DialogActions>

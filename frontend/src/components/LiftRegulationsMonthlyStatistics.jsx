@@ -1,24 +1,24 @@
 import React, { useCallback } from "react";
 import { Box, Button, IconButton } from "@mui/material";
-import { AlertTriangle, Plus, Trash2, UtensilsCrossed } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, Plus, Trash2 } from "lucide-react";
 import { DASHBOARD_THEME } from "./dashboard/dashboardUi";
 import {
-  FS_INCIDENT_CATEGORIES,
-  FS_MONTHS,
-  computeFsYtd,
-  emptyFsMonths,
-} from "../utils/foodSafetyDashboardUtils";
+  LR_INCIDENT_CATEGORIES,
+  LR_MONTHS,
+  computeLrYtd,
+  emptyLrMonths,
+} from "../utils/liftRegulationsDashboardUtils";
 
 const T = DASHBOARD_THEME;
-const ORANGE = "#ea580c";
-const ORANGE_LIGHT = "#ffedd5";
-const ORANGE_TEXT = "#c2410c";
+const BRAND = "#2563eb";
+const BRAND_LIGHT = "#dbeafe";
+const BRAND_TEXT = "#1d4ed8";
 
 function newStatRow() {
   return {
     id: `stat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     indicator: "",
-    months: emptyFsMonths(),
+    months: emptyLrMonths(),
     ytdMethod: "sum",
   };
 }
@@ -54,8 +54,8 @@ function MonthInput({ value, onChange }) {
         width: "100%",
         border: "none",
         outline: "none",
-        background: ORANGE_LIGHT,
-        color: ORANGE_TEXT,
+        background: BRAND_LIGHT,
+        color: BRAND_TEXT,
         fontWeight: 600,
         fontFamily: "inherit",
         fontSize: 12,
@@ -67,7 +67,7 @@ function MonthInput({ value, onChange }) {
   );
 }
 
-function SectionBanner({ icon: Icon, title, color = ORANGE }) {
+function SectionBanner({ icon: Icon, title, color = BRAND }) {
   return (
     <Box
       sx={{
@@ -89,7 +89,7 @@ function SectionBanner({ icon: Icon, title, color = ORANGE }) {
   );
 }
 
-export default function FoodSafetyMonthlyStatistics({
+export default function LiftRegulationsMonthlyStatistics({
   rows,
   onRowsChange,
   incidents,
@@ -127,7 +127,7 @@ export default function FoodSafetyMonthlyStatistics({
 
   return (
     <Box sx={{ mb: 3 }}>
-      <SectionBanner icon={UtensilsCrossed} title="SECTION 1 — FOOD SAFETY STATISTICS" />
+      <SectionBanner icon={ArrowUpDown} title="SECTION 1 — LIFT REGULATIONS STATISTICS" />
 
       <Box
         sx={{
@@ -150,7 +150,7 @@ export default function FoodSafetyMonthlyStatistics({
             <tr>
               <th style={{ ...thDark, width: 36, background: "#fef9c3", color: "#a16207" }}>#</th>
               <th style={{ ...thDark, textAlign: "left", minWidth: 300 }}>Indicator</th>
-              {FS_MONTHS.map((m) => (
+              {LR_MONTHS.map((m) => (
                 <th key={m.key} style={{ ...thDark, width: 64 }}>
                   {m.label}
                 </th>
@@ -163,7 +163,7 @@ export default function FoodSafetyMonthlyStatistics({
           </thead>
           <tbody>
             {rows.map((row, index) => {
-              const ytd = computeFsYtd(row);
+              const ytd = computeLrYtd(row);
               return (
                 <tr key={row.id} style={{ background: index % 2 === 0 ? "#fff" : "#fafaf8" }}>
                   <td
@@ -199,7 +199,7 @@ export default function FoodSafetyMonthlyStatistics({
                       }}
                     />
                   </td>
-                  {FS_MONTHS.map((m) => (
+                  {LR_MONTHS.map((m) => (
                     <td key={m.key} style={tdBase}>
                       <MonthInput
                         value={row.months[m.key] || ""}
@@ -251,7 +251,7 @@ export default function FoodSafetyMonthlyStatistics({
 
       <SectionBanner
         icon={AlertTriangle}
-        title="INCIDENT CLASSIFICATION — FOOD SAFETY (NO.)"
+        title="INCIDENT CLASSIFICATION — LIFT REGULATIONS (NO.)"
         color="#111827"
       />
 
@@ -273,7 +273,7 @@ export default function FoodSafetyMonthlyStatistics({
         >
           <thead>
             <tr>
-              {FS_INCIDENT_CATEGORIES.map((cat) => (
+              {LR_INCIDENT_CATEGORIES.map((cat) => (
                 <th key={cat.key} style={thDark}>
                   {cat.label}
                 </th>
@@ -282,7 +282,7 @@ export default function FoodSafetyMonthlyStatistics({
           </thead>
           <tbody>
             <tr>
-              {FS_INCIDENT_CATEGORIES.map((cat) => (
+              {LR_INCIDENT_CATEGORIES.map((cat) => (
                 <td key={cat.key} style={tdBase}>
                   <input
                     type="text"
@@ -311,7 +311,7 @@ export default function FoodSafetyMonthlyStatistics({
       </Box>
 
       <p style={{ margin: "10px 0 0", fontSize: 12, color: T.inkFaint }}>
-        Count indicators sum monthly values for YTD; training completion uses the monthly average.
+        Count indicators sum monthly values for YTD; compliance rate uses the monthly average.
         Enter incident counts in the classification snapshot below.
       </p>
     </Box>

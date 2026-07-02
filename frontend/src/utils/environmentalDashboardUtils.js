@@ -219,7 +219,7 @@ export function buildEnvironmentalScorecardRows(statRows, targets = {}) {
 
     return {
       id: def.id,
-      indicator: def.indicator,
+      indicator: saved.indicator ?? def.indicator,
       target: saved.target ?? "",
       actual,
       unit: saved.unit ?? def.unit,

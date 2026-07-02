@@ -284,6 +284,10 @@ const DASHBOARD_SECTIONS = {
         title: "Food Safety Management",
         subtitle: "food safety performance indicators.",
     },
+    lift: {
+        title: "Lift Regulations Management",
+        subtitle: "lift regulation and compliance performance indicators.",
+    },
 };
 
 export default function ConcernReportDashboard({ section = "default" }) {
@@ -854,7 +858,7 @@ export default function ConcernReportDashboard({ section = "default" }) {
                             )}
                         </Card>
 
-                        <Card>
+                        <Card style={{ gridColumn: "1 / -1" }}>
                             <SectionHeader
                                 icon={FactCheckIcon}
                                 title="SHEQ project status"
@@ -1156,7 +1160,7 @@ export default function ConcernReportDashboard({ section = "default" }) {
                             )}
                         </Card>
 
-                        <Card>
+                        <Card style={{ gridColumn: "1 / -1" }}>
                             <SectionHeader icon={FormatListBulletedIcon} title="Recent submissions" />
                             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                 {(data.recentActions || []).map((action) => (

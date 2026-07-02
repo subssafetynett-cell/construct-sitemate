@@ -213,6 +213,7 @@ function App() {
           <Route path="/dashboard/environmental-management-kpis" element={<RequireAuth><MonitoringSectionDashboardPage section="environmental" /></RequireAuth>} />
           <Route path="/dashboard/quality-management-kpis" element={<RequireAuth><MonitoringSectionDashboardPage section="quality" /></RequireAuth>} />
           <Route path="/dashboard/food-safety-management" element={<RequireAuth><MonitoringSectionDashboardPage section="food-safety" /></RequireAuth>} />
+          <Route path="/dashboard/lift-regulations-management-kpis" element={<RequireAuth><MonitoringSectionDashboardPage section="lift" /></RequireAuth>} />
 
           {/* Monitoring forms — sites, folders, submissions */}
           <Route path="/monitoring/ohs/site/:siteId/folder/:folderId" element={<RequireAuth><MonitoringSectionPage section="ohs" /></RequireAuth>} />
@@ -227,6 +228,9 @@ function App() {
           <Route path="/monitoring/food-safety/site/:siteId/folder/:folderId" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
           <Route path="/monitoring/food-safety/site/:siteId" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
           <Route path="/monitoring/food-safety" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
+          <Route path="/monitoring/lift/site/:siteId/folder/:folderId" element={<RequireAuth><MonitoringSectionPage section="lift" /></RequireAuth>} />
+          <Route path="/monitoring/lift/site/:siteId" element={<RequireAuth><MonitoringSectionPage section="lift" /></RequireAuth>} />
+          <Route path="/monitoring/lift" element={<RequireAuth><MonitoringSectionPage section="lift" /></RequireAuth>} />
 
           {/* Legacy URLs → monitoring forms */}
           <Route path="/dashboard/occupational-health-safety-kpis/site/:siteId/folder/:folderId" element={<RequireAuth><MonitoringSectionPage section="ohs" /></RequireAuth>} />

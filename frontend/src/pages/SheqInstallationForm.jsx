@@ -43,10 +43,17 @@ import { resolveDocLogoSrc } from "../utils/formLogoUrl";
 import {
     compressImageFile,
     compressLogoFile,
-    prepareImagesForPdfExport,
-    prepareImagesForSave,
     shrinkDataUrlIfNeeded,
 } from "../utils/compressImage";
+import {
+    normalizeImageEvidenceList,
+    createImageEvidenceEntry,
+    getImageEvidenceSrc,
+    getImageEvidenceDescription,
+    prepareImageEvidenceForSave,
+    prepareImageEvidenceForPdfExport,
+} from "../utils/imageEvidenceUtils";
+import ImageEvidenceDescriptionField from "../components/ImageEvidenceDescriptionField";
 
 const SCORING_STANDARDS = [
     { title: "ST 1 – Work at Heights: Scaffolding & Edge protection", subtitle: "(scaffold structure, fall protection, car top, voids, protection from falling objects)" },
@@ -357,7 +364,7 @@ function getDefaultHeaderLabelsForCategory(cat) {
         nonconformanceLabel: "NONCONFORMANCE FINDINGS",
         commentsLabel: "INSPECTOR'S FINAL COMMENTS / SUMMARY",
         headerTitle: isInspection ? "SHEQ service" : "SHEQ Installation",
-        formTitle: isInspection ? "SHEQ SERVICE REPORT" : "SHEQ INSTALLATION SERVICE REPORT",
+        formTitle: isInspection ? "SHEQ SERVICE REPORT" : "SHEQ INSTALLATION REPORT",
     };
 }
 
@@ -372,8 +379,7 @@ function getDistributionItemLabel(headerLabels, item) {
 }
 
 function normalizeFormImages(images) {
-    if (!Array.isArray(images)) return [];
-    return images.filter((img) => typeof img === "string" && img.trim().length > 0);
+    return normalizeImageEvidenceList(images);
 }
 
 function normalizeSectionPhotosMap(sectionPhotos) {
@@ -382,7 +388,7 @@ function normalizeSectionPhotosMap(sectionPhotos) {
     }
     const out = {};
     Object.entries(sectionPhotos).forEach(([key, images]) => {
-        const list = normalizeFormImages(images);
+        const list = normalizeImageEvidenceList(images);
         if (list.length) out[String(key)] = list;
     });
     return out;
@@ -1281,7 +1287,9 @@ const HeaderInput = ({ value, onChange, textColor, multiline = true, minRows = 2
 
 export default function SheqInstallationForm({ 
     submissionId: propsId, 
-    category: propsCategory, 
+    category: propsCategory,
+    fromTemplateId: propsFromTemplateId,
+    embedded = false,
     isModal = false,
     autoDownload = false,
     onClose,
@@ -1301,7 +1309,7 @@ export default function SheqInstallationForm({
     const action = searchParams.get("action");
     const isDownloadSession = action === "download" || autoDownload;
     const isViewMode = searchParams.get("view") === "true";
-    const fromTemplateId = searchParams.get("fromTemplate");
+    const fromTemplateId = propsFromTemplateId || searchParams.get("fromTemplate");
     const monitoringSectionKey = searchParams.get("monitoringSection");
     const isTemplatesPageEdit = isTemplatesPageEditContext(searchParams);
     const templateCatalogTitle =
@@ -1435,7 +1443,7 @@ export default function SheqInstallationForm({
             thresholdBytes: 80_000,
         };
         const [images, logo, logoRight, signature] = await Promise.all([
-            normalizedImages.length ? prepareImagesForSave(normalizedImages) : [],
+            normalizedImages.length ? prepareImageEvidenceForSave(normalizedImages) : [],
             payload.docInfo?.logo
                 ? shrinkDataUrlIfNeeded(payload.docInfo.logo, logoOpts)
                 : null,
@@ -1451,7 +1459,7 @@ export default function SheqInstallationForm({
             Object.entries(rawSectionPhotos).map(async ([key, imgs]) => {
                 const normalized = normalizeFormImages(imgs);
                 if (!normalized.length) return [key, []];
-                const saved = await prepareImagesForSave(normalized);
+                const saved = await prepareImageEvidenceForSave(normalized);
                 return [key, saved];
             })
         );
@@ -1613,7 +1621,7 @@ export default function SheqInstallationForm({
     resetDirtyRef.current = resetDirty;
 
     useGeneralFormAutoSave({
-        enabled: !isViewMode && !isModal && !isDownloadSession && !isTemplatesPageEdit,
+        enabled: !isViewMode && !isModal && !embedded && !isDownloadSession && !isTemplatesPageEdit,
         isDirty,
         saving,
         loading,
@@ -1628,7 +1636,7 @@ export default function SheqInstallationForm({
 
     const preparePdfAssets = useCallback(async () => {
         const [images, logo, logoRight] = await Promise.all([
-            prepareImagesForPdfExport(normalizeFormImages(formData.images)),
+            prepareImageEvidenceForPdfExport(normalizeFormImages(formData.images)),
             shrinkDataUrlIfNeeded(docInfo.logo, {
                 maxWidth: 400,
                 maxHeight: 200,
@@ -1646,7 +1654,7 @@ export default function SheqInstallationForm({
         const rawSectionPhotos = formData.sectionPhotos || {};
         await Promise.all(
             Object.entries(rawSectionPhotos).map(async ([key, imgs]) => {
-                const prepared = await prepareImagesForPdfExport(normalizeFormImages(imgs));
+                const prepared = await prepareImageEvidenceForPdfExport(normalizeFormImages(imgs));
                 if (prepared.length) sectionPhotos[key] = prepared;
             })
         );
@@ -1902,7 +1910,7 @@ export default function SheqInstallationForm({
         setSaveDialogOpen(false);
         resetDirty();
         if (leaveAfterSaveRef.current) {
-            if (isModal && onClose) {
+            if ((isModal || embedded) && onClose) {
                 leaveAfterSaveRef.current = false;
                 onClose(true);
                 return;
@@ -1973,7 +1981,10 @@ export default function SheqInstallationForm({
             const compressed = await Promise.all(files.map((file) => compressImageFile(file)));
             setFormData((prev) => ({
                 ...prev,
-                images: [...(prev.images || []), ...compressed],
+                images: [
+                    ...(prev.images || []),
+                    ...compressed.map((src) => createImageEvidenceEntry(src)),
+                ],
             }));
         } catch (err) {
             console.error("Image upload failed:", err);
@@ -2001,7 +2012,10 @@ export default function SheqInstallationForm({
                 ...prev,
                 sectionPhotos: {
                     ...(prev.sectionPhotos || {}),
-                    [key]: [...(prev.sectionPhotos?.[key] || []), ...compressed],
+                    [key]: [
+                        ...(prev.sectionPhotos?.[key] || []),
+                        ...compressed.map((src) => createImageEvidenceEntry(src)),
+                    ],
                 },
             }));
         } catch (err) {
@@ -2045,6 +2059,39 @@ export default function SheqInstallationForm({
             ...prev,
             images: prev.images.filter((_, i) => i !== index)
         }));
+    };
+
+    const updateImageDescription = (index, description) => {
+        setFormData((prev) => {
+            const list = normalizeFormImages(prev.images || []);
+            if (!list[index]) return prev;
+            const next = list.map((entry, i) =>
+                i === index
+                    ? createImageEvidenceEntry(entry.src, description)
+                    : entry
+            );
+            return { ...prev, images: next };
+        });
+    };
+
+    const updateSectionImageDescription = (catIdx, index, description) => {
+        const key = sectionPhotoKey(catIdx);
+        setFormData((prev) => {
+            const list = normalizeFormImages(prev.sectionPhotos?.[key] || []);
+            if (!list[index]) return prev;
+            const next = list.map((entry, i) =>
+                i === index
+                    ? createImageEvidenceEntry(entry.src, description)
+                    : entry
+            );
+            return {
+                ...prev,
+                sectionPhotos: {
+                    ...(prev.sectionPhotos || {}),
+                    [key]: next,
+                },
+            };
+        });
     };
 
     const updateAction = (index, field) => (e) => {
@@ -2265,8 +2312,16 @@ export default function SheqInstallationForm({
 
     const canDownloadPdf = Boolean(persistedResponseId || id) && !isDownloadSession;
 
+    const handleBackClick = () => {
+        if (embedded && onClose) {
+            onClose();
+            return;
+        }
+        navigateBack();
+    };
+
     const formContent = (
-        <Box sx={{ p: isModal ? 0 : 3, position: "relative" }}>
+        <Box sx={{ p: isModal || embedded ? 0 : 3, position: "relative" }}>
             {isDownloadSession && downloading && (
                 <Box
                     className="pdf-hide-on-export"
@@ -2290,7 +2345,7 @@ export default function SheqInstallationForm({
                 {!isModal ? (
                     <Button
                         variant="outlined"
-                        onClick={navigateBack}
+                        onClick={handleBackClick}
                         startIcon={<ArrowLeft size={18} />}
                         sx={{
                             borderRadius: "12px",
@@ -3539,31 +3594,40 @@ export default function SheqInstallationForm({
                                                         mt: 1.5,
                                                     }}
                                                 >
-                                                    {sectionPhotosForDisplay.map((img, idx) => (
+                                                    {sectionPhotosForDisplay.map((entry, idx) => (
                                                         <Box
                                                             key={`${sectionPhotoKeyStr}-${idx}`}
                                                             className="sheq-section-photo-thumb"
                                                             sx={{
                                                                 width: SECTION_PHOTO_PDF_WIDTH,
-                                                                height: SECTION_PHOTO_PDF_HEIGHT,
-                                                                borderRadius: "10px",
-                                                                overflow: "hidden",
-                                                                border: `1px solid ${borderColor}`,
                                                                 flexShrink: 0,
                                                             }}
                                                         >
                                                             <Box
-                                                                component="img"
-                                                                src={img}
-                                                                alt={`Section ${catIdx + 1} photo ${idx + 1}`}
-                                                                loading="eager"
-                                                                decoding="sync"
                                                                 sx={{
-                                                                    display: "block",
-                                                                    width: "100%",
-                                                                    height: "100%",
-                                                                    objectFit: "cover",
+                                                                    height: SECTION_PHOTO_PDF_HEIGHT,
+                                                                    borderRadius: "10px",
+                                                                    overflow: "hidden",
+                                                                    border: `1px solid ${borderColor}`,
                                                                 }}
+                                                            >
+                                                                <Box
+                                                                    component="img"
+                                                                    src={getImageEvidenceSrc(entry)}
+                                                                    alt={`Section ${catIdx + 1} photo ${idx + 1}`}
+                                                                    loading="eager"
+                                                                    decoding="sync"
+                                                                    sx={{
+                                                                        display: "block",
+                                                                        width: "100%",
+                                                                        height: "100%",
+                                                                        objectFit: "cover",
+                                                                    }}
+                                                                />
+                                                            </Box>
+                                                            <ImageEvidenceDescriptionField
+                                                                value={getImageEvidenceDescription(entry)}
+                                                                exportMode
                                                             />
                                                         </Box>
                                                     ))}
@@ -3673,46 +3737,56 @@ export default function SheqInstallationForm({
                                                         gap: 1.5,
                                                     }}
                                                 >
-                                                    {sectionPhotosForDisplay.map((img, idx) => (
+                                                    {sectionPhotosForDisplay.map((entry, idx) => (
                                                         <Box
                                                             key={idx}
                                                             sx={{
-                                                                position: "relative",
                                                                 border: `1px solid ${borderColor}`,
                                                                 borderRadius: "10px",
                                                                 overflow: "hidden",
                                                                 boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
                                                             }}
                                                         >
-                                                            <Box
-                                                                component="img"
-                                                                src={img}
-                                                                alt={`Section photo ${idx + 1}`}
-                                                                sx={{
-                                                                    width: "100%",
-                                                                    height: SECTION_PHOTO_THUMB_HEIGHT,
-                                                                    objectFit: "cover",
-                                                                }}
-                                                            />
-                                                            <IconButton
-                                                                size="small"
-                                                                className="pdf-hide-on-export"
-                                                                onClick={() =>
-                                                                    removeSectionImage(catIdx, idx)
-                                                                }
-                                                                sx={{
-                                                                    position: "absolute",
-                                                                    top: 6,
-                                                                    right: 6,
-                                                                    bgcolor: "rgba(239, 68, 68, 0.9)",
-                                                                    color: "#FFF",
-                                                                    "&:hover": {
-                                                                        bgcolor: "rgba(220, 38, 38, 1)",
-                                                                    },
-                                                                }}
-                                                            >
-                                                                <X size={14} />
-                                                            </IconButton>
+                                                            <Box sx={{ position: "relative" }}>
+                                                                <Box
+                                                                    component="img"
+                                                                    src={getImageEvidenceSrc(entry)}
+                                                                    alt={`Section photo ${idx + 1}`}
+                                                                    sx={{
+                                                                        width: "100%",
+                                                                        height: SECTION_PHOTO_THUMB_HEIGHT,
+                                                                        objectFit: "cover",
+                                                                        display: "block",
+                                                                    }}
+                                                                />
+                                                                <IconButton
+                                                                    size="small"
+                                                                    className="pdf-hide-on-export"
+                                                                    onClick={() =>
+                                                                        removeSectionImage(catIdx, idx)
+                                                                    }
+                                                                    sx={{
+                                                                        position: "absolute",
+                                                                        top: 6,
+                                                                        right: 6,
+                                                                        bgcolor: "rgba(239, 68, 68, 0.9)",
+                                                                        color: "#FFF",
+                                                                        "&:hover": {
+                                                                            bgcolor: "rgba(220, 38, 38, 1)",
+                                                                        },
+                                                                    }}
+                                                                >
+                                                                    <X size={14} />
+                                                                </IconButton>
+                                                            </Box>
+                                                            <Box sx={{ p: 1 }}>
+                                                                <ImageEvidenceDescriptionField
+                                                                    value={getImageEvidenceDescription(entry)}
+                                                                    onChange={(text) =>
+                                                                        updateSectionImageDescription(catIdx, idx, text)
+                                                                    }
+                                                                />
+                                                            </Box>
                                                         </Box>
                                                     ))}
                                                 </Box>
@@ -3855,7 +3929,7 @@ export default function SheqInstallationForm({
                                         {headerLabels.uploadLabel}
                                     </Box>
                                 </Box>
-                                {displayImages.map((img, idx) => (
+                                {displayImages.map((entry, idx) => (
                                     <Box
                                         key={`pdf-img-${idx}`}
                                         data-pdf-block
@@ -3872,7 +3946,7 @@ export default function SheqInstallationForm({
                                         <Box
                                             component="img"
                                             className="pdf-upload-photo"
-                                            src={img}
+                                            src={getImageEvidenceSrc(entry)}
                                             alt={`Upload ${idx + 1}`}
                                             loading="eager"
                                             decoding="sync"
@@ -3884,6 +3958,11 @@ export default function SheqInstallationForm({
                                                 objectFit: "contain",
                                                 bgcolor: "#FFF",
                                             }}
+                                        />
+                                        <ImageEvidenceDescriptionField
+                                            value={getImageEvidenceDescription(entry)}
+                                            exportMode
+                                            sx={{ px: 1.5, pb: 1.5 }}
                                         />
                                     </Box>
                                 ))}
@@ -3942,16 +4021,24 @@ export default function SheqInstallationForm({
                                         </Button>
                                     </Box>
                                     <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 2 }}>
-                                        {displayImages.map((img, idx) => (
-                                            <Box key={idx} sx={{ position: "relative", border: `1px solid ${borderColor}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-                                                <Box component="img" src={img} alt={`Upload ${idx + 1}`} sx={{ width: "100%", height: "200px", objectFit: "cover" }} />
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => removeImage(idx)}
-                                                    sx={{ position: "absolute", top: 8, right: 8, bgcolor: "rgba(239, 68, 68, 0.9)", color: "#FFF", "&:hover": { bgcolor: "rgba(220, 38, 38, 1)" }, boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }}
-                                                >
-                                                    <X size={16} />
-                                                </IconButton>
+                                        {displayImages.map((entry, idx) => (
+                                            <Box key={idx} sx={{ border: `1px solid ${borderColor}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+                                                <Box sx={{ position: "relative" }}>
+                                                    <Box component="img" src={getImageEvidenceSrc(entry)} alt={`Upload ${idx + 1}`} sx={{ width: "100%", height: "200px", objectFit: "cover", display: "block" }} />
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => removeImage(idx)}
+                                                        sx={{ position: "absolute", top: 8, right: 8, bgcolor: "rgba(239, 68, 68, 0.9)", color: "#FFF", "&:hover": { bgcolor: "rgba(220, 38, 38, 1)" }, boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }}
+                                                    >
+                                                        <X size={16} />
+                                                    </IconButton>
+                                                </Box>
+                                                <Box sx={{ p: 1.5 }}>
+                                                    <ImageEvidenceDescriptionField
+                                                        value={getImageEvidenceDescription(entry)}
+                                                        onChange={(text) => updateImageDescription(idx, text)}
+                                                    />
+                                                </Box>
                                             </Box>
                                         ))}
                                     </Box>
@@ -4322,7 +4409,7 @@ export default function SheqInstallationForm({
         </Box>
     );
 
-    if (isModal || isDownloadSession) return formContent;
+    if (isModal || isDownloadSession || embedded) return formContent;
 
     return (
         <Layout pageTitle={category === SHEQ_INSPECTION_CATEGORY ? "SHEQ service" : "SHEQ Installation"}>

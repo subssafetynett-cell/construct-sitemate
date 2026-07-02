@@ -106,6 +106,15 @@ export default function QualityMonthlyStatistics({
     [onRowsChange]
   );
 
+  const updateIndicator = useCallback(
+    (rowId, value) => {
+      onRowsChange((prev) =>
+        prev.map((row) => (row.id === rowId ? { ...row, indicator: value } : row))
+      );
+    },
+    [onRowsChange]
+  );
+
   const addRow = () => onRowsChange((prev) => [...prev, newStatRow()]);
 
   const removeRow = (id) => {
@@ -171,16 +180,24 @@ export default function QualityMonthlyStatistics({
                     {index + 1}
                   </td>
                   <td style={tdBase}>
-                    <div
+                    <input
+                      type="text"
+                      value={row.indicator || ""}
+                      onChange={(e) => updateIndicator(row.id, e.target.value)}
+                      placeholder="Indicator name"
                       style={{
-                        fontSize: 12,
-                        padding: "8px 10px",
+                        width: "100%",
+                        border: "none",
+                        outline: "none",
+                        background: "#fff",
                         color: T.ink,
                         fontWeight: 500,
+                        fontFamily: "inherit",
+                        fontSize: 12,
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
                       }}
-                    >
-                      {row.indicator || "—"}
-                    </div>
+                    />
                   </td>
                   {QUALITY_MONTHS.map((m) => (
                     <td key={m.key} style={tdBase}>

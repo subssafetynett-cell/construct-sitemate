@@ -37,6 +37,7 @@ import PageContent from "../components/PageContent";
 import { formatSubmitterDisplay, showSubmissionCreatorColumn } from "../utils/submitterDisplay";
 import { useAuth } from "../context/AuthContext";
 import FormSelectionDialog from "../components/FormSelectionDialog";
+import TemplatePreviewDialog from "../components/TemplatePreviewDialog";
 import FormRenderer from "../components/FormRenderer";
 import HealthSafetyConcernForm from "../components/HealthSafetyConcernForm";
 import WeeklySupervisorInspectionForm from "../components/WeeklySupervisorInspectionForm";
@@ -51,7 +52,19 @@ import {
     sitepackNavState,
 } from "../utils/sitepackContext";
 import { getMonitoringSection } from "../constants/monitoringSections";
-import { monitoringFolderPath, monitoringSitePath } from "../utils/monitoringContext";
+import {
+    TEMPLATE_LIBRARY,
+    TEMPLATE_LIBRARY_BY_TITLE,
+    buildSheqFormUrl,
+    buildTemplatePreviewUrl,
+    buildTemplateUseUrl,
+} from "../constants/templateCatalog";
+import {
+    monitoringFolderPath,
+    monitoringFormSearchParams,
+    monitoringSitePath,
+    pathWithSearchParams,
+} from "../utils/monitoringContext";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { saveGeneralFormResponse } from "../services/formUtils";
@@ -243,6 +256,8 @@ export default function GenericReportPage({ pageTitle }) {
     const [recipientEmail, setRecipientEmail] = useState("");
     const [emailingItem, setEmailingItem] = useState(null);
     const [templateSaveOpen, setTemplateSaveOpen] = useState(false);
+    const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
+    const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
     const [templateMetadata, setTemplateMetadata] = useState({
         name: "",
         tags: "",
@@ -326,13 +341,124 @@ export default function GenericReportPage({ pageTitle }) {
         setViewMode("filling");
     };
 
-    const handleSelectForm = async (form) => {
+    const getTemplateContextExtra = () => {
+        const extra = {};
+        if (isSitepackContext) {
+            if (siteId) extra.siteId = siteId;
+            if (subfolderId) extra.subfolderId = subfolderId;
+        }
+        if (isMonitoringContext) {
+            Object.assign(
+                extra,
+                monitoringFormSearchParams(monitoringSection, siteId, { subfolderId })
+            );
+        }
+        return extra;
+    };
+
+    const openTemplatePreviewUrl = (url) => {
+        if (!url) return;
+        setTemplatePreviewUrl(url);
+        setTemplatePreviewOpen(true);
+        setDialogOpen(false);
+    };
+
+    const handleSelectSavedTemplate = async (submission, { preview = false } = {}) => {
+        const responseId = submission?.id || submission?._id;
+        if (!responseId) return;
+
+        try {
+            let sub = submission;
+            if (!sub.answers) {
+                const res = await api.get(`/forms/responses/${responseId}`);
+                if (!res.data?.success || !res.data.data) {
+                    alert("Could not load the selected template.");
+                    return;
+                }
+                sub = res.data.data;
+            }
+
+            const moduleTitle =
+                sub.answers?.templateModuleTitle || sub.form?.title || "";
+            const template =
+                TEMPLATE_LIBRARY_BY_TITLE[moduleTitle] ||
+                TEMPLATE_LIBRARY.find((row) => row.title === sub.form?.title);
+
+            if (template) {
+                const extra = { fromTemplate: String(responseId), ...getTemplateContextExtra() };
+
+                if (preview) {
+                    openTemplatePreviewUrl(buildTemplatePreviewUrl(template, extra));
+                    return;
+                }
+
+                let url = null;
+                if (template.type === "report") {
+                    url = pathWithSearchParams(template.path, { ...extra, create: "true" });
+                } else if (template.type === "general") {
+                    url = pathWithSearchParams(template.path, extra);
+                } else if (template.type === "sheq") {
+                    url = buildSheqFormUrl(template, extra);
+                }
+
+                if (url) {
+                    setDialogOpen(false);
+                    navigate(url);
+                    return;
+                }
+            }
+
+            const formId = sub.formId || sub.form?.id || sub.form?._id;
+            if (!formId) {
+                alert("Could not load the selected template.");
+                return;
+            }
+
+            const formRes = await api.get(`/forms/${formId}`);
+            if (!formRes.data?.success || !formRes.data.data) {
+                alert("Could not load the selected form.");
+                return;
+            }
+
+            const seedAnswers = { ...(sub.answers || {}) };
+            delete seedAnswers.savedFromTemplatesPage;
+
+            setActiveFormKind("builder");
+            setSelectedForm(formRes.data.data);
+            setFormValues(seedAnswers);
+            setEditingId(null);
+            setViewMode(preview ? "viewed" : "filling");
+            setDialogOpen(false);
+        } catch (err) {
+            console.error("Failed to load selected template", err);
+            alert("Could not load the selected template.");
+        }
+    };
+
+    const handleSelectCatalogTemplate = (template, { preview = false } = {}) => {
+        const extra = getTemplateContextExtra();
+        if (preview) {
+            openTemplatePreviewUrl(buildTemplatePreviewUrl(template, extra));
+            return;
+        }
+        const url = buildTemplateUseUrl(template, extra);
+        if (!url) return;
+        setDialogOpen(false);
+        navigate(url);
+    };
+
+    const handleSelectBuilderForm = async (form, { preview = false } = {}) => {
         const formId = form?.id || form?._id;
         if (!formId) return;
         try {
             const res = await api.get(`/forms/${formId}`);
             if (!res.data?.success || !res.data.data) {
                 alert("Could not load the selected form.");
+                return;
+            }
+            if (preview) {
+                const params = new URLSearchParams({ preview: "true", ...getTemplateContextExtra() });
+                openTemplatePreviewUrl(`/forms/${formId}/use?${params.toString()}`);
                 return;
             }
             setActiveFormKind("builder");
@@ -344,6 +470,31 @@ export default function GenericReportPage({ pageTitle }) {
         } catch (err) {
             console.error("Failed to load selected form", err);
             alert("Could not load the selected form.");
+        }
+    };
+
+    const handleSelectForm = async (selection) => {
+        const isPreview = Boolean(selection?.preview);
+
+        if (selection?.type === "catalog-template" && selection.template) {
+            handleSelectCatalogTemplate(selection.template, { preview: isPreview });
+            return;
+        }
+
+        if (selection?.type === "saved-template") {
+            await handleSelectSavedTemplate(selection.submission, { preview: isPreview });
+            return;
+        }
+
+        if (selection?.type === "builder-form" && selection.form) {
+            await handleSelectBuilderForm(selection.form, { preview: isPreview });
+            return;
+        }
+
+        const legacyForm = selection?.form || selection;
+        const formId = legacyForm?.id || legacyForm?._id;
+        if (formId) {
+            await handleSelectBuilderForm(legacyForm, { preview: isPreview });
         }
     };
 
@@ -1126,7 +1277,21 @@ export default function GenericReportPage({ pageTitle }) {
                 </Box>
             </PageContent>
 
-            <FormSelectionDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSelect={handleSelectForm} />
+            <FormSelectionDialog
+                open={dialogOpen}
+                onClose={() => setDialogOpen(false)}
+                onSelect={handleSelectForm}
+                variant="full"
+            />
+
+            <TemplatePreviewDialog
+                open={templatePreviewOpen}
+                url={templatePreviewUrl}
+                onClose={() => {
+                    setTemplatePreviewOpen(false);
+                    setTemplatePreviewUrl("");
+                }}
+            />
 
             {/* Success Dialog */}
             <Dialog open={successOpen} maxWidth="xs" fullWidth>

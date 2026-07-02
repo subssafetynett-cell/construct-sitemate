@@ -8,8 +8,8 @@ import {
 } from "@mui/material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { 
-    ClipboardList, Layout as LayoutIcon, Pencil, Trash2, 
-    Download, Eye, Search, Plus
+    Pencil, Trash2, 
+    Download, Eye
 } from "lucide-react";
 import Layout from "../components/Layout";
 import PageContent from "../components/PageContent";
@@ -19,7 +19,9 @@ import { useAuth } from "../context/AuthContext";
 import api, { fetchFormResponsesList } from "../services/api";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import FormSelectionDialog from "../components/FormSelectionDialog";
+import TemplatePreviewDialog from "../components/TemplatePreviewDialog";
 import SheqInstallationForm from "./SheqInstallationForm";
+import { buildTemplatePreviewUrl } from "../constants/templateCatalog";
 
 const SheqInspectionSelectionPage = () => {
     const navigate = useNavigate();
@@ -37,7 +39,12 @@ const SheqInspectionSelectionPage = () => {
     const [snack, setSnack] = useState({ open: false, message: "", severity: "success" });
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedItem, setSelectedItem] = useState(null);
-    const [formDialogOpen, setFormDialogOpen] = useState(false);
+    const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false);
+    const [inlineFormOpen, setInlineFormOpen] = useState(false);
+    const [inlineFromTemplateId, setInlineFromTemplateId] = useState(null);
+    const [formSessionKey, setFormSessionKey] = useState(0);
+    const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
+    const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
     const [downloadTarget, setDownloadTarget] = useState(null);
 
     const customBlue = "#0284c7";
@@ -149,19 +156,116 @@ const SheqInspectionSelectionPage = () => {
         handleMenuClose();
     };
 
-    const handleSelectForm = (item) => {
-        const base = `/sheq-install-form?category=${encodeURIComponent(category)}`;
-        if (item?.type === "sheq-template" && item.id) {
-            navigate(`${base}&fromTemplate=${encodeURIComponent(item.id)}`);
-        } else {
-            navigate(base);
+    const openBlankForm = () => {
+        setInlineFromTemplateId(null);
+        setFormSessionKey((key) => key + 1);
+        setInlineFormOpen(true);
+    };
+
+    const openInlineFromTemplate = (templateId = null) => {
+        setInlineFromTemplateId(templateId);
+        setFormSessionKey((key) => key + 1);
+        setInlineFormOpen(true);
+        setTemplatesDialogOpen(false);
+    };
+
+    const closeInlineForm = () => {
+        setInlineFormOpen(false);
+        setInlineFromTemplateId(null);
+        fetchSubmissions();
+    };
+
+    const openTemplatePreview = (url) => {
+        if (!url) return;
+        setTemplatePreviewUrl(url);
+        setTemplatePreviewOpen(true);
+        setTemplatesDialogOpen(false);
+    };
+
+    const handleTemplateSelection = (item) => {
+        const isPreview = Boolean(item?.preview);
+
+        if (item?.type === "sheq-blank") {
+            const url = `/sheq-install-form?category=${encodeURIComponent(category)}${isPreview ? "&preview=true" : ""}`;
+            if (isPreview) {
+                openTemplatePreview(url);
+                return;
+            }
+            openInlineFromTemplate(null);
+            return;
         }
-        setFormDialogOpen(false);
+
+        if (item?.type === "sheq-template" && item.id) {
+            if (isPreview) {
+                openTemplatePreview(
+                    `/sheq-install-form/${item.id}?category=${encodeURIComponent(category)}&view=true`
+                );
+                return;
+            }
+            openInlineFromTemplate(item.id);
+            return;
+        }
+
+        if (item?.type === "saved-template" && item.submission) {
+            const rid = item.submission.id || item.submission._id;
+            if (isPreview) {
+                openTemplatePreview(
+                    `/sheq-install-form?category=${encodeURIComponent(category)}&fromTemplate=${encodeURIComponent(rid)}&preview=true`
+                );
+                return;
+            }
+            openInlineFromTemplate(rid);
+            return;
+        }
+
+        if (item?.type === "catalog-template" && item.template) {
+            const template = item.template;
+            if (isPreview) {
+                openTemplatePreview(buildTemplatePreviewUrl(template));
+                return;
+            }
+            if (template.type === "sheq" && template.sheqCategory === category) {
+                openInlineFromTemplate(null);
+                return;
+            }
+            if (template.type === "sheq") {
+                navigate(`/sheq-install-form?category=${encodeURIComponent(template.sheqCategory)}`);
+            } else if (template.type === "report") {
+                navigate(`${template.path}?create=true`);
+            } else if (template.path) {
+                navigate(template.path);
+            }
+            setTemplatesDialogOpen(false);
+            return;
+        }
+
+        const form = item?.form;
+        const formId = form?.id || form?._id;
+        if (formId) {
+            if (isPreview) {
+                openTemplatePreview(
+                    `/forms/${formId}/use?category=${encodeURIComponent(category)}&preview=true`
+                );
+                return;
+            }
+            navigate(`/forms/${formId}/use?category=${encodeURIComponent(category)}`);
+            setTemplatesDialogOpen(false);
+        }
     };
 
     return (
         <Layout disablePadding={true}>
             <PageContent>
+                {inlineFormOpen ? (
+                    <SheqInstallationForm
+                        key={formSessionKey}
+                        category={category}
+                        fromTemplateId={inlineFromTemplateId || undefined}
+                        embedded
+                        onClose={closeInlineForm}
+                    />
+                ) : (
+                <>
                 {/* Header Section */}
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 4, flexWrap: "wrap", gap: 2 }}>
                     <Box>
@@ -173,11 +277,10 @@ const SheqInspectionSelectionPage = () => {
                         </Typography>
                     </Box>
 
-                    <Box sx={{ display: "flex", gap: 2 }}>
+                    <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                         <Button
                             variant="contained"
-                            startIcon={<Plus size={20} />}
-                            onClick={() => navigate(`/sheq-install-form?category=${encodeURIComponent(category)}`)}
+                            onClick={openBlankForm}
                             sx={{
                                 bgcolor: "#E89F17",
                                 borderRadius: "12px",
@@ -186,15 +289,14 @@ const SheqInspectionSelectionPage = () => {
                                 px: 2.5,
                                 py: 1,
                                 boxShadow: "none",
-                                "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" }
+                                "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
                             }}
                         >
-                            SHEQ FORM
+                            Choose Form
                         </Button>
                         <Button
                             variant="outlined"
-                            startIcon={<LayoutIcon size={20} />}
-                            onClick={() => setFormDialogOpen(true)}
+                            onClick={() => setTemplatesDialogOpen(true)}
                             sx={{
                                 color: "#E89F17",
                                 borderColor: "#E89F17",
@@ -203,10 +305,13 @@ const SheqInspectionSelectionPage = () => {
                                 fontWeight: 600,
                                 px: 2.5,
                                 py: 1,
-                                "&:hover": { borderColor: "#cc8b14", bgcolor: "rgba(232, 159, 23, 0.05)" }
+                                "&:hover": {
+                                    borderColor: "#cc8b14",
+                                    bgcolor: "rgba(232, 159, 23, 0.05)",
+                                },
                             }}
                         >
-                            CHOOSE FROM
+                            Choose Templates
                         </Button>
                     </Box>
                 </Box>
@@ -297,6 +402,8 @@ const SheqInspectionSelectionPage = () => {
                         </>
                     )}
                 </Paper>
+                </>
+                )}
             </PageContent>
 
             {/* Delete Confirmation */}
@@ -340,11 +447,21 @@ const SheqInspectionSelectionPage = () => {
                 </Alert>
             </Snackbar>
 
-            <FormSelectionDialog 
-                open={formDialogOpen} 
-                onClose={() => setFormDialogOpen(false)} 
-                onSelect={handleSelectForm}
+            <FormSelectionDialog
+                open={templatesDialogOpen}
+                onClose={() => setTemplatesDialogOpen(false)}
+                onSelect={handleTemplateSelection}
+                variant="full"
                 sheqTemplateCategory={category}
+            />
+
+            <TemplatePreviewDialog
+                open={templatePreviewOpen}
+                url={templatePreviewUrl}
+                onClose={() => {
+                    setTemplatePreviewOpen(false);
+                    setTemplatePreviewUrl("");
+                }}
             />
 
             {/* Action Menu */}

@@ -35,10 +35,11 @@ function cellInputStyle({ editable, tone }) {
   const toneStyles = {
     target: { bg: "#fffbeb", color: "#c2410c", fontWeight: 600 },
     actual: { bg: "#eff6ff", color: "#1d4ed8", fontWeight: 600 },
+    default: { bg: "#fff", color: T.ink, fontWeight: 400 },
     readonly: { bg: "#f9fafb", color: T.inkMid, fontWeight: 500 },
     note: { bg: "#fff", color: T.inkMid, fontWeight: 400 },
   };
-  const t = toneStyles[tone] || toneStyles.readonly;
+  const t = toneStyles[tone] || toneStyles.default;
 
   return {
     width: "100%",
@@ -141,7 +142,13 @@ export default function QualityScorecard({ statRows, targets, attendance, onUpda
               return (
                 <tr key={row.id} style={{ background: rowBg }}>
                   <td style={tdStyle}>
-                    <ScorecardCell value={row.indicator} editable={false} tone="readonly" />
+                    <ScorecardCell
+                      value={row.indicator}
+                      onChange={(val) => onUpdateTarget(row.id, "indicator", val)}
+                      placeholder="Indicator"
+                      editable
+                      tone="default"
+                    />
                   </td>
                   <td style={tdStyle}>
                     <ScorecardCell
