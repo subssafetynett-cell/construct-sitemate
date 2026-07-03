@@ -1,5 +1,3 @@
-import { hasOhsMonthData } from "./ohsDashboardUtils";
-
 /** Short label for chart legend (truncated if long). */
 export function monthlyChartSeriesName(indicator) {
   const label = String(indicator || "").trim();
@@ -17,10 +15,14 @@ export function monthlyChartTitle(indicator) {
   return `Monthly ${short}`;
 }
 
+/** Rows for the monthly chart indicator dropdown — same list and order as the statistics table. */
+export function getKpiDropdownRows(statRows) {
+  return (statRows || []).filter((row) => String(row.indicator || "").trim());
+}
+
+/** @deprecated Use getKpiDropdownRows — kept for callers that imported the old name. */
 export function getKpiChartableRows(statRows) {
-  return (statRows || []).filter(
-    (row) => String(row.indicator || "").trim() && hasOhsMonthData(row.months)
-  );
+  return getKpiDropdownRows(statRows);
 }
 
 /** Sort chart rows alphabetically by indicator label. */

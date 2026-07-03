@@ -68,12 +68,13 @@ import AppRegistrationOutlinedIcon from '@mui/icons-material/AppRegistrationOutl
 import PolicyOutlinedIcon from '@mui/icons-material/PolicyOutlined'; // Audit
 
 import Layout from '../components/Layout';
+import TablePageSkeleton from '../components/TablePageSkeleton';
 import api, {
   fetchSites,
   uploadDocument,
   fetchDocuments,
   fetchDocumentCounts,
-  fetchFormResponsesList,
+  fetchAllFormResponsesList,
   fetchSiteSubfolders,
   createSiteSubfolder,
   updateSiteSubfolder,
@@ -450,17 +451,24 @@ export default function SitepackManagement() {
             const site = sites.find(s => (s._id || s.id) === location.state.siteId);
             if (site) {
                 setSelectedSite(site);
-                if (location.state.subfolderId) {
-                    setSelectedSubfolder({ id: location.state.subfolderId, name: location.state.subfolderName || "Subfolder" });
-                }
                 if (location.state.moduleTitle) {
                     const mod = modules.find(m => m.title === location.state.moduleTitle);
                     if (mod) setSelectedModule(mod);
                 }
+                if (location.state.subfolderId) {
+                    const sfid = location.state.subfolderId;
+                    const fromList = subfolders.find((sf) => sf.id === sfid);
+                    setSelectedSubfolder(
+                        fromList || {
+                            id: sfid,
+                            name: location.state.subfolderName || "Subfolder",
+                        }
+                    );
+                }
                 window.history.replaceState({}, document.title);
             }
         }
-    }, [sites, location.state, modules]);
+    }, [sites, location.state, modules, subfolders]);
 
     // Document State
     const [docs, setDocs] = useState([]);
@@ -567,7 +575,7 @@ export default function SitepackManagement() {
             const moduleTitle = selectedModule.title;
             try {
                 const [formsRes, docsRes] = await Promise.all([
-                    fetchFormResponsesList(sitepackFormFetchParams(moduleTitle, siteId)),
+                    fetchAllFormResponsesList(sitepackFormFetchParams(moduleTitle, siteId)),
                     fetchDocuments(siteId, moduleTitle),
                 ]);
                 if (cancelled) return;
@@ -612,7 +620,7 @@ export default function SitepackManagement() {
 
                     let formCountsByCategory = {};
                     try {
-                        const res = await fetchFormResponsesList({ siteId });
+                        const res = await fetchAllFormResponsesList({ siteId });
                         if (res?.success) {
                             const siteResponses = (res.data || []).filter((r) =>
                                 matchesSitepackScope(r, { siteId })
@@ -718,7 +726,7 @@ export default function SitepackManagement() {
             setBuilderForms([]);
             try {
                 const [responsesRes, formsRes] = await Promise.all([
-                    fetchFormResponsesList({ category: "General forms," }),
+                    fetchAllFormResponsesList({ category: "General forms," }),
                     api.get("/forms"),
                 ]);
                 if (cancelled) return;
@@ -921,7 +929,7 @@ export default function SitepackManagement() {
         }
 
         try {
-            const res = await fetchFormResponsesList(sitepackFormFetchParams(moduleTitle, siteId));
+            const res = await fetchAllFormResponsesList(sitepackFormFetchParams(moduleTitle, siteId));
             if (res?.success) {
                 const scopeSubfolderId = allFormsView
                     ? ALL_SITEPACK_FORMS_ID
@@ -960,7 +968,7 @@ export default function SitepackManagement() {
                         tags,
                         createdAt: r.createdAt,
                         isFormBase: true,
-                        rawResponse: r,
+                        rawResponse: { ...r, formId: r.formId || r.form?.id },
                     };
                 });
                 allItems = [...allItems, ...mappedForms];
@@ -1289,8 +1297,14 @@ export default function SitepackManagement() {
     const runFormDownloadWord = (doc) => {
         if (!canSitepackFormDownloadWord(doc)) return;
         const resId = doc.id || doc._id;
-        const path = `/forms/${doc.rawResponse?.formId}/use?responseId=${resId}`;
-        const category = selectedModule?.title || FRIDAY_PACK_FORMS_CATEGORY;
+        const category = selectedModule?.title || doc?.rawResponse?.category || FRIDAY_PACK_FORMS_CATEGORY;
+        const reportPath = getSitepackReportFormPath(doc, resId, sitepackParams({ category }));
+        if (reportPath) {
+            window.open(pathWithSearchParams(reportPath, { action: "download_word" }), "_blank");
+            return;
+        }
+        const path = getSitepackFormPathForResponse(doc, resId);
+        if (!path) return;
         window.open(pathWithSearchParams(path, sitepackParams({ category, action: "download_word" })), "_blank");
     };
 
@@ -1830,8 +1844,8 @@ export default function SitepackManagement() {
                     ) : (
                         // SUBFOLDER LIST VIEW
                         subfoldersLoading ? (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
-                                <CircularProgress />
+                            <Box sx={{ py: 2 }}>
+                                <TablePageSkeleton rows={3} />
                             </Box>
                         ) : (
                             <Grid container spacing={3}>
@@ -2113,8 +2127,8 @@ export default function SitepackManagement() {
                 ) : (
                     // SITE LIST VIEW
                     loading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
-                            <CircularProgress />
+                        <Box sx={{ py: 2 }}>
+                            <TablePageSkeleton rows={4} />
                         </Box>
                     ) : (
                         <Grid container spacing={3}>

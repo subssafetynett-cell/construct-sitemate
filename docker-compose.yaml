@@ -25,7 +25,13 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_SECURE: ${SMTP_SECURE:-}
       SMTP_RELAY_HOST: ${SMTP_RELAY_HOST:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DASHBOARD_CACHE_TTL_SEC: ${DASHBOARD_CACHE_TTL_SEC:-60}
       # DIRECT_URL is derived from DATABASE_URL at runtime when not set in Coolify.
+
+    depends_on:
+      redis:
+        condition: service_healthy
 
     volumes:
       - ./backend/uploads:/app/uploads
@@ -64,5 +70,17 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+  redis:
+    image: public.ecr.aws/docker/library/redis:7-alpine
+    container_name: safetyapp_redis
+    restart: always
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes: {}

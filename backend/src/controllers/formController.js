@@ -18,6 +18,7 @@ const {
   compactFormResponseRow,
   isCompactListRequest,
 } = require("../utils/formResponseCompact");
+const { parsePagination, buildPaginationMeta } = require("../utils/pagination");
 const {
   STATIC_CONCERN_FORM_ID,
   assertAuthenticatedForm,
@@ -378,7 +379,8 @@ exports.getAllResponses = async (req, res) => {
     const where =
       scopeClauses.length === 1 ? scopeClauses[0] : { AND: scopeClauses };
 
-    const responses = await prisma.formResponse.findMany({
+    const pagination = parsePagination(req.query);
+    const findArgs = {
       where,
       orderBy: { createdAt: "desc" },
       include: {
@@ -387,7 +389,23 @@ exports.getAllResponses = async (req, res) => {
           select: { id: true, clientId: true, firstName: true, lastName: true, email: true },
         },
       },
-    });
+    };
+
+    let responses;
+    let totalCount = null;
+
+    if (pagination.enabled) {
+      [responses, totalCount] = await Promise.all([
+        prisma.formResponse.findMany({
+          ...findArgs,
+          skip: pagination.skip,
+          take: pagination.take,
+        }),
+        prisma.formResponse.count({ where }),
+      ]);
+    } else {
+      responses = await prisma.formResponse.findMany(findArgs);
+    }
 
     const visible = responses.filter((row) =>
       canViewFormResponse(row, userId, clientId, readScope)
@@ -396,10 +414,16 @@ exports.getAllResponses = async (req, res) => {
     const compact = isCompactListRequest(req.query);
     const data = compact ? visible.map(compactFormResponseRow) : visible;
 
-    res.json({
-      success: true,
-      data,
-    });
+    const payload = { success: true, data };
+    if (pagination.enabled) {
+      payload.pagination = buildPaginationMeta({
+        page: pagination.page,
+        limit: pagination.limit,
+        total: totalCount,
+      });
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error("Get responses error:", err);
     res.status(500).json({ success: false });

@@ -2,7 +2,7 @@ import { useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAutoFormDirty } from "./useAutoFormDirty";
 import { useUnsavedFormGuard } from "./useUnsavedFormGuard.jsx";
-import { resolveSitepackModuleTitle } from "../utils/sitepackContext";
+import { resolveSitepackModuleTitle, sitepackNavState } from "../utils/sitepackContext";
 import { monitoringFolderPath, monitoringSitePath } from "../utils/monitoringContext";
 import {
     isTemplatesPageEditContext,
@@ -40,12 +40,13 @@ export function useGeneralFormLeave({
             return;
         }
         if (siteId) {
-            const state = {
-                siteId,
-                moduleTitle: resolveSitepackModuleTitle(category, { siteId, subfolderId }),
-            };
-            if (subfolderId) state.subfolderId = subfolderId;
-            navigate("/sitepack-management", { state });
+            navigate("/sitepack-management", {
+                state: sitepackNavState({
+                    siteId,
+                    subfolderId,
+                    moduleTitle: resolveSitepackModuleTitle(category, { siteId, subfolderId }),
+                }),
+            });
         } else if (listPath) {
             navigate(listPath);
         } else if (isTemplatesPageEditContext(searchParams)) {

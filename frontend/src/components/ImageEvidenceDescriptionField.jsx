@@ -27,6 +27,8 @@ export default function ImageEvidenceDescriptionField({
                     mb: 0,
                     lineHeight: 1.4,
                     whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    overflowWrap: "anywhere",
                     ...sx,
                 }}
             >
@@ -40,14 +42,28 @@ export default function ImageEvidenceDescriptionField({
             fullWidth
             size="small"
             multiline
-            minRows={1}
-            maxRows={3}
+            minRows={2}
+            maxRows={6}
             placeholder={placeholder}
             value={text}
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
             className="pdf-hide-on-export"
             sx={{ mt: 1, ...sx }}
-            inputProps={{ "aria-label": "Evidence description" }}
+            slotProps={{
+                htmlInput: {
+                    "aria-label": "Evidence description",
+                },
+                input: {
+                    sx: {
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
+                        lineHeight: 1.4,
+                        alignItems: "flex-start",
+                    },
+                },
+            }}
         />
     );
 }

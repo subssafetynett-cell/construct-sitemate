@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Snackbar } from "@mui/material";
 import { useAuth } from "../context/AuthContext";
-import { downloadKpiReportPdf, downloadKpiReportWord } from "../utils/kpiReportExporter";
+import { downloadKpiReportPdf, downloadKpiReportWord, KPI_REPORT_EXPORT_MOUNT_STYLE, KPI_REPORT_EXPORT_WIDTH } from "../utils/kpiReportExporter";
 import EnvironmentalMonthlyStatistics from "./EnvironmentalMonthlyStatistics";
 import EnvironmentalScorecard from "./EnvironmentalScorecard";
 import EnvironmentalChartsDashboard from "./EnvironmentalChartsDashboard";
@@ -9,6 +9,7 @@ import EnvironmentalReportDocument from "./EnvironmentalReportDocument";
 import KpiTrackingLegend from "./dashboard/KpiTrackingLegend";
 import KpiReportDownloadBar from "./dashboard/KpiReportDownloadBar";
 import { getActingClient } from "../utils/actingClient";
+import { useKpiDashboardPersistence } from "../hooks/useKpiDashboardPersistence";
 import {
   createDefaultEnvStatRows,
   createEmptyWasteSnapshot,
@@ -17,45 +18,40 @@ import {
   shouldSeedDefaultEnvKpis,
 } from "../utils/environmentalDashboardUtils";
 
-const STATS_STORAGE_PREFIX = "site-mate:env-monthly-stats:";
-const WASTE_STORAGE_PREFIX = "site-mate:env-waste-snapshot:";
-const TARGETS_STORAGE_PREFIX = "site-mate:env-scorecard-targets:";
-const META_STORAGE_PREFIX = "site-mate:env-dashboard-meta:";
-
-function persistDashboardData({
-  statsKey,
-  wasteKey,
-  targetsKey,
-  metaKey,
-  statRows,
-  waste,
-  targets,
-  savedAt,
-}) {
-  localStorage.setItem(statsKey, JSON.stringify(statRows));
-  localStorage.setItem(wasteKey, JSON.stringify(waste));
-  localStorage.setItem(targetsKey, JSON.stringify(targets));
-  localStorage.setItem(metaKey, JSON.stringify({ lastSavedAt: savedAt }));
-}
+const STORAGE_PREFIXES = {
+  stats: "site-mate:env-monthly-stats:",
+  waste: "site-mate:env-waste-snapshot:",
+  targets: "site-mate:env-scorecard-targets:",
+  meta: "site-mate:env-dashboard-meta:",
+  snapshot: "site-mate:env-waste-snapshot:",
+};
 
 export default function EnvironmentalDashboard() {
   const { currentUser } = useAuth();
   const reportRef = useRef(null);
 
-  const scope =
-    currentUser?.actingClientId || currentUser?.clientId || currentUser?.id || "default";
+  const {
+    statRows,
+    setStatRows,
+    snapshot: waste,
+    setSnapshot: setWaste,
+    targets,
+    updateTarget,
+    lastSavedAt,
+    hydrated,
+    saving,
+    saveNow,
+  } = useKpiDashboardPersistence({
+    section: "environmental",
+    currentUser,
+    storagePrefixes: STORAGE_PREFIXES,
+    createDefaultStatRows: createDefaultEnvStatRows,
+    shouldSeedStatRows: shouldSeedDefaultEnvKpis,
+    createEmptySnapshot: createEmptyWasteSnapshot,
+    normalizeSnapshot: normalizeWasteSnapshot,
+    hasSnapshot: true,
+  });
 
-  const statsKey = `${STATS_STORAGE_PREFIX}${scope}`;
-  const wasteKey = `${WASTE_STORAGE_PREFIX}${scope}`;
-  const targetsKey = `${TARGETS_STORAGE_PREFIX}${scope}`;
-  const metaKey = `${META_STORAGE_PREFIX}${scope}`;
-
-  const [statRows, setStatRows] = useState(() => createDefaultEnvStatRows());
-  const [waste, setWaste] = useState(() => createEmptyWasteSnapshot());
-  const [targets, setTargets] = useState({});
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
@@ -66,63 +62,15 @@ export default function EnvironmentalDashboard() {
     currentUser?.company ||
     "";
 
-  useEffect(() => {
-    try {
-      const rawStats = localStorage.getItem(statsKey);
-      if (rawStats) {
-        const parsed = JSON.parse(rawStats);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setStatRows(shouldSeedDefaultEnvKpis(parsed) ? createDefaultEnvStatRows() : parsed);
-        }
-      }
-
-      const rawWaste = localStorage.getItem(wasteKey);
-      if (rawWaste) {
-        setWaste(normalizeWasteSnapshot(JSON.parse(rawWaste)));
-      }
-
-      const rawTargets = localStorage.getItem(targetsKey);
-      if (rawTargets) {
-        const parsed = JSON.parse(rawTargets);
-        if (parsed && typeof parsed === "object") setTargets(parsed);
-      }
-
-      const rawMeta = localStorage.getItem(metaKey);
-      if (rawMeta) {
-        const parsed = JSON.parse(rawMeta);
-        if (parsed?.lastSavedAt) setLastSavedAt(parsed.lastSavedAt);
-      }
-    } catch {
-      /* ignore corrupt storage */
-    }
-    setHydrated(true);
-  }, [statsKey, wasteKey, targetsKey, metaKey]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(statsKey, JSON.stringify(statRows));
-  }, [statRows, statsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(wasteKey, JSON.stringify(waste));
-  }, [waste, wasteKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(targetsKey, JSON.stringify(targets));
-  }, [targets, targetsKey, hydrated]);
-
-  const updateTarget = useCallback((rowId, field, value) => {
-    setTargets((prev) => ({
-      ...prev,
-      [rowId]: { ...(prev[rowId] || {}), [field]: value },
-    }));
-  }, []);
+  const updateIndicator = useCallback((rowId, value) => {
+    setStatRows((prev) =>
+      prev.map((row) => (row.id === rowId ? { ...row, indicator: value } : row))
+    );
+  }, [setStatRows]);
 
   const hasReportData = useMemo(() => statRows.some(isEnvStatRow), [statRows]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!hasReportData) {
       setSnackbar({
         open: true,
@@ -132,21 +80,8 @@ export default function EnvironmentalDashboard() {
       return;
     }
 
-    setSaving(true);
-    const savedAt = new Date().toISOString();
-
     try {
-      persistDashboardData({
-        statsKey,
-        wasteKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        waste,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
+      await saveNow();
       setSnackbar({
         open: true,
         message: "Dashboard saved successfully.",
@@ -159,8 +94,6 @@ export default function EnvironmentalDashboard() {
         message: "Could not save dashboard. Please try again.",
         severity: "error",
       });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -178,19 +111,7 @@ export default function EnvironmentalDashboard() {
     setDownloadFormat(format);
 
     try {
-      const savedAt = new Date().toISOString();
-      persistDashboardData({
-        statsKey,
-        wasteKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        waste,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
-
+      await saveNow();
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const year = new Date().getFullYear();
@@ -232,6 +153,8 @@ export default function EnvironmentalDashboard() {
       })}`
     : null;
 
+  if (!hydrated) return null;
+
   return (
     <>
       <KpiTrackingLegend />
@@ -241,7 +164,7 @@ export default function EnvironmentalDashboard() {
         waste={waste}
         onWasteChange={setWaste}
       />
-      <EnvironmentalScorecard statRows={statRows} targets={targets} onUpdateTarget={updateTarget} />
+      <EnvironmentalScorecard statRows={statRows} targets={targets} onUpdateTarget={updateTarget} onUpdateIndicator={updateIndicator} />
       <EnvironmentalChartsDashboard statRows={statRows} waste={waste} targets={targets} />
 
       <KpiReportDownloadBar
@@ -252,20 +175,15 @@ export default function EnvironmentalDashboard() {
         onSave={handleSave}
         onDownloadPdf={handleDownloadPdf}
         onDownloadWord={handleDownloadWord}
-        helpText="Save updates your dashboard. Download exports statistics, scorecard, and performance charts as PDF or Word."
+        helpText="Changes auto-save to your organisation. Use Save to confirm immediately, or download PDF/Word reports."
       />
 
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          left: -10000,
-          top: 0,
-          pointerEvents: "none",
-          opacity: 0,
-        }}
-      >
-        <div ref={reportRef} className="pdf-export-root" style={{ width: 1100, background: "#fff" }}>
+      <div aria-hidden="true" style={KPI_REPORT_EXPORT_MOUNT_STYLE}>
+        <div
+          ref={reportRef}
+          className="pdf-export-root kpi-report-export"
+          style={{ width: KPI_REPORT_EXPORT_WIDTH, background: "#fff" }}
+        >
           <EnvironmentalReportDocument
             statRows={statRows}
             waste={waste}

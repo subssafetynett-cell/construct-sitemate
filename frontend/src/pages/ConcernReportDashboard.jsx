@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Layout from "../components/Layout";
 import PageContent from "../components/PageContent";
-import { fetchDashboardStats } from "../services/api";
-import { fetchWithCache } from "../utils/fetchCache";
+import { useDashboardStatsQuery } from "../hooks/useDashboardQueries";
 import {
     AreaChart,
     Area,
@@ -292,38 +291,31 @@ const DASHBOARD_SECTIONS = {
 
 export default function ConcernReportDashboard({ section = "default" }) {
     const { currentUser } = useAuth();
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
-    const [data, setData] = useState(defaultDashboard);
     const [chartYear, setChartYear] = useState(() => new Date().getFullYear());
     const [monthSort, setMonthSort] = useState("asc");
 
+    const { data: payload, isLoading: loading, error: queryError } = useDashboardStatsQuery();
+    const error = queryError
+        ? queryError.response?.data?.message || queryError.message || "Could not load dashboard"
+        : payload && !payload.success
+          ? payload.message || "Could not load dashboard"
+          : "";
+
+    const data = useMemo(() => {
+        if (!payload?.success) return defaultDashboard;
+        return {
+            ...defaultDashboard,
+            ...payload,
+            scope: payload.scope || defaultDashboard.scope,
+        };
+    }, [payload]);
+
     useEffect(() => {
-        setLoading(true);
-        setError("");
-        fetchWithCache(`main-dashboard:${currentUser?.id || "anon"}`, () => fetchDashboardStats())
-            .then((payload) => {
-                if (payload?.success) {
-                    const next = {
-                        ...defaultDashboard,
-                        ...payload,
-                        scope: payload.scope || defaultDashboard.scope,
-                    };
-                    setData(next);
-                    const years = payload.charts?.availableYears;
-                    if (years?.length) {
-                        setChartYear(years[0]);
-                    }
-                } else {
-                    setError(payload?.message || "Could not load dashboard");
-                }
-            })
-            .catch((err) => {
-                console.error("Dashboard Fetch Error:", err);
-                setError(err.response?.data?.message || "Could not load dashboard");
-            })
-            .finally(() => setLoading(false));
-    }, [currentUser?.id]);
+        const years = payload?.charts?.availableYears;
+        if (years?.length) {
+            setChartYear(years[0]);
+        }
+    }, [payload?.charts?.availableYears]);
 
     const monthlySubmissions = data.charts?.monthlySubmissions || [];
     const availableYears = data.charts?.availableYears?.length

@@ -1,4 +1,20 @@
 import api, { formResponseSaveConfig } from './api';
+import { FRIDAY_PACK_FORMS_CATEGORY } from '../utils/generalFormSubmissions';
+
+function buildFormResponseBody(payload, category) {
+    const siteId = payload?.siteId;
+    const subfolderId = payload?.subfolderId;
+    const hasSiteContext = siteId != null && String(siteId).trim() !== '';
+    const resolvedCategory = hasSiteContext ? FRIDAY_PACK_FORMS_CATEGORY : category;
+    const body = { answers: payload, category: resolvedCategory };
+    if (hasSiteContext) {
+        body.siteId = String(siteId).trim();
+    }
+    if (subfolderId != null && String(subfolderId).trim() !== '') {
+        body.subfolderId = String(subfolderId).trim();
+    }
+    return body;
+}
 
 /**
  * Create or update a general-form template response. Returns the saved response id.
@@ -11,10 +27,12 @@ export async function saveGeneralFormResponse({
     category,
 }) {
     const requestConfig = formResponseSaveConfig();
+    const body = buildFormResponseBody(payload, category);
+
     if (persistedResponseId && !asNew) {
         await api.put(
             `/forms/responses/${persistedResponseId}`,
-            { answers: payload, category },
+            body,
             requestConfig
         );
         return persistedResponseId;
@@ -22,7 +40,7 @@ export async function saveGeneralFormResponse({
     const formId = await getOrCreateTemplateForm(formTitle);
     const res = await api.post(
         `/forms/${formId}/responses`,
-        { answers: payload, category },
+        body,
         requestConfig
     );
     const saved = res.data?.data;

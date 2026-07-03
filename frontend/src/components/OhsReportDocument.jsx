@@ -63,7 +63,8 @@ export default function OhsReportDocument({
   return (
     <div
       style={{
-        width: 1100,
+        width: "100%",
+        boxSizing: "border-box",
         background: "#fff",
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
         color: "#111827",
@@ -94,13 +95,13 @@ export default function OhsReportDocument({
           >
             SECTION 1 — OHS STATISTICS
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+          <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
             <thead>
               <tr>
                 <th style={{ ...thDark, width: 28, background: "#fef9c3", color: "#a16207" }}>#</th>
-                <th style={{ ...thDark, textAlign: "left", minWidth: 180 }}>Indicator</th>
+                <th style={{ ...thDark, textAlign: "left" }}>Indicator</th>
                 {OHS_MONTHS.map((m) => (
-                  <th key={m.key} style={{ ...thDark, width: 48 }}>
+                  <th key={m.key} style={{ ...thDark }}>
                     {m.label}
                   </th>
                 ))}
@@ -168,7 +169,7 @@ export default function OhsReportDocument({
         >
           EMPLOYEE RANK DISTRIBUTION
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+        <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
           <thead>
             <tr>
               {OHS_EMPLOYEE_RANK_CATEGORIES.map((cat) => (
@@ -212,7 +213,7 @@ export default function OhsReportDocument({
         >
           EMPLOYEE AGE DISTRIBUTION
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+        <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
           <thead>
             <tr>
               {OHS_EMPLOYEE_AGE_CATEGORIES.map((cat) => (
@@ -257,7 +258,7 @@ export default function OhsReportDocument({
           >
             OCCUPATIONAL HEALTH AND SAFETY SCORECARD
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+          <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
             <thead>
               <tr>
                 <th style={{ ...thDark, textAlign: "left" }}>Indicator</th>

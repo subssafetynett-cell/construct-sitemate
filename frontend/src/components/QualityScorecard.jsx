@@ -69,7 +69,7 @@ function ScorecardCell({ value, onChange, placeholder, editable = true, tone = "
   );
 }
 
-export default function QualityScorecard({ statRows, targets, attendance, onUpdateTarget }) {
+export default function QualityScorecard({ statRows, targets, attendance, onUpdateTarget, onUpdateIndicator }) {
   const rows = useMemo(
     () => buildQualityScorecardRows(statRows, targets, attendance),
     [statRows, targets, attendance]
@@ -144,7 +144,11 @@ export default function QualityScorecard({ statRows, targets, attendance, onUpda
                   <td style={tdStyle}>
                     <ScorecardCell
                       value={row.indicator}
-                      onChange={(val) => onUpdateTarget(row.id, "indicator", val)}
+                      onChange={(val) =>
+                        row.derived
+                          ? onUpdateTarget(row.id, "indicator", val)
+                          : onUpdateIndicator?.(row.id, val)
+                      }
                       placeholder="Indicator"
                       editable
                       tone="default"

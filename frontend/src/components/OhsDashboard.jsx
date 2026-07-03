@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Snackbar } from "@mui/material";
 import { useAuth } from "../context/AuthContext";
-import { downloadKpiReportPdf, downloadKpiReportWord } from "../utils/kpiReportExporter";
+import { downloadKpiReportPdf, downloadKpiReportWord, KPI_REPORT_EXPORT_MOUNT_STYLE, KPI_REPORT_EXPORT_WIDTH } from "../utils/kpiReportExporter";
 import OhsMonthlyStatistics from "./OhsMonthlyStatistics";
 import OhsScorecard from "./OhsScorecard";
 import OhsChartsDashboard from "./OhsChartsDashboard";
@@ -9,6 +9,7 @@ import OhsReportDocument from "./OhsReportDocument";
 import KpiTrackingLegend from "./dashboard/KpiTrackingLegend";
 import KpiReportDownloadBar from "./dashboard/KpiReportDownloadBar";
 import { getActingClient } from "../utils/actingClient";
+import { useKpiDashboardPersistence } from "../hooks/useKpiDashboardPersistence";
 import {
   createDefaultStatRows,
   createEmptyClassification,
@@ -17,45 +18,40 @@ import {
   shouldSeedDefaultKpis,
 } from "../utils/ohsDashboardUtils";
 
-const STATS_STORAGE_PREFIX = "site-mate:ohs-monthly-stats:";
-const CLASSIFICATION_STORAGE_PREFIX = "site-mate:ohs-classification:";
-const TARGETS_STORAGE_PREFIX = "site-mate:ohs-scorecard-targets:";
-const META_STORAGE_PREFIX = "site-mate:ohs-dashboard-meta:";
-
-function persistDashboardData({
-  statsKey,
-  classificationKey,
-  targetsKey,
-  metaKey,
-  statRows,
-  classification,
-  targets,
-  savedAt,
-}) {
-  localStorage.setItem(statsKey, JSON.stringify(statRows));
-  localStorage.setItem(classificationKey, JSON.stringify(classification));
-  localStorage.setItem(targetsKey, JSON.stringify(targets));
-  localStorage.setItem(metaKey, JSON.stringify({ lastSavedAt: savedAt }));
-}
+const STORAGE_PREFIXES = {
+  stats: "site-mate:ohs-monthly-stats:",
+  classification: "site-mate:ohs-classification:",
+  targets: "site-mate:ohs-scorecard-targets:",
+  meta: "site-mate:ohs-dashboard-meta:",
+  snapshot: "site-mate:ohs-classification:",
+};
 
 export default function OhsDashboard() {
   const { currentUser } = useAuth();
   const reportRef = useRef(null);
 
-  const scope =
-    currentUser?.actingClientId || currentUser?.clientId || currentUser?.id || "default";
+  const {
+    statRows,
+    setStatRows,
+    snapshot: classification,
+    setSnapshot: setClassification,
+    targets,
+    updateTarget,
+    lastSavedAt,
+    hydrated,
+    saving,
+    saveNow,
+  } = useKpiDashboardPersistence({
+    section: "ohs",
+    currentUser,
+    storagePrefixes: STORAGE_PREFIXES,
+    createDefaultStatRows,
+    shouldSeedStatRows: shouldSeedDefaultKpis,
+    createEmptySnapshot: createEmptyClassification,
+    normalizeSnapshot: normalizeClassification,
+    hasSnapshot: true,
+  });
 
-  const statsKey = `${STATS_STORAGE_PREFIX}${scope}`;
-  const classificationKey = `${CLASSIFICATION_STORAGE_PREFIX}${scope}`;
-  const targetsKey = `${TARGETS_STORAGE_PREFIX}${scope}`;
-  const metaKey = `${META_STORAGE_PREFIX}${scope}`;
-
-  const [statRows, setStatRows] = useState(() => createDefaultStatRows());
-  const [classification, setClassification] = useState(() => createEmptyClassification());
-  const [targets, setTargets] = useState({});
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
@@ -66,84 +62,15 @@ export default function OhsDashboard() {
     currentUser?.company ||
     "";
 
-  useEffect(() => {
-    try {
-      const rawStats = localStorage.getItem(statsKey);
-      if (rawStats) {
-        const parsed = JSON.parse(rawStats);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setStatRows(shouldSeedDefaultKpis(parsed) ? createDefaultStatRows() : parsed);
-        }
-      }
-
-      const rawTargets = localStorage.getItem(targetsKey);
-      if (rawTargets) {
-        const parsed = JSON.parse(rawTargets);
-        if (parsed && typeof parsed === "object") setTargets(parsed);
-      }
-
-      const rawClassification = localStorage.getItem(classificationKey);
-      if (rawClassification) {
-        const parsed = JSON.parse(rawClassification);
-        setClassification(normalizeClassification(parsed));
-      }
-
-      const rawMeta = localStorage.getItem(metaKey);
-      if (rawMeta) {
-        const parsed = JSON.parse(rawMeta);
-        if (parsed?.lastSavedAt) setLastSavedAt(parsed.lastSavedAt);
-      }
-    } catch {
-      /* ignore corrupt storage */
-    }
-    setHydrated(true);
-  }, [statsKey, classificationKey, targetsKey, metaKey]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(statsKey, JSON.stringify(statRows));
-  }, [statRows, statsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(classificationKey, JSON.stringify(classification));
-  }, [classification, classificationKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(targetsKey, JSON.stringify(targets));
-  }, [targets, targetsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const ids = new Set(statRows.map((row) => row.id));
-    setTargets((prev) => {
-      const next = {};
-      let changed = false;
-      for (const [id, value] of Object.entries(prev)) {
-        if (ids.has(id)) next[id] = value;
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [statRows, hydrated]);
-
-  const updateTarget = useCallback((rowId, field, value) => {
-    setTargets((prev) => ({
-      ...prev,
-      [rowId]: { ...(prev[rowId] || {}), [field]: value },
-    }));
-  }, []);
-
   const updateIndicator = useCallback((rowId, value) => {
     setStatRows((prev) =>
       prev.map((row) => (row.id === rowId ? { ...row, indicator: value } : row))
     );
-  }, []);
+  }, [setStatRows]);
 
   const hasReportData = useMemo(() => statRows.some(isOhsScorecardRow), [statRows]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!hasReportData) {
       setSnackbar({
         open: true,
@@ -153,21 +80,8 @@ export default function OhsDashboard() {
       return;
     }
 
-    setSaving(true);
-    const savedAt = new Date().toISOString();
-
     try {
-      persistDashboardData({
-        statsKey,
-        classificationKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        classification,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
+      await saveNow();
       setSnackbar({
         open: true,
         message: "Dashboard saved successfully.",
@@ -180,8 +94,6 @@ export default function OhsDashboard() {
         message: "Could not save dashboard. Please try again.",
         severity: "error",
       });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -199,19 +111,7 @@ export default function OhsDashboard() {
     setDownloadFormat(format);
 
     try {
-      const savedAt = new Date().toISOString();
-      persistDashboardData({
-        statsKey,
-        classificationKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        classification,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
-
+      await saveNow();
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const year = new Date().getFullYear();
@@ -253,6 +153,8 @@ export default function OhsDashboard() {
       })}`
     : null;
 
+  if (!hydrated) return null;
+
   return (
     <>
       <KpiTrackingLegend />
@@ -278,20 +180,15 @@ export default function OhsDashboard() {
         onSave={handleSave}
         onDownloadPdf={handleDownloadPdf}
         onDownloadWord={handleDownloadWord}
-        helpText="Save updates your dashboard. Download exports statistics, scorecard, and performance charts as PDF or Word."
+        helpText="Changes auto-save to your organisation. Use Save to confirm immediately, or download PDF/Word reports."
       />
 
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          left: -10000,
-          top: 0,
-          pointerEvents: "none",
-          opacity: 0,
-        }}
-      >
-        <div ref={reportRef} className="pdf-export-root" style={{ width: 1100, background: "#fff" }}>
+      <div aria-hidden="true" style={KPI_REPORT_EXPORT_MOUNT_STYLE}>
+        <div
+          ref={reportRef}
+          className="pdf-export-root kpi-report-export"
+          style={{ width: KPI_REPORT_EXPORT_WIDTH, background: "#fff" }}
+        >
           <OhsReportDocument
             statRows={statRows}
             classification={classification}

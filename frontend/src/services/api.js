@@ -230,6 +230,32 @@ export const fetchFormResponsesList = async (params = {}, { timeout = 60_000 } =
   return response.data;
 };
 
+/** Fetch all pages when callers need a full in-memory list (e.g. client-side filters). */
+export const fetchAllFormResponsesList = async (
+  params = {},
+  { pageSize = 100, maxPages = 50, timeout = 60_000 } = {}
+) => {
+  const all = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore && page <= maxPages) {
+    const res = await fetchFormResponsesList({ ...params, page, limit: pageSize }, { timeout });
+    if (!res?.success) {
+      return res;
+    }
+    all.push(...(res.data || []));
+    if (res.pagination) {
+      hasMore = Boolean(res.pagination.hasMore);
+      page += 1;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return { success: true, data: all };
+};
+
 /** Dashboard aggregates — allow extra time on large tenants. */
 export const fetchDashboardStats = async ({ timeout = 90_000 } = {}) => {
   const response = await api.get("/dashboard/stats", { timeout });

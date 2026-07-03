@@ -867,7 +867,9 @@ export default function SiteInductionForm() {
                 defaultVisibility={formMetadata.visibility}
                 showVisibilityChoice={!siteId}
                 saving={saving}
-                templateFlow
+                templateFlow={!siteId}
+                isSitePackContext={Boolean(siteId)}
+                nameFieldLabel={siteId ? "Form name" : "Template name"}
             />
             {UnsavedDialog}
         </Layout>

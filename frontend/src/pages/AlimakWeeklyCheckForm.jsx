@@ -977,6 +977,8 @@ export default function AlimakWeeklyCheckForm() {
                 defaultTags={formMetadata.tags}
                 defaultVisibility={formMetadata.visibility}
                 existingId={persistedResponseId}
+                isSitePackContext={Boolean(siteId)}
+                nameFieldLabel={siteId ? "Form name" : "Form Name"}
             />
             {UnsavedDialog}
         </Layout>

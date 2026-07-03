@@ -5,8 +5,13 @@ import {
   formatOhsYtdDisplay,
   hasOhsMonthData,
   parseOhsNum,
+  resolveOhsLowerBetter,
   sumOhsYtd,
 } from "./ohsDashboardUtils";
+import { getKpiDropdownRows } from "./kpiChartUtils";
+import {
+  buildScorecardRowsFromDefinitions,
+} from "./kpiScorecardUtils";
 
 export const LR_MONTHS = OHS_MONTHS;
 
@@ -214,32 +219,20 @@ export function lrScorecardVarianceStatus(target, actual, lowerBetter) {
   };
 }
 
-function statActualForScorecard(statRows, def) {
-  const row = statRows.find((r) => r.id === def.statRowId);
-  if (!row) return "";
-  return computeLrYtd(row).actual;
-}
-
 export function buildLiftRegulationsScorecardRows(statRows, targets = {}) {
-  return LR_SCORECARD_DEFINITIONS.map((def) => {
-    const saved = targets[def.id] || {};
-    return {
-      id: def.id,
-      indicator: saved.indicator ?? def.indicator,
-      target: saved.target ?? "",
-      actual: statActualForScorecard(statRows, def),
-      unit: saved.unit ?? def.unit,
-      note: saved.note ?? "",
-      lowerBetter: def.lowerBetter,
-    };
-  });
+  return buildScorecardRowsFromDefinitions(
+    LR_SCORECARD_DEFINITIONS,
+    statRows,
+    targets,
+    {
+      computeActualForStatRow: (row) => computeLrYtd(row).actual,
+      resolveLowerBetter: resolveOhsLowerBetter,
+    }
+  );
 }
 
 export function getChartableLrRows(statRows) {
-  return statRows.filter((row) => {
-    const { hasData } = computeLrYtd(row);
-    return String(row.indicator || "").trim() && hasData;
-  });
+  return getKpiDropdownRows(statRows);
 }
 
 export function buildLrMonthlySeries(row) {

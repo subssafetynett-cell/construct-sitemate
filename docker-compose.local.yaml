@@ -53,6 +53,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-Sitemate <no-reply@localhost>}
       SMTP_RELAY_HOST: ${SMTP_RELAY_HOST:-}
       SMTP_RELAY_PORT: ${SMTP_RELAY_PORT:-587}
+      REDIS_URL: redis://redis:6379
+      DASHBOARD_CACHE_TTL_SEC: ${DASHBOARD_CACHE_TTL_SEC:-60}
     ports:
       - "4002:4000"
     depends_on:
@@ -60,6 +62,20 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: public.ecr.aws/docker/library/redis:7-alpine
+    container_name: site-mate_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   frontend:
     container_name: site-mate_frontend

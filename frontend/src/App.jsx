@@ -1,55 +1,54 @@
+import { lazy } from "react";
 import Home from './pages/Home'
 import { Routes, Route, Navigate } from "react-router-dom";
 import SignupPage from "./pages/Signup";
 import ErrorBoundary from './components/ErrorBoundary';
-import UsersPage from './pages/Users';
 import LoginPage from './pages/Login';
 import RequireAuth from './components/RequireAuth';
 import RoleGuard from './components/RoleGuard';
-import ClientsPage from './pages/Clients';
-import UserViewAccessPage from './pages/UserViewAccess';
 import AcceptViewInvite from './pages/AcceptViewInvite';
-import FormBuilderPage from './pages/FormBuilderPage';
-import UserClients from './pages/UserClients';
-import ViewForms from './pages/ViewForms';
-import ViewSingleForm from './pages/ViewSingleForm';
-import UseForm from './pages/UseForm';
-
-import ProfilePage from './pages/ProfilePage';
-import AccountSettings from './pages/AccountSettings';
-
 import ResetPassword from "./pages/ResetPassword";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyEmail from "./pages/VerifyEmail";
 import Setup2FA from "./pages/Setup2FA";
-
-import GenericReportPage from './pages/GenericReportPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
-import CreateSitesPage from './pages/CreateSitesPage';
-import SitepackManagement from './pages/SitepackManagement';
-import ConcernReportDashboard from './pages/ConcernReportDashboard';
-import MonitoringSectionDashboardPage from './pages/MonitoringSectionDashboardPage';
-import MonitoringSectionPage from './pages/MonitoringSectionPage';
-import ActionTrackerPage from './pages/ActionTrackerPage';
-import AuditReportDashboard from './pages/AuditReportDashboard';
-import GeneralFormsList from './pages/GeneralFormsList';
-import SavedSignaturesPage from './pages/SavedSignaturesPage';
-import ToolBoxTalkForm from './pages/ToolBoxTalkForm';
-import RamsBriefingForm from './pages/RamsBriefingForm';
-import SiteInductionForm from './pages/SiteInductionForm';
-import ManagementSiteInspectionForm from './pages/ManagementSiteInspectionForm';
-import DailySafeStartBriefingForm from './pages/DailySafeStartBriefingForm';
-import AuditActionForm from './pages/AuditActionForm';
-import SiteInductionRecordForm from './pages/SiteInductionRecordForm';
-import LolerInspectionForm from './pages/LolerInspectionForm';
-import PuwerInspectionForm from './pages/PuwerInspectionForm';
-import AlimakWeeklyCheckForm from './pages/AlimakWeeklyCheckForm';
-import CreateForm from './pages/CreateForm';
-import SheqInstallationForm from './pages/SheqInstallationForm';
-import SheqInspectionSelectionPage from './pages/SheqInspectionSelectionPage';
-import ShqInstallationSelectionPage from './pages/ShqInstallationSelectionPage';
 
 import { ThemeProvider } from './context/ThemeContext';
+
+const UsersPage = lazy(() => import('./pages/Users'));
+const ClientsPage = lazy(() => import('./pages/Clients'));
+const UserViewAccessPage = lazy(() => import('./pages/UserViewAccess'));
+const FormBuilderPage = lazy(() => import('./pages/FormBuilderPage'));
+const UserClients = lazy(() => import('./pages/UserClients'));
+const ViewForms = lazy(() => import('./pages/ViewForms'));
+const ViewSingleForm = lazy(() => import('./pages/ViewSingleForm'));
+const UseForm = lazy(() => import('./pages/UseForm'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const AccountSettings = lazy(() => import('./pages/AccountSettings'));
+const GenericReportPage = lazy(() => import('./pages/GenericReportPage'));
+const CreateSitesPage = lazy(() => import('./pages/CreateSitesPage'));
+const SitepackManagement = lazy(() => import('./pages/SitepackManagement'));
+const ConcernReportDashboard = lazy(() => import('./pages/ConcernReportDashboard'));
+const MonitoringSectionDashboardPage = lazy(() => import('./pages/MonitoringSectionDashboardPage'));
+const MonitoringSectionPage = lazy(() => import('./pages/MonitoringSectionPage'));
+const ActionTrackerPage = lazy(() => import('./pages/ActionTrackerPage'));
+const AuditReportDashboard = lazy(() => import('./pages/AuditReportDashboard'));
+const GeneralFormsList = lazy(() => import('./pages/GeneralFormsList'));
+const SavedSignaturesPage = lazy(() => import('./pages/SavedSignaturesPage'));
+const ToolBoxTalkForm = lazy(() => import('./pages/ToolBoxTalkForm'));
+const RamsBriefingForm = lazy(() => import('./pages/RamsBriefingForm'));
+const SiteInductionForm = lazy(() => import('./pages/SiteInductionForm'));
+const ManagementSiteInspectionForm = lazy(() => import('./pages/ManagementSiteInspectionForm'));
+const DailySafeStartBriefingForm = lazy(() => import('./pages/DailySafeStartBriefingForm'));
+const AuditActionForm = lazy(() => import('./pages/AuditActionForm'));
+const SiteInductionRecordForm = lazy(() => import('./pages/SiteInductionRecordForm'));
+const LolerInspectionForm = lazy(() => import('./pages/LolerInspectionForm'));
+const PuwerInspectionForm = lazy(() => import('./pages/PuwerInspectionForm'));
+const AlimakWeeklyCheckForm = lazy(() => import('./pages/AlimakWeeklyCheckForm'));
+const CreateForm = lazy(() => import('./pages/CreateForm'));
+const SheqInstallationForm = lazy(() => import('./pages/SheqInstallationForm'));
+const SheqInspectionSelectionPage = lazy(() => import('./pages/SheqInspectionSelectionPage'));
+const ShqInstallationSelectionPage = lazy(() => import('./pages/ShqInstallationSelectionPage'));
 
 // ─── Role shorthand arrays ─────────────────────────────────────────────────────
 const ADMIN_PLUS    = ["superadmin", "company_admin"];

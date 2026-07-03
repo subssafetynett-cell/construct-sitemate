@@ -22,6 +22,20 @@ export default defineConfig(({ mode }) => {
     envDir: repoRoot,
     build: {
       chunkSizeWarningLimit: 3000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              if (id.includes("recharts")) return "charts";
+              if (id.includes("@mui") || id.includes("@emotion")) return "mui";
+              if (id.includes("html2canvas") || id.includes("jspdf") || id.includes("docx")) {
+                return "export";
+              }
+              if (id.includes("react-dom") || id.includes("react-router")) return "vendor";
+            }
+          },
+        },
+      },
     },
     server: {
       proxy: {

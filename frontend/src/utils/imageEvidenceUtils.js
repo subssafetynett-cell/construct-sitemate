@@ -17,7 +17,7 @@ export function normalizeImageEvidenceEntry(img) {
         if (!src) return null;
         return {
             src,
-            description: String(img.description || "").trim(),
+            description: String(img.description ?? "").trim(),
         };
     }
     return null;
@@ -36,11 +36,11 @@ export function getImageEvidenceSrc(entry) {
 
 export function getImageEvidenceDescription(entry) {
     if (!entry || typeof entry === "string") return "";
-    return String(entry.description || "").trim();
+    return String(entry.description ?? "").trim();
 }
 
 export function createImageEvidenceEntry(src, description = "") {
-    return { src, description: String(description || "").trim() };
+    return { src, description: String(description ?? "").trim() };
 }
 
 /** Persist as a string when there is no description (backward compatible). */

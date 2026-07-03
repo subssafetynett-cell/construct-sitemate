@@ -382,6 +382,11 @@ function normalizeFormImages(images) {
     return normalizeImageEvidenceList(images);
 }
 
+function getImageEvidenceDescriptionDraft(entry) {
+    if (!entry || typeof entry === "string") return "";
+    return String(entry.description ?? "");
+}
+
 function normalizeSectionPhotosMap(sectionPhotos) {
     if (!sectionPhotos || typeof sectionPhotos !== "object" || Array.isArray(sectionPhotos)) {
         return {};
@@ -2063,12 +2068,12 @@ export default function SheqInstallationForm({
 
     const updateImageDescription = (index, description) => {
         setFormData((prev) => {
-            const list = normalizeFormImages(prev.images || []);
-            if (!list[index]) return prev;
-            const next = list.map((entry, i) =>
-                i === index
-                    ? createImageEvidenceEntry(entry.src, description)
-                    : entry
+            const list = Array.isArray(prev.images) ? prev.images : [];
+            const entry = list[index];
+            if (!entry) return prev;
+            const src = getImageEvidenceSrc(entry);
+            const next = list.map((item, i) =>
+                i === index ? { src, description: String(description ?? "") } : item
             );
             return { ...prev, images: next };
         });
@@ -2077,12 +2082,12 @@ export default function SheqInstallationForm({
     const updateSectionImageDescription = (catIdx, index, description) => {
         const key = sectionPhotoKey(catIdx);
         setFormData((prev) => {
-            const list = normalizeFormImages(prev.sectionPhotos?.[key] || []);
-            if (!list[index]) return prev;
-            const next = list.map((entry, i) =>
-                i === index
-                    ? createImageEvidenceEntry(entry.src, description)
-                    : entry
+            const list = Array.isArray(prev.sectionPhotos?.[key]) ? prev.sectionPhotos[key] : [];
+            const entry = list[index];
+            if (!entry) return prev;
+            const src = getImageEvidenceSrc(entry);
+            const next = list.map((item, i) =>
+                i === index ? { src, description: String(description ?? "") } : item
             );
             return {
                 ...prev,
@@ -3781,7 +3786,7 @@ export default function SheqInstallationForm({
                                                             </Box>
                                                             <Box sx={{ p: 1 }}>
                                                                 <ImageEvidenceDescriptionField
-                                                                    value={getImageEvidenceDescription(entry)}
+                                                                    value={getImageEvidenceDescriptionDraft(entry)}
                                                                     onChange={(text) =>
                                                                         updateSectionImageDescription(catIdx, idx, text)
                                                                     }
@@ -4035,7 +4040,7 @@ export default function SheqInstallationForm({
                                                 </Box>
                                                 <Box sx={{ p: 1.5 }}>
                                                     <ImageEvidenceDescriptionField
-                                                        value={getImageEvidenceDescription(entry)}
+                                                        value={getImageEvidenceDescriptionDraft(entry)}
                                                         onChange={(text) => updateImageDescription(idx, text)}
                                                     />
                                                 </Box>

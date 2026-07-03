@@ -3,7 +3,7 @@ import { Box, FormControl, InputLabel, MenuItem, Select } from "@mui/material";
 import { BarChart3 } from "lucide-react";
 import KpiMonthlyBarChart from "./KpiMonthlyBarChart";
 import KpiMonthlyChartsGrid from "./KpiMonthlyChartsGrid";
-import { monthlyChartSeriesName, monthlyChartTitle, sortKpiChartRows } from "../../utils/kpiChartUtils";
+import { monthlyChartSeriesName, monthlyChartTitle } from "../../utils/kpiChartUtils";
 
 export default function KpiMonthlyChartsSection({
   title = "Monthly KPI Statistics",
@@ -14,29 +14,29 @@ export default function KpiMonthlyChartsSection({
   exportMode = false,
   breakBefore = false,
 }) {
-  const sortedRows = useMemo(() => sortKpiChartRows(rows), [rows]);
-  const [selectedId, setSelectedId] = useState(() => sortedRows[0]?.id ?? "");
+  const displayRows = useMemo(() => rows || [], [rows]);
+  const [selectedId, setSelectedId] = useState(() => displayRows[0]?.id ?? "");
 
   useEffect(() => {
-    if (!sortedRows.length) {
+    if (!displayRows.length) {
       setSelectedId("");
       return;
     }
-    if (!sortedRows.some((row) => row.id === selectedId)) {
-      setSelectedId(sortedRows[0].id);
+    if (!displayRows.some((row) => row.id === selectedId)) {
+      setSelectedId(displayRows[0].id);
     }
-  }, [sortedRows, selectedId]);
+  }, [displayRows, selectedId]);
 
   const selectedRow = useMemo(
-    () => sortedRows.find((row) => row.id === selectedId) ?? sortedRows[0] ?? null,
-    [sortedRows, selectedId]
+    () => displayRows.find((row) => row.id === selectedId) ?? displayRows[0] ?? null,
+    [displayRows, selectedId]
   );
 
-  if (!sortedRows.length) return null;
+  if (!displayRows.length) return null;
 
   const chartContent = exportMode ? (
     <KpiMonthlyChartsGrid
-      rows={sortedRows}
+      rows={displayRows}
       buildSeries={buildSeries}
       barColor={barColor}
       exportMode={exportMode}
@@ -54,7 +54,7 @@ export default function KpiMonthlyChartsSection({
             onChange={(e) => setSelectedId(e.target.value)}
             sx={{ bgcolor: "#fff" }}
           >
-            {sortedRows.map((row) => (
+            {displayRows.map((row) => (
               <MenuItem key={row.id} value={row.id}>
                 {String(row.indicator || "").trim() || "Untitled indicator"}
               </MenuItem>

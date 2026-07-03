@@ -69,7 +69,7 @@ function ScorecardCell({ value, onChange, placeholder, editable = true, tone = "
   );
 }
 
-export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget }) {
+export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget, onUpdateIndicator }) {
   const rows = useMemo(
     () => buildFoodSafetyScorecardRows(statRows, targets),
     [statRows, targets]
@@ -144,7 +144,11 @@ export default function FoodSafetyScorecard({ statRows, targets, onUpdateTarget 
                   <td style={tdStyle}>
                     <ScorecardCell
                       value={row.indicator}
-                      onChange={(val) => onUpdateTarget(row.id, "indicator", val)}
+                      onChange={(val) =>
+                        row.derived
+                          ? onUpdateTarget(row.id, "indicator", val)
+                          : onUpdateIndicator?.(row.id, val)
+                      }
                       placeholder="Indicator"
                       editable
                       tone="default"

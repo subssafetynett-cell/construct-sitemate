@@ -5,8 +5,13 @@ import {
   formatOhsYtdDisplay,
   hasOhsMonthData,
   parseOhsNum,
+  resolveOhsLowerBetter,
   sumOhsYtd,
 } from "./ohsDashboardUtils";
+import { getKpiDropdownRows } from "./kpiChartUtils";
+import {
+  buildScorecardRowsFromDefinitions,
+} from "./kpiScorecardUtils";
 
 export const FS_MONTHS = OHS_MONTHS;
 
@@ -215,32 +220,20 @@ export function fsScorecardVarianceStatus(target, actual, lowerBetter) {
   };
 }
 
-function statActualForScorecard(statRows, def) {
-  const row = statRows.find((r) => r.id === def.statRowId);
-  if (!row) return "";
-  return computeFsYtd(row).actual;
-}
-
 export function buildFoodSafetyScorecardRows(statRows, targets = {}) {
-  return FS_SCORECARD_DEFINITIONS.map((def) => {
-    const saved = targets[def.id] || {};
-    return {
-      id: def.id,
-      indicator: saved.indicator ?? def.indicator,
-      target: saved.target ?? "",
-      actual: statActualForScorecard(statRows, def),
-      unit: saved.unit ?? def.unit,
-      note: saved.note ?? "",
-      lowerBetter: def.lowerBetter,
-    };
-  });
+  return buildScorecardRowsFromDefinitions(
+    FS_SCORECARD_DEFINITIONS,
+    statRows,
+    targets,
+    {
+      computeActualForStatRow: (row) => computeFsYtd(row).actual,
+      resolveLowerBetter: resolveOhsLowerBetter,
+    }
+  );
 }
 
 export function getChartableFsRows(statRows) {
-  return statRows.filter((row) => {
-    const { hasData } = computeFsYtd(row);
-    return String(row.indicator || "").trim() && hasData;
-  });
+  return getKpiDropdownRows(statRows);
 }
 
 export function buildFsMonthlySeries(row) {

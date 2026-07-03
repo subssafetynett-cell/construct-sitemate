@@ -140,7 +140,13 @@ function absolutizeMediaUrlsInClone(_document, clonedRoot) {
     });
 }
 
-function html2canvasOnClone(_document, clonedElement) {
+function captureDimensions(element) {
+    const width = Math.max(element.scrollWidth, element.offsetWidth, element.clientWidth, 1);
+    const height = Math.max(element.scrollHeight, element.offsetHeight, element.clientHeight, 1);
+    return { width, height };
+}
+
+export function html2canvasOnClone(_document, clonedElement) {
     absolutizeMediaUrlsInClone(_document, clonedElement);
     ensurePdfExportVisible(clonedElement);
     const style = _document.createElement("style");
@@ -441,6 +447,35 @@ function html2canvasOnClone(_document, clonedElement) {
             max-width: 160px !important;
             object-fit: contain !important;
         }
+        .pdf-export-root.kpi-report-export {
+            overflow: visible !important;
+            background: #ffffff !important;
+            box-sizing: border-box !important;
+            padding: 0 !important;
+        }
+        .pdf-export-root.kpi-report-export [data-pdf-block] {
+            overflow: visible !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            padding-bottom: 6px !important;
+        }
+        .pdf-export-root.kpi-report-export h1,
+        .pdf-export-root.kpi-report-export p {
+            line-height: 1.45 !important;
+            overflow: visible !important;
+        }
+        .pdf-export-root.kpi-report-export table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+        }
+        .pdf-export-root.kpi-report-export th,
+        .pdf-export-root.kpi-report-export td {
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            word-wrap: break-word !important;
+            white-space: normal !important;
+        }
     `;
     _document.head.appendChild(style);
 }
@@ -504,14 +539,17 @@ function resolveLayout(options) {
 
 async function captureElement(element, captureOpts) {
     const { scale, jpegQuality } = pickCaptureOptions(element, captureOpts);
+    const { width, height } = captureDimensions(element);
     const canvas = await html2canvas(element, {
         useCORS: true,
         allowTaint: false,
         scale,
         logging: false,
         backgroundColor: "#ffffff",
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
         onclone: html2canvasOnClone,
     });
     return { canvas, jpegQuality };
@@ -720,14 +758,17 @@ async function downloadPdfSingleCanvas(root, fileName, onComplete, options) {
         jpegQuality: options.jpegQuality,
     });
 
+    const { width, height } = captureDimensions(root);
     const canvas = await html2canvas(root, {
         useCORS: true,
         allowTaint: false,
         scale,
         logging: false,
         backgroundColor: "#ffffff",
-        windowWidth: root.scrollWidth,
-        windowHeight: root.scrollHeight,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
         onclone: html2canvasOnClone,
     });
 

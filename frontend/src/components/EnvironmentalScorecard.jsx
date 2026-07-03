@@ -68,7 +68,7 @@ function ScorecardCell({ value, onChange, placeholder, editable = true, tone = "
   );
 }
 
-export default function EnvironmentalScorecard({ statRows, targets, onUpdateTarget }) {
+export default function EnvironmentalScorecard({ statRows, targets, onUpdateTarget, onUpdateIndicator }) {
   const rows = useMemo(
     () => buildEnvironmentalScorecardRows(statRows, targets),
     [statRows, targets]
@@ -143,7 +143,11 @@ export default function EnvironmentalScorecard({ statRows, targets, onUpdateTarg
                   <td style={tdStyle}>
                     <ScorecardCell
                       value={row.indicator}
-                      onChange={(val) => onUpdateTarget(row.id, "indicator", val)}
+                      onChange={(val) =>
+                        row.derived
+                          ? onUpdateTarget(row.id, "indicator", val)
+                          : onUpdateIndicator?.(row.id, val)
+                      }
                       placeholder="Indicator"
                       editable
                       tone="default"

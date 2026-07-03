@@ -2,13 +2,20 @@ import html2canvas from "html2canvas";
 import { Document, Packer, Paragraph, ImageRun } from "docx";
 import { saveAs } from "file-saver";
 import { inlineImagesForPdfCapture } from "./compressImage";
-import { downloadPdfFromRef } from "./pdfGenerator";
+import { downloadPdfFromRef, html2canvasOnClone } from "./pdfGenerator";
+import { prepareKpiExportMount } from "./kpiReportExportConstants";
+
+export { KPI_REPORT_EXPORT_WIDTH, KPI_REPORT_EXPORT_MOUNT_STYLE } from "./kpiReportExportConstants";
 
 export const KPI_REPORT_PDF_OPTIONS = {
   paginateBlocks: true,
   blockScale: 2,
   jpegQuality: 0.9,
   chartWaitTimeoutMs: 5000,
+  skipBuiltInFooter: true,
+  headerInsetMm: 6,
+  footerInsetMm: 6,
+  marginX: 10,
 };
 
 function blockHasLayout(el) {
@@ -101,22 +108,37 @@ function dataUrlToUint8Array(dataUrl) {
   return bytes;
 }
 
+function captureDimensions(element) {
+  const width = Math.max(element.scrollWidth, element.offsetWidth, element.clientWidth, 1);
+  const height = Math.max(element.scrollHeight, element.offsetHeight, element.clientHeight, 1);
+  return { width, height };
+}
+
 async function captureElementAsJpeg(element, scale = 2) {
+  const { width, height } = captureDimensions(element);
   const canvas = await html2canvas(element, {
     useCORS: true,
     allowTaint: false,
     scale,
     logging: false,
     backgroundColor: "#ffffff",
-    windowWidth: element.scrollWidth,
-    windowHeight: element.scrollHeight,
+    width,
+    height,
+    windowWidth: width,
+    windowHeight: height,
+    onclone: html2canvasOnClone,
   });
   return canvas;
 }
 
 export async function downloadKpiReportPdf(reportRef, fileName, onComplete = null, options = {}) {
   const merged = { ...KPI_REPORT_PDF_OPTIONS, ...options };
-  return downloadPdfFromRef(reportRef, fileName, onComplete, merged);
+  const restoreMount = prepareKpiExportMount(reportRef);
+  try {
+    return await downloadPdfFromRef(reportRef, fileName, onComplete, merged);
+  } finally {
+    restoreMount();
+  }
 }
 
 export async function downloadKpiReportWord(reportRef, fileName = "KPI_Report", onComplete = null) {
@@ -126,6 +148,7 @@ export async function downloadKpiReportWord(reportRef, fileName = "KPI_Report", 
     return;
   }
 
+  const restoreMount = prepareKpiExportMount(reportRef);
   try {
     const root = reportRef.current;
     await prepareReportRoot(root);
@@ -178,5 +201,7 @@ export async function downloadKpiReportWord(reportRef, fileName = "KPI_Report", 
     console.error("KPI Word export failed:", err);
     if (onComplete) onComplete(err);
     throw err;
+  } finally {
+    restoreMount();
   }
 }

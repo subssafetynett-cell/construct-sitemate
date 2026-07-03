@@ -5,8 +5,15 @@ import {
   formatOhsYtdDisplay,
   hasOhsMonthData,
   parseOhsNum,
+  resolveOhsLowerBetter,
   sumOhsYtd,
 } from "./ohsDashboardUtils";
+import { getKpiDropdownRows } from "./kpiChartUtils";
+import {
+  buildDerivedScorecardRow,
+  buildScorecardRowsFromDefinitions,
+  insertScorecardRowAfter,
+} from "./kpiScorecardUtils";
 
 export const QUALITY_MONTHS = OHS_MONTHS;
 
@@ -210,41 +217,35 @@ export function qualityScorecardVarianceStatus(target, actual, lowerBetter) {
   };
 }
 
-function statActualForScorecard(statRows, def) {
-  const row = statRows.find((r) => r.id === def.statRowId);
-  if (!row) return "";
-  return computeQualityYtd(row).actual;
-}
-
 export function buildQualityScorecardRows(statRows, targets = {}, attendance = {}) {
-  return QUALITY_SCORECARD_DEFINITIONS.map((def) => {
-    const saved = targets[def.id] || {};
-    let actual = "";
-
-    if (def.derive === "attendanceRate") {
-      const { value, hasData } = computeAttendanceRate(attendance);
-      actual = hasData ? value : "";
-    } else {
-      actual = statActualForScorecard(statRows, def);
+  let rows = buildScorecardRowsFromDefinitions(
+    QUALITY_SCORECARD_DEFINITIONS,
+    statRows,
+    targets,
+    {
+      computeActualForStatRow: (row) => computeQualityYtd(row).actual,
+      resolveLowerBetter: resolveOhsLowerBetter,
     }
+  );
 
-    return {
-      id: def.id,
-      indicator: saved.indicator ?? def.indicator,
-      target: saved.target ?? "",
-      actual,
-      unit: saved.unit ?? def.unit,
-      note: saved.note ?? "",
-      lowerBetter: def.lowerBetter,
-    };
-  });
+  const attendanceDef = QUALITY_SCORECARD_DEFINITIONS.find(
+    (def) => def.derive === "attendanceRate"
+  );
+  if (attendanceDef) {
+    const { value, hasData } = computeAttendanceRate(attendance);
+    const derivedRow = buildDerivedScorecardRow(
+      attendanceDef,
+      targets,
+      hasData ? value : ""
+    );
+    rows = insertScorecardRowAfter(rows, derivedRow, "stat-meetings");
+  }
+
+  return rows;
 }
 
 export function getChartableQualityRows(statRows) {
-  return statRows.filter((row) => {
-    const { hasData } = computeQualityYtd(row);
-    return String(row.indicator || "").trim() && hasData;
-  });
+  return getKpiDropdownRows(statRows);
 }
 
 export function buildQualityMonthlySeries(row) {
@@ -346,6 +347,7 @@ export function hasAttendancePieData(attendance) {
 
 export function hasQualityChartData(statRows, attendance) {
   return (
+    getChartableQualityRows(statRows).length > 0 ||
     hasLawsuitsWhistleblowerData(statRows) ||
     hasMeetingsTrendData(statRows) ||
     hasBoardCompositionData(statRows) ||

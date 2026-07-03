@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Snackbar } from "@mui/material";
 import { useAuth } from "../context/AuthContext";
-import { downloadKpiReportPdf, downloadKpiReportWord } from "../utils/kpiReportExporter";
+import { downloadKpiReportPdf, downloadKpiReportWord, KPI_REPORT_EXPORT_MOUNT_STYLE, KPI_REPORT_EXPORT_WIDTH } from "../utils/kpiReportExporter";
 import FoodSafetyMonthlyStatistics from "./FoodSafetyMonthlyStatistics";
 import FoodSafetyScorecard from "./FoodSafetyScorecard";
 import FoodSafetyChartsDashboard from "./FoodSafetyChartsDashboard";
@@ -9,6 +9,7 @@ import FoodSafetyReportDocument from "./FoodSafetyReportDocument";
 import KpiTrackingLegend from "./dashboard/KpiTrackingLegend";
 import KpiReportDownloadBar from "./dashboard/KpiReportDownloadBar";
 import { getActingClient } from "../utils/actingClient";
+import { useKpiDashboardPersistence } from "../hooks/useKpiDashboardPersistence";
 import {
   createDefaultFsStatRows,
   createEmptyIncidentSnapshot,
@@ -17,45 +18,40 @@ import {
   shouldSeedDefaultFsKpis,
 } from "../utils/foodSafetyDashboardUtils";
 
-const STATS_STORAGE_PREFIX = "site-mate:fs-monthly-stats:";
-const INCIDENTS_STORAGE_PREFIX = "site-mate:fs-incidents:";
-const TARGETS_STORAGE_PREFIX = "site-mate:fs-scorecard-targets:";
-const META_STORAGE_PREFIX = "site-mate:fs-dashboard-meta:";
-
-function persistDashboardData({
-  statsKey,
-  incidentsKey,
-  targetsKey,
-  metaKey,
-  statRows,
-  incidents,
-  targets,
-  savedAt,
-}) {
-  localStorage.setItem(statsKey, JSON.stringify(statRows));
-  localStorage.setItem(incidentsKey, JSON.stringify(incidents));
-  localStorage.setItem(targetsKey, JSON.stringify(targets));
-  localStorage.setItem(metaKey, JSON.stringify({ lastSavedAt: savedAt }));
-}
+const STORAGE_PREFIXES = {
+  stats: "site-mate:fs-monthly-stats:",
+  incidents: "site-mate:fs-incidents:",
+  targets: "site-mate:fs-scorecard-targets:",
+  meta: "site-mate:fs-dashboard-meta:",
+  snapshot: "site-mate:fs-incidents:",
+};
 
 export default function FoodSafetyDashboard() {
   const { currentUser } = useAuth();
   const reportRef = useRef(null);
 
-  const scope =
-    currentUser?.actingClientId || currentUser?.clientId || currentUser?.id || "default";
+  const {
+    statRows,
+    setStatRows,
+    snapshot: incidents,
+    setSnapshot: setIncidents,
+    targets,
+    updateTarget,
+    lastSavedAt,
+    hydrated,
+    saving,
+    saveNow,
+  } = useKpiDashboardPersistence({
+    section: "food-safety",
+    currentUser,
+    storagePrefixes: STORAGE_PREFIXES,
+    createDefaultStatRows: createDefaultFsStatRows,
+    shouldSeedStatRows: shouldSeedDefaultFsKpis,
+    createEmptySnapshot: createEmptyIncidentSnapshot,
+    normalizeSnapshot: normalizeIncidentSnapshot,
+    hasSnapshot: true,
+  });
 
-  const statsKey = `${STATS_STORAGE_PREFIX}${scope}`;
-  const incidentsKey = `${INCIDENTS_STORAGE_PREFIX}${scope}`;
-  const targetsKey = `${TARGETS_STORAGE_PREFIX}${scope}`;
-  const metaKey = `${META_STORAGE_PREFIX}${scope}`;
-
-  const [statRows, setStatRows] = useState(() => createDefaultFsStatRows());
-  const [incidents, setIncidents] = useState(() => createEmptyIncidentSnapshot());
-  const [targets, setTargets] = useState({});
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
@@ -66,63 +62,15 @@ export default function FoodSafetyDashboard() {
     currentUser?.company ||
     "";
 
-  useEffect(() => {
-    try {
-      const rawStats = localStorage.getItem(statsKey);
-      if (rawStats) {
-        const parsed = JSON.parse(rawStats);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setStatRows(shouldSeedDefaultFsKpis(parsed) ? createDefaultFsStatRows() : parsed);
-        }
-      }
-
-      const rawIncidents = localStorage.getItem(incidentsKey);
-      if (rawIncidents) {
-        setIncidents(normalizeIncidentSnapshot(JSON.parse(rawIncidents)));
-      }
-
-      const rawTargets = localStorage.getItem(targetsKey);
-      if (rawTargets) {
-        const parsed = JSON.parse(rawTargets);
-        if (parsed && typeof parsed === "object") setTargets(parsed);
-      }
-
-      const rawMeta = localStorage.getItem(metaKey);
-      if (rawMeta) {
-        const parsed = JSON.parse(rawMeta);
-        if (parsed?.lastSavedAt) setLastSavedAt(parsed.lastSavedAt);
-      }
-    } catch {
-      /* ignore corrupt storage */
-    }
-    setHydrated(true);
-  }, [statsKey, incidentsKey, targetsKey, metaKey]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(statsKey, JSON.stringify(statRows));
-  }, [statRows, statsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(incidentsKey, JSON.stringify(incidents));
-  }, [incidents, incidentsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(targetsKey, JSON.stringify(targets));
-  }, [targets, targetsKey, hydrated]);
-
-  const updateTarget = useCallback((rowId, field, value) => {
-    setTargets((prev) => ({
-      ...prev,
-      [rowId]: { ...(prev[rowId] || {}), [field]: value },
-    }));
-  }, []);
+  const updateIndicator = useCallback((rowId, value) => {
+    setStatRows((prev) =>
+      prev.map((row) => (row.id === rowId ? { ...row, indicator: value } : row))
+    );
+  }, [setStatRows]);
 
   const hasReportData = useMemo(() => statRows.some(isFsStatRow), [statRows]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!hasReportData) {
       setSnackbar({
         open: true,
@@ -132,21 +80,8 @@ export default function FoodSafetyDashboard() {
       return;
     }
 
-    setSaving(true);
-    const savedAt = new Date().toISOString();
-
     try {
-      persistDashboardData({
-        statsKey,
-        incidentsKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        incidents,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
+      await saveNow();
       setSnackbar({ open: true, message: "Dashboard saved successfully.", severity: "success" });
     } catch (err) {
       console.error("Food safety save failed:", err);
@@ -155,8 +90,6 @@ export default function FoodSafetyDashboard() {
         message: "Could not save dashboard. Please try again.",
         severity: "error",
       });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -174,19 +107,7 @@ export default function FoodSafetyDashboard() {
     setDownloadFormat(format);
 
     try {
-      const savedAt = new Date().toISOString();
-      persistDashboardData({
-        statsKey,
-        incidentsKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        incidents,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
-
+      await saveNow();
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const year = new Date().getFullYear();
@@ -228,6 +149,8 @@ export default function FoodSafetyDashboard() {
       })}`
     : null;
 
+  if (!hydrated) return null;
+
   return (
     <>
       <KpiTrackingLegend />
@@ -241,6 +164,7 @@ export default function FoodSafetyDashboard() {
         statRows={statRows}
         targets={targets}
         onUpdateTarget={updateTarget}
+        onUpdateIndicator={updateIndicator}
       />
       <FoodSafetyChartsDashboard statRows={statRows} incidents={incidents} targets={targets} />
 
@@ -255,20 +179,15 @@ export default function FoodSafetyDashboard() {
         saveColor="#ea580c"
         saveHoverColor="#c2410c"
         accentColor="#ea580c"
-        helpText="Save updates your dashboard. Download exports statistics, scorecard, and performance charts as PDF or Word."
+        helpText="Changes auto-save to your organisation. Use Save to confirm immediately, or download PDF/Word reports."
       />
 
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          left: -10000,
-          top: 0,
-          pointerEvents: "none",
-          opacity: 0,
-        }}
-      >
-        <div ref={reportRef} className="pdf-export-root" style={{ width: 1100, background: "#fff" }}>
+      <div aria-hidden="true" style={KPI_REPORT_EXPORT_MOUNT_STYLE}>
+        <div
+          ref={reportRef}
+          className="pdf-export-root kpi-report-export"
+          style={{ width: KPI_REPORT_EXPORT_WIDTH, background: "#fff" }}
+        >
           <FoodSafetyReportDocument
             statRows={statRows}
             incidents={incidents}

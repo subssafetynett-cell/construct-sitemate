@@ -260,7 +260,7 @@ function describeInviteEmailResult(emailResult) {
   };
 }
 
-const sendEmail = async ({ to, subject, html, replyTo, from }) => {
+const sendEmailNow = async ({ to, subject, html, replyTo, from }) => {
   try {
     const sender = await getTransporter();
     if (!sender) {
@@ -321,8 +321,25 @@ const sendEmail = async ({ to, subject, html, replyTo, from }) => {
   }
 };
 
+/** Queue when Redis/BullMQ is available; otherwise send immediately. */
+const sendEmail = async (payload) => {
+  if (process.env.EMAIL_QUEUE_DISABLED === "1") {
+    return sendEmailNow(payload);
+  }
+  try {
+    const { enqueueEmail, isQueueEnabled } = require("./jobQueue");
+    if (isQueueEnabled()) {
+      return enqueueEmail(payload);
+    }
+  } catch {
+    /* fall through */
+  }
+  return sendEmailNow(payload);
+};
+
 module.exports = {
   sendEmail,
+  sendEmailNow,
   logEmailTransportAtStartup,
   isSmtpConfigured,
   isExternalDeliveryConfigured,

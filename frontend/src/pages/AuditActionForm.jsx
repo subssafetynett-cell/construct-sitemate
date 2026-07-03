@@ -736,8 +736,9 @@ export default function AuditActionForm() {
                 defaultVisibility={formMetadata.visibility}
                 showVisibilityChoice={!siteId}
                 saving={saving}
-                templateFlow
-                nameFieldLabel="Template name"
+                templateFlow={!siteId}
+                isSitePackContext={Boolean(siteId)}
+                nameFieldLabel={siteId ? "Form name" : "Template name"}
             />
             {UnsavedDialog}
         </Layout>

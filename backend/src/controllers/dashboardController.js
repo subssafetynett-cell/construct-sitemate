@@ -1,5 +1,12 @@
 const asyncHandler = require("express-async-handler");
 const prisma = require("../prismaClient");
+const { cacheGet, cacheSet } = require("../services/redisCache");
+
+const DASHBOARD_CACHE_TTL = Number(process.env.DASHBOARD_CACHE_TTL_SEC || 60);
+
+function dashboardCacheKey(prefix, actor, actingClientId) {
+  return `dashboard:${prefix}:${actingClientId || actor.clientId || actor.id}`;
+}
 const {
   buildDashboardResponseWhere,
   buildDashboardUserCountWhere,
@@ -202,6 +209,13 @@ exports.getSectionDashboardStats = asyncHandler(async (req, res) => {
 
   const actingClient = req.actingClient || null;
   const actingClientId = actingClient?.id || null;
+
+  const cacheKey = dashboardCacheKey(`section:${sectionKey}`, actor, actingClientId);
+  const cached = await cacheGet(cacheKey);
+  if (cached) {
+    return res.json(cached);
+  }
+
   const scope = getDashboardScopeMeta(actor, actingClient);
   const siteWhere = buildSiteListWhere(actor, actingClientId);
   const baseResponseWhere = await buildDashboardResponseWhere(prisma, actor, actingClientId);
@@ -322,7 +336,7 @@ exports.getSectionDashboardStats = asyncHandler(async (req, res) => {
       };
     });
 
-    res.json({
+    const sectionPayload = {
       success: true,
       section: sectionKey,
       sectionTitle: section.title,
@@ -345,7 +359,10 @@ exports.getSectionDashboardStats = asyncHandler(async (req, res) => {
         availableYears: reportsTimeline.availableYears,
       },
       recentSubmissions,
-    });
+    };
+
+    await cacheSet(cacheKey, sectionPayload, DASHBOARD_CACHE_TTL);
+    res.json(sectionPayload);
   } catch (err) {
     console.error("Section dashboard stats error:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -360,6 +377,13 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
 
   const actingClient = req.actingClient || null;
   const actingClientId = actingClient?.id || null;
+
+  const cacheKey = dashboardCacheKey("main", actor, actingClientId);
+  const cached = await cacheGet(cacheKey);
+  if (cached) {
+    return res.json(cached);
+  }
+
   const scope = getDashboardScopeMeta(actor, actingClient);
   const siteWhere = buildSiteListWhere(actor, actingClientId);
   const userCountWhere = buildDashboardUserCountWhere(actor, actingClientId);
@@ -535,7 +559,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       "Weekly supervisor reports",
     ]);
 
-    res.json({
+    const mainPayload = {
       success: true,
       scope,
       formsByCompany,
@@ -560,7 +584,10 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       },
       sheq,
       recentActions,
-    });
+    };
+
+    await cacheSet(cacheKey, mainPayload, DASHBOARD_CACHE_TTL);
+    res.json(mainPayload);
   } catch (err) {
     console.error("Dashboard Stats Error:", err);
     res.status(500).json({ success: false, message: "Internal server error" });

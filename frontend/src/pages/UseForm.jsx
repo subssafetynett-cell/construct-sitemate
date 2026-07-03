@@ -28,7 +28,8 @@ import { downloadWordFromForm } from "../utils/wordGenerator";
 import { prepareCustomFormPdfAssets } from "../utils/prepareFormPdfAssets";
 import FormRenderer from "../components/FormRenderer";
 import { getBackendOrigin } from "../utils/backendOrigin.js";
-import { resolveFormCategoryFromSearchParams } from "../utils/sitepackContext";
+import { resolveFormCategoryFromSearchParams, sitepackNavState } from "../utils/sitepackContext";
+import { FRIDAY_PACK_FORMS_CATEGORY } from "../utils/generalFormSubmissions";
 
 // helper to build absolute URL for logos
 const computeLogoUrl = (logo) => {
@@ -68,12 +69,13 @@ export default function UseForm() {
 
   const navigateBack = () => {
     if (siteId) {
-      const state = {
-        siteId,
-        moduleTitle: category || "Friday Pack Forms",
-      };
-      if (subfolderId) state.subfolderId = subfolderId;
-      navigate("/sitepack-management", { state });
+      navigate("/sitepack-management", {
+        state: sitepackNavState({
+          siteId,
+          subfolderId,
+          moduleTitle: category || FRIDAY_PACK_FORMS_CATEGORY,
+        }),
+      });
     } else {
       navigate("/forms");
     }
@@ -94,16 +96,15 @@ export default function UseForm() {
       if (siteId) processedAnswers.siteId = siteId;
       if (subfolderId) processedAnswers.subfolderId = subfolderId;
 
+      const resolvedCategory = siteId ? FRIDAY_PACK_FORMS_CATEGORY : category;
+      const body = { answers: processedAnswers, category: resolvedCategory };
+      if (siteId) body.siteId = String(siteId).trim();
+      if (subfolderId) body.subfolderId = String(subfolderId).trim();
+
       if (responseId) {
-        await api.put(`/forms/responses/${responseId}`, {
-          answers: processedAnswers,
-          category,
-        });
+        await api.put(`/forms/responses/${responseId}`, body);
       } else {
-        await api.post(`/forms/${id}/responses`, {
-          answers: processedAnswers,
-          category,
-        });
+        await api.post(`/forms/${id}/responses`, body);
       }
       resetDirty();
       return true;
@@ -273,8 +274,12 @@ export default function UseForm() {
   const handleSubmit = async () => {
     const ok = await performSave();
     if (ok) {
-      resetDirty();
-      setSuccessOpen(true);
+      if (siteId) {
+        navigateBack();
+      } else {
+        resetDirty();
+        setSuccessOpen(true);
+      }
     }
   };
 

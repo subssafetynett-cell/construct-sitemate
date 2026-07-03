@@ -22,6 +22,7 @@ const { getUploadsDir } = require("./src/utils/documentStorage");
 const responseRoutes = require("./src/routes/responseRoutes");
 const dashboardRoutes = require("./src/routes/dashboardRoutes");
 const savedSignatureRoutes = require("./src/routes/savedSignatureRoutes");
+const kpiDashboardRoutes = require("./src/routes/kpiDashboardRoutes");
 const actionTrackerRoutes = require("./src/routes/actionTrackerRoutes");
 const notificationRoutes = require("./src/routes/notificationRoutes");
 
@@ -181,6 +182,7 @@ app.use("/api/documents", documentRoutes);
 app.use("/api/responses", responseRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/saved-signatures", savedSignatureRoutes);
+app.use("/api/kpi-dashboard", kpiDashboardRoutes);
 app.use("/api/action-tracker", actionTrackerRoutes);
 app.use("/api/notifications", notificationRoutes);
 
@@ -264,9 +266,17 @@ const start = async () => {
     }
 
     const PORT = process.env.PORT || 4000;
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log(`Server listening on http://localhost:${PORT}`);
       startExpiredDocumentCleanupScheduler();
+      try {
+        const { getRedisClient } = require("./src/services/redisCache");
+        const { initEmailQueue } = require("./src/services/jobQueue");
+        await getRedisClient();
+        await initEmailQueue();
+      } catch (err) {
+        console.warn("[startup] Redis/queue init skipped:", err.message);
+      }
     });
 
     // Run seeding in the background so it doesn't block server startup

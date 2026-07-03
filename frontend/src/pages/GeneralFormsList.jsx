@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
     Box, Typography, Card, CardContent, 
     Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper, 
@@ -26,7 +26,9 @@ import {
     visibilityLabel,
     GENERAL_FORM_VISIBILITY,
 } from "../utils/generalFormVisibility";
-import api, { fetchFormResponsesList } from "../services/api";
+import api from "../services/api";
+import { useFormResponsesListQuery } from "../hooks/useDashboardQueries";
+import TablePageSkeleton from "../components/TablePageSkeleton";
 import {
   filterTemplateLibrary,
   buildTemplateViewEditUrl,
@@ -61,14 +63,23 @@ export default function GeneralFormsList() {
     const [savedPage, setSavedPage] = useState(0);
     const [savedRowsPerPage, setSavedRowsPerPage] = useState(10);
 
-    const [submissions, setSubmissions] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const {
+        data: submissionsResponse,
+        isLoading: loading,
+        refetch: refetchSubmissions,
+    } = useFormResponsesListQuery(
+        { category: "General forms," },
+        { fetchAll: true }
+    );
+
+    const submissions = useMemo(
+        () =>
+            (submissionsResponse?.data || []).filter(isGeneralFormsPageSubmission),
+        [submissionsResponse]
+    );
+
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [trashId, setTrashId] = useState(null);
-
-    useEffect(() => {
-        fetchSubmissions();
-    }, []);
 
     useEffect(() => {
         const tab = searchParams.get("tab");
@@ -76,20 +87,6 @@ export default function GeneralFormsList() {
             setActiveTab(TAB_SAVED);
         }
     }, [searchParams]);
-
-    const fetchSubmissions = async () => {
-        setLoading(true);
-        try {
-            const res = await fetchFormResponsesList({ category: "General forms," });
-            if (res?.success) {
-                setSubmissions((res.data || []).filter(isGeneralFormsPageSubmission));
-            }
-        } catch (err) {
-            console.error("Failed to fetch submissions", err);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleDeleteConfirm = (id) => {
         setTrashId(id);
@@ -100,7 +97,7 @@ export default function GeneralFormsList() {
         if (!trashId) return;
         try {
             await api.delete(`/forms/responses/${trashId}`);
-            setSubmissions(submissions.filter(s => s.id !== trashId && s._id !== trashId));
+            await refetchSubmissions();
             setDeleteDialogOpen(false);
             setTrashId(null);
         } catch (err) {
@@ -388,9 +385,7 @@ export default function GeneralFormsList() {
             {activeTab === TAB_SAVED && (
             <Box>
                 {loading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                        <CircularProgress size={30} sx={{ color: "#E89F17" }} />
-                    </Box>
+                    <TablePageSkeleton rows={8} />
                 ) : filteredSubmissions.length === 0 ? (
                     <Box sx={{ p: 4, textAlign: 'center', bgcolor: isDarkMode ? "#1B212C" : "#F9FAFB", borderRadius: 4, border: `1px dashed ${isDarkMode ? "#374151" : "#E5E7EB"}` }}>
                         <Typography color="text.secondary">

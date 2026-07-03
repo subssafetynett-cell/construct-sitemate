@@ -5,8 +5,15 @@ import {
   formatOhsYtdDisplay,
   hasOhsMonthData,
   parseOhsNum,
+  resolveOhsLowerBetter,
   sumOhsYtd,
 } from "./ohsDashboardUtils";
+import { getKpiDropdownRows } from "./kpiChartUtils";
+import {
+  buildDerivedScorecardRow,
+  buildScorecardRowsFromDefinitions,
+  insertScorecardRowAfter,
+} from "./kpiScorecardUtils";
 
 export const ENV_MONTHS = OHS_MONTHS;
 
@@ -201,38 +208,36 @@ export function envScorecardVarianceStatus(target, actual, lowerBetter) {
 }
 
 export function buildEnvironmentalScorecardRows(statRows, targets = {}) {
-  const statMap = Object.fromEntries(statRows.map((row) => [row.id, row]));
-
-  return ENV_SCORECARD_DEFINITIONS.map((def) => {
-    const saved = targets[def.id] || {};
-    let actual = "";
-
-    if (def.derive === "renewablePct") {
-      const { value, hasData } = computeRenewableEnergyPct(statRows);
-      actual = hasData ? value : "";
-    } else {
-      const row = statMap[def.statRowId];
-      const hasData = row ? hasOhsMonthData(row.months) : false;
-      const ytd = row ? sumOhsYtd(row.months) : 0;
-      actual = formatOhsActualValue(ytd, hasData);
+  let rows = buildScorecardRowsFromDefinitions(
+    ENV_SCORECARD_DEFINITIONS,
+    statRows,
+    targets,
+    {
+      computeActualForStatRow: (row) => {
+        const hasData = hasOhsMonthData(row.months);
+        const ytd = sumOhsYtd(row.months);
+        return formatOhsActualValue(ytd, hasData);
+      },
+      resolveLowerBetter: resolveOhsLowerBetter,
     }
+  );
 
-    return {
-      id: def.id,
-      indicator: saved.indicator ?? def.indicator,
-      target: saved.target ?? "",
-      actual,
-      unit: saved.unit ?? def.unit,
-      note: saved.note ?? "",
-      lowerBetter: def.lowerBetter,
-    };
-  });
+  const renewableDef = ENV_SCORECARD_DEFINITIONS.find((def) => def.derive === "renewablePct");
+  if (renewableDef) {
+    const { value, hasData } = computeRenewableEnergyPct(statRows);
+    const derivedRow = buildDerivedScorecardRow(
+      renewableDef,
+      targets,
+      hasData ? value : ""
+    );
+    rows = insertScorecardRowAfter(rows, derivedRow, "stat-energy");
+  }
+
+  return rows;
 }
 
 export function getChartableEnvRows(statRows) {
-  return statRows.filter(
-    (row) => String(row.indicator || "").trim() && hasOhsMonthData(row.months)
-  );
+  return getKpiDropdownRows(statRows);
 }
 
 export function buildEnvMonthlySeries(row) {
@@ -315,6 +320,7 @@ export function hasRenewableMixData(statRows) {
 
 export function hasEnvironmentalChartData(statRows, waste) {
   return (
+    getChartableEnvRows(statRows).length > 0 ||
     hasCo2EnergyTrendData(statRows) ||
     hasGhgScopeData(statRows) ||
     hasFuelTrendData(statRows) ||

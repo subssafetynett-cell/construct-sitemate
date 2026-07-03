@@ -202,5 +202,15 @@ export function DashboardMiniStat({ label, value, loading, tone = "neutral" }) {
 }
 
 export function DashboardSkeleton({ height = 220 }) {
-  return <div style={{ height, background: "#ecece9", borderRadius: 8 }} />;
+  return (
+    <div
+      style={{
+        height,
+        borderRadius: 8,
+        background: "linear-gradient(90deg, #ecece9 25%, #f5f5f3 50%, #ecece9 75%)",
+        backgroundSize: "200% 100%",
+        animation: "dashboard-skeleton-shimmer 1.2s ease-in-out infinite",
+      }}
+    />
+  );
 }

@@ -1,3 +1,5 @@
+import { getKpiDropdownRows } from "./kpiChartUtils";
+
 export const OHS_MONTHS = [
   { key: "jan", label: "Jan" },
   { key: "feb", label: "Feb" },
@@ -190,7 +192,7 @@ export function scorecardVarianceStatus(target, actual, lowerBetter) {
 }
 
 export function buildScorecardRows(statRows, targets = {}) {
-  return statRows.filter(isOhsScorecardRow).map((row) => {
+  return (statRows || []).filter(isOhsScorecardRow).map((row) => {
     const hasData = hasOhsMonthData(row.months);
     const ytd = sumOhsYtd(row.months);
     const saved = targets[row.id] || {};
@@ -208,9 +210,7 @@ export function buildScorecardRows(statRows, targets = {}) {
 }
 
 export function getChartableStatRows(statRows) {
-  return statRows.filter(
-    (row) => String(row.indicator || "").trim() && hasOhsMonthData(row.months)
-  );
+  return getKpiDropdownRows(statRows);
 }
 
 export function buildMonthlySeriesForRow(row) {
@@ -300,6 +300,7 @@ export function hasEmployeeHeadcountData(statRows) {
 
 export function hasOhsChartData(statRows, classification) {
   return (
+    getChartableStatRows(statRows).length > 0 ||
     hasTurnoverTrendData(statRows) ||
     hasInjuriesTrendData(statRows) ||
     hasInvestmentTrendData(statRows) ||

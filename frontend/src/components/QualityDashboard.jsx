@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Snackbar } from "@mui/material";
 import { useAuth } from "../context/AuthContext";
-import { downloadKpiReportPdf, downloadKpiReportWord } from "../utils/kpiReportExporter";
+import { downloadKpiReportPdf, downloadKpiReportWord, KPI_REPORT_EXPORT_MOUNT_STYLE, KPI_REPORT_EXPORT_WIDTH } from "../utils/kpiReportExporter";
 import QualityMonthlyStatistics from "./QualityMonthlyStatistics";
 import QualityScorecard from "./QualityScorecard";
 import QualityChartsDashboard from "./QualityChartsDashboard";
@@ -9,6 +9,7 @@ import QualityReportDocument from "./QualityReportDocument";
 import KpiTrackingLegend from "./dashboard/KpiTrackingLegend";
 import KpiReportDownloadBar from "./dashboard/KpiReportDownloadBar";
 import { getActingClient } from "../utils/actingClient";
+import { useKpiDashboardPersistence } from "../hooks/useKpiDashboardPersistence";
 import {
   createDefaultQualityStatRows,
   createEmptyAttendanceSnapshot,
@@ -17,45 +18,40 @@ import {
   shouldSeedDefaultQualityKpis,
 } from "../utils/qualityDashboardUtils";
 
-const STATS_STORAGE_PREFIX = "site-mate:quality-monthly-stats:";
-const ATTENDANCE_STORAGE_PREFIX = "site-mate:quality-attendance:";
-const TARGETS_STORAGE_PREFIX = "site-mate:quality-scorecard-targets:";
-const META_STORAGE_PREFIX = "site-mate:quality-dashboard-meta:";
-
-function persistDashboardData({
-  statsKey,
-  attendanceKey,
-  targetsKey,
-  metaKey,
-  statRows,
-  attendance,
-  targets,
-  savedAt,
-}) {
-  localStorage.setItem(statsKey, JSON.stringify(statRows));
-  localStorage.setItem(attendanceKey, JSON.stringify(attendance));
-  localStorage.setItem(targetsKey, JSON.stringify(targets));
-  localStorage.setItem(metaKey, JSON.stringify({ lastSavedAt: savedAt }));
-}
+const STORAGE_PREFIXES = {
+  stats: "site-mate:quality-monthly-stats:",
+  attendance: "site-mate:quality-attendance:",
+  targets: "site-mate:quality-scorecard-targets:",
+  meta: "site-mate:quality-dashboard-meta:",
+  snapshot: "site-mate:quality-attendance:",
+};
 
 export default function QualityDashboard() {
   const { currentUser } = useAuth();
   const reportRef = useRef(null);
 
-  const scope =
-    currentUser?.actingClientId || currentUser?.clientId || currentUser?.id || "default";
+  const {
+    statRows,
+    setStatRows,
+    snapshot: attendance,
+    setSnapshot: setAttendance,
+    targets,
+    updateTarget,
+    lastSavedAt,
+    hydrated,
+    saving,
+    saveNow,
+  } = useKpiDashboardPersistence({
+    section: "quality",
+    currentUser,
+    storagePrefixes: STORAGE_PREFIXES,
+    createDefaultStatRows: createDefaultQualityStatRows,
+    shouldSeedStatRows: shouldSeedDefaultQualityKpis,
+    createEmptySnapshot: createEmptyAttendanceSnapshot,
+    normalizeSnapshot: normalizeAttendanceSnapshot,
+    hasSnapshot: true,
+  });
 
-  const statsKey = `${STATS_STORAGE_PREFIX}${scope}`;
-  const attendanceKey = `${ATTENDANCE_STORAGE_PREFIX}${scope}`;
-  const targetsKey = `${TARGETS_STORAGE_PREFIX}${scope}`;
-  const metaKey = `${META_STORAGE_PREFIX}${scope}`;
-
-  const [statRows, setStatRows] = useState(() => createDefaultQualityStatRows());
-  const [attendance, setAttendance] = useState(() => createEmptyAttendanceSnapshot());
-  const [targets, setTargets] = useState({});
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
@@ -66,63 +62,15 @@ export default function QualityDashboard() {
     currentUser?.company ||
     "";
 
-  useEffect(() => {
-    try {
-      const rawStats = localStorage.getItem(statsKey);
-      if (rawStats) {
-        const parsed = JSON.parse(rawStats);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setStatRows(shouldSeedDefaultQualityKpis(parsed) ? createDefaultQualityStatRows() : parsed);
-        }
-      }
-
-      const rawAttendance = localStorage.getItem(attendanceKey);
-      if (rawAttendance) {
-        setAttendance(normalizeAttendanceSnapshot(JSON.parse(rawAttendance)));
-      }
-
-      const rawTargets = localStorage.getItem(targetsKey);
-      if (rawTargets) {
-        const parsed = JSON.parse(rawTargets);
-        if (parsed && typeof parsed === "object") setTargets(parsed);
-      }
-
-      const rawMeta = localStorage.getItem(metaKey);
-      if (rawMeta) {
-        const parsed = JSON.parse(rawMeta);
-        if (parsed?.lastSavedAt) setLastSavedAt(parsed.lastSavedAt);
-      }
-    } catch {
-      /* ignore corrupt storage */
-    }
-    setHydrated(true);
-  }, [statsKey, attendanceKey, targetsKey, metaKey]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(statsKey, JSON.stringify(statRows));
-  }, [statRows, statsKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(attendanceKey, JSON.stringify(attendance));
-  }, [attendance, attendanceKey, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(targetsKey, JSON.stringify(targets));
-  }, [targets, targetsKey, hydrated]);
-
-  const updateTarget = useCallback((rowId, field, value) => {
-    setTargets((prev) => ({
-      ...prev,
-      [rowId]: { ...(prev[rowId] || {}), [field]: value },
-    }));
-  }, []);
+  const updateIndicator = useCallback((rowId, value) => {
+    setStatRows((prev) =>
+      prev.map((row) => (row.id === rowId ? { ...row, indicator: value } : row))
+    );
+  }, [setStatRows]);
 
   const hasReportData = useMemo(() => statRows.some(isQualityStatRow), [statRows]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!hasReportData) {
       setSnackbar({
         open: true,
@@ -132,21 +80,8 @@ export default function QualityDashboard() {
       return;
     }
 
-    setSaving(true);
-    const savedAt = new Date().toISOString();
-
     try {
-      persistDashboardData({
-        statsKey,
-        attendanceKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        attendance,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
+      await saveNow();
       setSnackbar({ open: true, message: "Dashboard saved successfully.", severity: "success" });
     } catch (err) {
       console.error("Quality save failed:", err);
@@ -155,8 +90,6 @@ export default function QualityDashboard() {
         message: "Could not save dashboard. Please try again.",
         severity: "error",
       });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -174,19 +107,7 @@ export default function QualityDashboard() {
     setDownloadFormat(format);
 
     try {
-      const savedAt = new Date().toISOString();
-      persistDashboardData({
-        statsKey,
-        attendanceKey,
-        targetsKey,
-        metaKey,
-        statRows,
-        attendance,
-        targets,
-        savedAt,
-      });
-      setLastSavedAt(savedAt);
-
+      await saveNow();
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const year = new Date().getFullYear();
@@ -228,6 +149,8 @@ export default function QualityDashboard() {
       })}`
     : null;
 
+  if (!hydrated) return null;
+
   return (
     <>
       <KpiTrackingLegend />
@@ -242,6 +165,7 @@ export default function QualityDashboard() {
         targets={targets}
         attendance={attendance}
         onUpdateTarget={updateTarget}
+        onUpdateIndicator={updateIndicator}
       />
       <QualityChartsDashboard statRows={statRows} attendance={attendance} targets={targets} />
 
@@ -256,20 +180,15 @@ export default function QualityDashboard() {
         saveColor="#7c3aed"
         saveHoverColor="#6d28d9"
         accentColor="#7c3aed"
-        helpText="Save updates your dashboard. Download exports statistics, scorecard, and performance charts as PDF or Word."
+        helpText="Changes auto-save to your organisation. Use Save to confirm immediately, or download PDF/Word reports."
       />
 
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          left: -10000,
-          top: 0,
-          pointerEvents: "none",
-          opacity: 0,
-        }}
-      >
-        <div ref={reportRef} className="pdf-export-root" style={{ width: 1100, background: "#fff" }}>
+      <div aria-hidden="true" style={KPI_REPORT_EXPORT_MOUNT_STYLE}>
+        <div
+          ref={reportRef}
+          className="pdf-export-root kpi-report-export"
+          style={{ width: KPI_REPORT_EXPORT_WIDTH, background: "#fff" }}
+        >
           <QualityReportDocument
             statRows={statRows}
             attendance={attendance}

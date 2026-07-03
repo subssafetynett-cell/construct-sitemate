@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -22,9 +22,7 @@ import {
   BarChart3,
   ListOrdered,
 } from "lucide-react";
-import { fetchSectionDashboardStats } from "../services/api";
-import { fetchWithCache } from "../utils/fetchCache";
-import { useAuth } from "../context/AuthContext";
+import { useSectionDashboardStatsQuery } from "../hooks/useDashboardQueries";
 import {
   DASHBOARD_THEME,
   DashboardCard,
@@ -79,40 +77,15 @@ function sectionStatCards(sectionKey, stats) {
 }
 
 export default function MonitoringDashboardOverview({ sectionKey }) {
-  const { currentUser } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!sectionKey) return;
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    const scopeKey =
-      currentUser?.actingClientId || currentUser?.clientId || currentUser?.id || "anon";
-    fetchWithCache(`section-dashboard:${sectionKey}:${scopeKey}`, () =>
-      fetchSectionDashboardStats(sectionKey)
-    )
-      .then((payload) => {
-        if (cancelled) return;
-        if (payload?.success) {
-          setData(payload);
-        } else {
-          setError(payload?.message || "Could not load overview");
-        }
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err?.response?.data?.message || "Could not load overview");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sectionKey, currentUser?.actingClientId, currentUser?.clientId, currentUser?.id]);
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useSectionDashboardStatsQuery(sectionKey);
+  const error =
+    queryError?.response?.data?.message ||
+    queryError?.message ||
+    (data && !data.success ? data.message || "Could not load overview" : "");
 
   const cards = useMemo(
     () => sectionStatCards(sectionKey, data?.stats),

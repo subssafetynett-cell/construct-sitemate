@@ -69,7 +69,7 @@ function ScorecardCell({ value, onChange, placeholder, editable = true, tone = "
   );
 }
 
-export default function LiftRegulationsScorecard({ statRows, targets, onUpdateTarget }) {
+export default function LiftRegulationsScorecard({ statRows, targets, onUpdateTarget, onUpdateIndicator }) {
   const rows = useMemo(
     () => buildLiftRegulationsScorecardRows(statRows, targets),
     [statRows, targets]
@@ -144,7 +144,11 @@ export default function LiftRegulationsScorecard({ statRows, targets, onUpdateTa
                   <td style={tdStyle}>
                     <ScorecardCell
                       value={row.indicator}
-                      onChange={(val) => onUpdateTarget(row.id, "indicator", val)}
+                      onChange={(val) =>
+                        row.derived
+                          ? onUpdateTarget(row.id, "indicator", val)
+                          : onUpdateIndicator?.(row.id, val)
+                      }
                       placeholder="Indicator"
                       editable
                       tone="default"

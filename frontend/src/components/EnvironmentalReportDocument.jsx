@@ -64,7 +64,8 @@ export default function EnvironmentalReportDocument({
   return (
     <div
       style={{
-        width: 1100,
+        width: "100%",
+        boxSizing: "border-box",
         background: "#fff",
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
         color: "#111827",
@@ -95,13 +96,13 @@ export default function EnvironmentalReportDocument({
           >
             SECTION 1 — ENVIRONMENTAL STATISTICS
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+          <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
             <thead>
               <tr>
                 <th style={{ ...thDark, width: 28, background: "#fef9c3", color: "#a16207" }}>#</th>
-                <th style={{ ...thDark, textAlign: "left", minWidth: 200 }}>Indicator</th>
+                <th style={{ ...thDark, textAlign: "left" }}>Indicator</th>
                 {ENV_MONTHS.map((m) => (
-                  <th key={m.key} style={{ ...thDark, width: 48 }}>
+                  <th key={m.key} style={{ ...thDark }}>
                     {m.label}
                   </th>
                 ))}
@@ -160,7 +161,7 @@ export default function EnvironmentalReportDocument({
         >
           WASTE GENERATION & DISPOSAL — ANNUAL SNAPSHOT (KGs)
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+        <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
           <thead>
             <tr>
               {ENV_WASTE_CATEGORIES.map((cat) => (
@@ -205,7 +206,7 @@ export default function EnvironmentalReportDocument({
           >
             WASTE BREAKDOWN — % OF TOTAL
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+          <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
             <thead>
               <tr>
                 <th style={{ ...thDark, textAlign: "left" }}>Waste type</th>
@@ -244,7 +245,7 @@ export default function EnvironmentalReportDocument({
         >
           ENVIRONMENTAL SCORECARD
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
+        <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", border: "1px solid #d1d5db" }}>
           <thead>
             <tr>
               <th style={{ ...thDark, textAlign: "left" }}>Indicator</th>

@@ -772,8 +772,9 @@ export default function RamsBriefingForm() {
                 defaultVisibility={formMetadata.visibility}
                 showVisibilityChoice={!siteId}
                 saving={saving}
-                templateFlow
-                nameFieldLabel="Template name"
+                templateFlow={!isSitePackContext}
+                isSitePackContext={isSitePackContext}
+                nameFieldLabel={isSitePackContext ? "Form name" : "Template name"}
             />
             {UnsavedDialog}
         </Layout>

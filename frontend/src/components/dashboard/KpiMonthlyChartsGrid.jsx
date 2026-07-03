@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Box } from "@mui/material";
 import KpiMonthlyBarChart from "./KpiMonthlyBarChart";
-import { monthlyChartSeriesName, monthlyChartTitle, sortKpiChartRows } from "../../utils/kpiChartUtils";
+import { monthlyChartSeriesName, monthlyChartTitle } from "../../utils/kpiChartUtils";
 
 export default function KpiMonthlyChartsGrid({
   rows,
@@ -10,9 +10,9 @@ export default function KpiMonthlyChartsGrid({
   exportMode = false,
   chartHeight = 300,
 }) {
-  const sortedRows = useMemo(() => sortKpiChartRows(rows), [rows]);
+  const displayRows = useMemo(() => rows || [], [rows]);
 
-  if (!sortedRows.length) return null;
+  if (!displayRows.length) return null;
 
   return (
     <Box
@@ -26,7 +26,7 @@ export default function KpiMonthlyChartsGrid({
         gap: 2,
       }}
     >
-      {sortedRows.map((row) => (
+      {displayRows.map((row) => (
         <KpiMonthlyBarChart
           key={row.id}
           title={monthlyChartTitle(row.indicator)}

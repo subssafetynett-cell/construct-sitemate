@@ -22,6 +22,7 @@ model Client {
   users     User[]
   sites     Site[]
   nonconformanceActions NonconformanceAction[]
+  kpiDashboards KpiDashboard[]
 }
 
 model User {
@@ -62,6 +63,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   savedSignatures SavedSignature[]
+  updatedKpiDashboards KpiDashboard[] @relation("KpiDashboardUpdatedBy")
   assignedNonconformances NonconformanceAction[] @relation("NonconformanceAssignee")
   reportedNonconformances NonconformanceAction[] @relation("NonconformanceReporter")
   notifications UserNotification[]
@@ -78,6 +80,21 @@ model SavedSignature {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+model KpiDashboard {
+  id          String   @id @default(uuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  section     String
+  payload     Json
+  updatedById String?
+  updatedBy   User?    @relation("KpiDashboardUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientId, section])
+  @@index([clientId])
 }
 
 model EmailVerificationToken {
