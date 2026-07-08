@@ -22,7 +22,6 @@ const {
   getTodayDateString,
   isValidUntilExpired,
 } = require('../utils/documentExpiry');
-const { purgeExpiredDocuments } = require('../jobs/expiredDocumentCleanup');
 
 function inlinePreviewHeaders(res) {
   res.removeHeader('Content-Security-Policy');
@@ -299,7 +298,9 @@ exports.getDocuments = asyncHandler(async (req, res) => {
         return res.status(403).json({ success: false, message: "You do not have access to this site." });
     }
 
-    await purgeExpiredDocuments();
+    // Do not await full expiry purge on list requests — that scanned every document and
+    // deleted Cloudinary files synchronously, often exceeding the client 15s timeout.
+    // Expired rows are excluded by validUntil below; physical cleanup runs on the scheduler.
 
     const today = getTodayDateString();
     const where = {
@@ -339,8 +340,6 @@ exports.getModuleCounts = asyncHandler(async (req, res) => {
     if (!(await userCanAccessSite(prisma, req.scopedUser || req.user, siteId, req.actingClient?.id))) {
         return res.status(403).json({ success: false, message: "You do not have access to this site." });
     }
-
-    await purgeExpiredDocuments();
 
     const today = getTodayDateString();
     const docWhere = {

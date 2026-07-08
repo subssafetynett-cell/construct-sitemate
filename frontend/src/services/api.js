@@ -9,6 +9,9 @@ import {
 import { shouldSendActingClientHeader, getActingClient } from "../utils/actingClient.js";
 import { resolveEffectiveRole } from "../utils/resolveEffectiveRole.js";
 
+/** User/client lists on hosted tenants with large datasets. */
+export const LIST_FETCH_TIMEOUT_MS = 60_000;
+
 /** Default for JSON API calls (lists, saves, auth). */
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -168,17 +171,26 @@ export const uploadDocument = async (formData, { onUploadProgress } = {}) => {
   return response.data;
 };
 
-export const fetchDocuments = async (siteId, category, subfolderId) => {
+export const fetchDocuments = async (
+  siteId,
+  category,
+  subfolderId,
+  { timeout = LIST_FETCH_TIMEOUT_MS } = {}
+) => {
   const params = { siteId, category };
   if (subfolderId) params.subfolderId = subfolderId;
-  const response = await api.get(`/documents`, { params });
+  const response = await api.get(`/documents`, { params, timeout });
   return response.data;
 };
 
-export const fetchDocumentCounts = async (siteId, subfolderId) => {
+export const fetchDocumentCounts = async (
+  siteId,
+  subfolderId,
+  { timeout = LIST_FETCH_TIMEOUT_MS } = {}
+) => {
   const params = { siteId };
   if (subfolderId) params.subfolderId = subfolderId;
-  const response = await api.get(`/documents/counts`, { params });
+  const response = await api.get(`/documents/counts`, { params, timeout });
   return response.data;
 };
 
@@ -266,9 +278,6 @@ export const fetchSectionDashboardStats = async (section, { timeout = 60_000 } =
   const response = await api.get(`/dashboard/section-stats/${section}`, { timeout });
   return response.data;
 };
-
-/** User/client lists on hosted tenants with large datasets. */
-export const LIST_FETCH_TIMEOUT_MS = 60_000;
 
 export const fetchUsersList = async (clientId, { timeout = LIST_FETCH_TIMEOUT_MS } = {}) => {
   const url = clientId ? `/clients/${clientId}/users` : "/users";

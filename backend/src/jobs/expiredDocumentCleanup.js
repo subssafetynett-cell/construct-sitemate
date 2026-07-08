@@ -9,7 +9,12 @@ const { getTodayDateString, isValidUntilExpired } = require("../utils/documentEx
 async function purgeExpiredDocuments() {
   const today = getTodayDateString();
 
+  // Prefer DB filter when validUntil is an ISO date string (YYYY-MM-DD).
+  // Still post-filter so malformed legacy values are handled by isValidUntilExpired.
   const candidates = await prisma.siteDocument.findMany({
+    where: {
+      OR: [{ validUntil: { lt: today } }, { validUntil: null }, { validUntil: "" }],
+    },
     select: { id: true, title: true, url: true, validUntil: true },
   });
 

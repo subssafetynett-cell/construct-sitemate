@@ -780,14 +780,21 @@ export default function SitepackManagement() {
     };
 
     const handleBackToSites = () => {
+        // Subfolder contents → module subfolder list
         if (selectedModule && selectedSubfolder) {
             setSelectedSubfolder(null);
-        } else if (selectedModule) {
+            return;
+        }
+        // Module view (e.g. Friday Pack subfolders) → All Sites list
+        if (selectedModule) {
             setSelectedModule(null);
             setSelectedSubfolder(null);
-        } else {
             setSelectedSite(null);
+            return;
         }
+        // Site categories → All Sites list
+        setSelectedSite(null);
+        setSelectedSubfolder(null);
     };
 
     const handleSubfolderClick = (subfolder) => {
