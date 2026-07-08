@@ -40,10 +40,14 @@ export function isFridayPackSiteSubmission(sub) {
   return true;
 }
 
-/** API list params for Friday Pack forms at a site (category + legacy null/empty rows). */
+/**
+ * API list params for Friday Pack forms at a site.
+ * Do not append a trailing comma — that used to expand the backend filter to
+ * every null/empty-category row and intermittently 500'd on large payloads.
+ */
 export function fridayPackFormListFetchParams(siteId) {
   const params = {
-    category: `${FRIDAY_PACK_FORMS_CATEGORY},${GENERAL_FORMS_CATEGORY},`,
+    category: `${FRIDAY_PACK_FORMS_CATEGORY},${GENERAL_FORMS_CATEGORY}`,
   };
   if (siteId != null && String(siteId).trim() !== "") {
     params.siteId = String(siteId).trim();
@@ -54,7 +58,7 @@ export function fridayPackFormListFetchParams(siteId) {
 /** Friday Pack list views are personal — each user sees only their own site-pack form fills. */
 export function isFridayPackFormForUser(sub, userId) {
   if (!isFridayPackSiteSubmission(sub)) return false;
-  if (!userId) return true;
+  if (!userId) return false;
   return userOwnsFormSubmission(sub, userId);
 }
 
@@ -74,6 +78,11 @@ export function userOwnsFormSubmission(sub, userId) {
   const ownerId = sub?.submittedById ?? sub?.submittedBy?.id;
   if (ownerId == null || ownerId === "") return false;
   return String(ownerId) === String(userId);
+}
+
+/** List rows already returned by the API are visibility-scoped server-side. */
+export function includeFridayPackListRow(sub) {
+  return isFridayPackSiteSubmission(sub);
 }
 
 /**

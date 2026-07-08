@@ -240,7 +240,8 @@ function App() {
           <Route path="/dashboard/quality-management-kpis/site/:siteId" element={<RequireAuth><MonitoringSectionPage section="quality" /></RequireAuth>} />
           <Route path="/dashboard/food-safety-management/site/:siteId/folder/:folderId" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
           <Route path="/dashboard/food-safety-management/site/:siteId" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
-          <Route path="/action-tracker" element={<RequireAuth><ActionTrackerPage /></RequireAuth>} />
+          <Route path="/nonconformance" element={<RequireAuth><ActionTrackerPage /></RequireAuth>} />
+          <Route path="/action-tracker" element={<Navigate to="/nonconformance" replace />} />
           <Route path="/concern-reports" element={<RequireAuth><ConcernReportDashboard /></RequireAuth>} />
           <Route path="/audit-reports" element={<RequireAuth><AuditReportDashboard /></RequireAuth>} />
 

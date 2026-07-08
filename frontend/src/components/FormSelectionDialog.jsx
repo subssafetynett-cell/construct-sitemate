@@ -223,7 +223,7 @@ export default function FormSelectionDialog({
             try {
                 const requests = [];
                 if (showSaved) {
-                    requests.push(fetchFormResponsesList({ category: "General forms," }));
+                    requests.push(fetchFormResponsesList({ category: "General forms,__empty__" }));
                 }
                 if (showBuilder) {
                     requests.push(api.get("/forms"));

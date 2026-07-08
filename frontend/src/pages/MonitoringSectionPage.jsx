@@ -268,7 +268,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
       setBuilderForms([]);
       try {
         const [responsesRes, formsRes] = await Promise.all([
-          fetchFormResponsesList({ category: "General forms," }),
+          fetchFormResponsesList({ category: "General forms,__empty__" }),
           api.get("/forms"),
         ]);
         if (cancelled) return;

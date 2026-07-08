@@ -14,13 +14,16 @@ const userSelect = {
   lastName: true,
 };
 
-function serializeAction(row) {
+function serializeAction(row, userId) {
   if (!row) return null;
+  const isAssignee = userId && String(row.assigneeId) === String(userId);
+  const isReporter = userId && String(row.reporterId) === String(userId);
   return {
     id: row.id,
     formResponseId: row.formResponseId,
     groupKey: row.groupKey,
     status: row.status,
+    registerStatus: row.registerStatus || "open",
     title: row.title,
     correctionAction: row.correctionAction,
     responsibleEmail: row.responsibleEmail,
@@ -32,6 +35,9 @@ function serializeAction(row) {
     sentAt: row.sentAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    userRole: isAssignee ? "assignee" : isReporter ? "reporter" : null,
+    isAssignee,
+    isReporter,
     reporter: row.reporter
       ? {
           id: row.reporter.id,
@@ -93,7 +99,9 @@ exports.listMyActions = asyncHandler(async (req, res) => {
   }
 
   const rows = await prisma.nonconformanceAction.findMany({
-    where: { assigneeId: userId },
+    where: {
+      OR: [{ assigneeId: userId }, { reporterId: userId }],
+    },
     orderBy: { createdAt: "desc" },
     include: {
       reporter: { select: userSelect },
@@ -101,7 +109,16 @@ exports.listMyActions = asyncHandler(async (req, res) => {
     },
   });
 
-  res.json({ success: true, data: rows.map(serializeAction) });
+  const seen = new Set();
+  const deduped = [];
+  for (const row of rows) {
+    const key = resolveGroupKey(row) || row.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+
+  res.json({ success: true, data: deduped.map((row) => serializeAction(row, userId)) });
 });
 
 exports.getAction = asyncHandler(async (req, res) => {
@@ -126,12 +143,12 @@ exports.getAction = asyncHandler(async (req, res) => {
   }
 
   const relatedRows = await fetchRelatedActions(row, userId);
-  const relatedActions = relatedRows.map(serializeAction);
-  const latestAction = relatedActions[0] || serializeAction(row);
+  const relatedActions = relatedRows.map((r) => serializeAction(r, userId));
+  const latestAction = relatedActions[0] || serializeAction(row, userId);
 
   res.json({
     success: true,
-    data: serializeAction(row),
+    data: serializeAction(row, userId),
     relatedActions,
     latestAction,
   });
@@ -197,7 +214,7 @@ exports.updateAction = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: asDraft ? "Draft saved." : "Updated.",
-    data: serializeAction(updated),
+    data: serializeAction(updated, userId),
   });
 });
 
@@ -262,6 +279,48 @@ exports.sendActionToReporter = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Response sent to the reporter.",
-    data: serializeAction(updated),
+    data: serializeAction(updated, userId),
+  });
+});
+
+const REGISTER_STATUSES = new Set(["open", "closed", "accepted", "rejected"]);
+
+exports.updateRegisterStatus = asyncHandler(async (req, res) => {
+  const userId = reqUserDbId(req);
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "Not authenticated" });
+  }
+
+  const registerStatus = String(req.body?.registerStatus || "").toLowerCase();
+  if (!REGISTER_STATUSES.has(registerStatus)) {
+    return res.status(400).json({
+      success: false,
+      message: "registerStatus must be one of: open, closed, accepted, rejected",
+    });
+  }
+
+  const existing = await prisma.nonconformanceAction.findFirst({
+    where: {
+      id: req.params.id,
+      OR: [{ assigneeId: userId }, { reporterId: userId }],
+    },
+  });
+  if (!existing) {
+    return res.status(404).json({ success: false, message: "Action not found" });
+  }
+
+  const updated = await prisma.nonconformanceAction.update({
+    where: { id: existing.id },
+    data: { registerStatus },
+    include: {
+      reporter: { select: userSelect },
+      assignee: { select: userSelect },
+    },
+  });
+
+  res.json({
+    success: true,
+    message: `Status updated to ${registerStatus}.`,
+    data: serializeAction(updated, userId),
   });
 });

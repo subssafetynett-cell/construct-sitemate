@@ -38,16 +38,21 @@ function resolveFormResponseCategory(category) {
 function buildCategoryWhere(categoryParam) {
   if (!categoryParam) return null;
 
-  const parts = String(categoryParam).split(",").map((c) => c.trim());
+  const parts = String(categoryParam)
+    .split(",")
+    .map((c) => c.trim())
+    .filter((p) => p !== "");
   const categories = [];
   let matchNullOrEmpty = false;
   parts.forEach((p) => {
-    if (p === "" || p === "null" || p === "undefined") {
+    if (p === "null" || p === "undefined" || p === "__empty__") {
       matchNullOrEmpty = true;
     } else {
       categories.push(p);
     }
   });
+
+  if (categories.length === 0 && !matchNullOrEmpty) return null;
 
   if (
     categories.length === 1 &&
@@ -64,12 +69,18 @@ function buildCategoryWhere(categoryParam) {
     };
   }
 
+  // Only expand to null/empty categories when explicitly requested via null/undefined/__empty__.
+  // A trailing comma alone must NOT match every uncategorized row (that caused Friday Pack 500s).
   if (matchNullOrEmpty) {
     const orConditions = [{ category: "" }, { category: null }];
     if (categories.length > 0) {
       orConditions.push({ category: { in: categories } });
     }
     return { OR: orConditions };
+  }
+
+  if (categories.length === 1) {
+    return { category: categories[0] };
   }
 
   return { category: { in: categories } };
@@ -380,6 +391,17 @@ exports.getAllResponses = async (req, res) => {
       scopeClauses.length === 1 ? scopeClauses[0] : { AND: scopeClauses };
 
     const pagination = parsePagination(req.query);
+    const compact = isCompactListRequest(req.query);
+    // Always enable pagination for compact list views to bound memory when
+    // answers contain large embedded images (Friday Pack logos / photos).
+    const usePagination = pagination.enabled || compact;
+    const page = usePagination ? (pagination.enabled ? pagination.page : 1) : 1;
+    const limit = usePagination
+      ? pagination.enabled
+        ? pagination.limit
+        : Math.min(100, pagination.limit || 100)
+      : null;
+
     const findArgs = {
       where,
       orderBy: { createdAt: "desc" },
@@ -394,12 +416,12 @@ exports.getAllResponses = async (req, res) => {
     let responses;
     let totalCount = null;
 
-    if (pagination.enabled) {
+    if (usePagination) {
       [responses, totalCount] = await Promise.all([
         prisma.formResponse.findMany({
           ...findArgs,
-          skip: pagination.skip,
-          take: pagination.take,
+          skip: (page - 1) * limit,
+          take: limit,
         }),
         prisma.formResponse.count({ where }),
       ]);
@@ -411,14 +433,13 @@ exports.getAllResponses = async (req, res) => {
       canViewFormResponse(row, userId, clientId, readScope)
     );
 
-    const compact = isCompactListRequest(req.query);
     const data = compact ? visible.map(compactFormResponseRow) : visible;
 
     const payload = { success: true, data };
-    if (pagination.enabled) {
+    if (usePagination) {
       payload.pagination = buildPaginationMeta({
-        page: pagination.page,
-        limit: pagination.limit,
+        page,
+        limit,
         total: totalCount,
       });
     }
@@ -426,7 +447,10 @@ exports.getAllResponses = async (req, res) => {
     res.json(payload);
   } catch (err) {
     console.error("Get responses error:", err);
-    res.status(500).json({ success: false });
+    res.status(500).json({
+      success: false,
+      message: err?.message || "Failed to load form responses",
+    });
   }
 };
 

@@ -369,7 +369,27 @@ exports.deleteSiteSubfolder = async (req, res) => {
             return res.status(404).json({ success: false, message: "Subfolder not found." });
         }
 
-        await prisma.siteSubfolder.delete({ where: { id: subfolderId } });
+        const orphanedResponses = await prisma.formResponse.findMany({
+            where: { siteId, subfolderId },
+            select: { id: true, answers: true },
+        });
+
+        await prisma.$transaction(async (tx) => {
+            for (const row of orphanedResponses) {
+                const answers =
+                    row.answers && typeof row.answers === "object"
+                        ? { ...row.answers }
+                        : {};
+                delete answers.subfolderId;
+                await tx.formResponse.update({
+                    where: { id: row.id },
+                    data: { subfolderId: null, answers },
+                });
+            }
+
+            await tx.siteSubfolder.delete({ where: { id: subfolderId } });
+        });
+
         res.json({ success: true, message: "Subfolder deleted." });
     } catch (error) {
         console.error("Error deleting site subfolder:", error);

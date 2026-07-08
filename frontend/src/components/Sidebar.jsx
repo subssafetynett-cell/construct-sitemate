@@ -243,9 +243,9 @@ const MENU_GROUPS = [
   {
     id: "action-tracker",
     pageKey: "action-tracker",
-    heading: "Action Tracker",
+    heading: "Nonconformance",
     icon: <ListChecks size={20} />,
-    to: "/action-tracker",
+    to: "/nonconformance",
     roles: ALL_ROLES,
   },
 ];

@@ -6,6 +6,7 @@ const { requireAuth } = require("../middleware/auth");
 router.get("/actions", requireAuth, actionTrackerController.listMyActions);
 router.get("/actions/:id", requireAuth, actionTrackerController.getAction);
 router.put("/actions/:id", requireAuth, actionTrackerController.updateAction);
+router.patch("/actions/:id/register-status", requireAuth, actionTrackerController.updateRegisterStatus);
 router.post("/actions/:id/send", requireAuth, actionTrackerController.sendActionToReporter);
 
 module.exports = router;

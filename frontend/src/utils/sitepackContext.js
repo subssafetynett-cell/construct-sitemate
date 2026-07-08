@@ -66,9 +66,24 @@ export function isAllFormsSubfolder(subfolder) {
   );
 }
 
+export function isOrphanedSitepackSubfolder(subfolderId, knownSubfolderIds) {
+  const normalized = normalizeSitepackId(subfolderId);
+  if (!normalized) return false;
+  if (!Array.isArray(knownSubfolderIds) || knownSubfolderIds.length === 0) {
+    return false;
+  }
+  return !knownSubfolderIds.includes(normalized);
+}
+
 export function matchesSitepackScope(
   record,
-  { siteId, subfolderId, unfiledOnly = false, allFormsOnly = false } = {}
+  {
+    siteId,
+    subfolderId,
+    unfiledOnly = false,
+    allFormsOnly = false,
+    knownSubfolderIds = null,
+  } = {}
 ) {
   const rSiteId = record.answers?.siteId ?? record.siteId;
   const rSubfolderId = normalizeSitepackId(
@@ -80,19 +95,31 @@ export function matchesSitepackScope(
     allFormsOnly || subfolderId === ALL_SITEPACK_FORMS_ID;
   const viewingUnfiled =
     unfiledOnly || subfolderId === UNFILED_SUBFOLDER_ID;
+  const knownSubfolderIdList = Array.isArray(knownSubfolderIds)
+    ? knownSubfolderIds
+        .map((id) => normalizeSitepackId(id))
+        .filter(Boolean)
+    : [];
 
   if (wantSite && normalizeSitepackId(rSiteId) !== wantSite) return false;
   if (viewingAll) return true;
-  if (viewingUnfiled) return !rSubfolderId;
+  if (viewingUnfiled) {
+    if (!rSubfolderId) return true;
+    if (knownSubfolderIdList.length > 0) {
+      return isOrphanedSitepackSubfolder(rSubfolderId, knownSubfolderIdList);
+    }
+    return false;
+  }
   if (wantSubfolder) return rSubfolderId === wantSubfolder;
   if (wantSite) return true;
   return !rSubfolderId;
 }
 
-export function sitepackNavState({ siteId, subfolderId, moduleTitle }) {
+export function sitepackNavState({ siteId, subfolderId, moduleTitle, subfolderName }) {
   const state = {};
   if (siteId) state.siteId = siteId;
   if (subfolderId) state.subfolderId = subfolderId;
+  if (subfolderName) state.subfolderName = subfolderName;
   if (moduleTitle) state.moduleTitle = moduleTitle;
   return state;
 }

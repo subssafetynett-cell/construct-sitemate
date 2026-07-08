@@ -74,7 +74,6 @@ import api, {
   uploadDocument,
   fetchDocuments,
   fetchDocumentCounts,
-  fetchFormResponsesList,
   fetchAllFormResponsesList,
   fetchSiteSubfolders,
   createSiteSubfolder,
@@ -89,9 +88,8 @@ import {
     FRIDAY_PACK_FORMS_CATEGORY,
     belongsInSitepackCategory,
     fridayPackFormListFetchParams,
-    isFridayPackFormForUser,
+    includeFridayPackListRow,
     isFridayPackSiteSubmission,
-    userOwnsFormSubmission,
 } from "../utils/generalFormSubmissions";
 import {
     SITEPACK_FORM_GROUPS,
@@ -431,13 +429,23 @@ export default function SitepackManagement() {
             siteId: getSiteId(),
             subfolderId: selectedSubfolder?.id,
             category: selectedModule?.title,
-            extra,
+            extra: {
+                ...(selectedSubfolder?.name &&
+                !isUnfiledSubfolder(selectedSubfolder) &&
+                !isAllFormsSubfolder(selectedSubfolder)
+                    ? { subfolderName: selectedSubfolder.name }
+                    : {}),
+                ...extra,
+            },
         });
+
+    const getKnownSubfolderIds = () =>
+        subfolders.map((sf) => sf.id).filter(Boolean);
 
     const includeSitepackFormRow = (row, moduleTitle) => {
         if (!belongsInSitepackCategory(row, moduleTitle)) return false;
         if (moduleTitle === FRIDAY_PACK_FORMS_CATEGORY) {
-            return isFridayPackFormForUser(row, currentUserId);
+            return includeFridayPackListRow(row);
         }
         return true;
     };
@@ -564,7 +572,7 @@ export default function SitepackManagement() {
 
     // Per-subfolder item counts when picking a subfolder inside a category
     useEffect(() => {
-        if (!selectedSite || !selectedModule || selectedSubfolder) {
+        if (!selectedSite || !selectedModule || selectedSubfolder || !currentUserId) {
             setSubfolderItemCounts({});
             setShowUnfiledSubfolder(false);
             setTotalCategoryItemCount(0);
@@ -575,6 +583,7 @@ export default function SitepackManagement() {
         const loadSubfolderCounts = async () => {
             const siteId = getSiteId();
             const moduleTitle = selectedModule.title;
+            const knownSubfolderIds = getKnownSubfolderIds();
             try {
                 const [formsRes, docsRes] = await Promise.all([
                     fetchAllFormResponsesList(sitepackFormFetchParams(moduleTitle, siteId)),
@@ -587,13 +596,16 @@ export default function SitepackManagement() {
                 let total = 0;
                 const bump = (subfolderId) => {
                     const sfid = normalizeSitepackId(subfolderId);
-                    if (sfid) counts[sfid] = (counts[sfid] || 0) + 1;
-                    else unfiled += 1;
+                    if (sfid && knownSubfolderIds.includes(sfid)) {
+                        counts[sfid] = (counts[sfid] || 0) + 1;
+                    } else {
+                        unfiled += 1;
+                    }
                     total += 1;
                 };
 
                 (formsRes?.data || []).forEach((row) => {
-                    if (!matchesSitepackScope(row, { siteId })) return;
+                    if (!matchesSitepackScope(row, { siteId, knownSubfolderIds })) return;
                     if (!includeSitepackFormRow(row, moduleTitle)) return;
                     bump(row.answers?.subfolderId ?? row.subfolderId);
                 });
@@ -610,11 +622,11 @@ export default function SitepackManagement() {
         return () => {
             cancelled = true;
         };
-    }, [selectedSite, selectedModule, selectedSubfolder, location.key, currentUserId]);
+    }, [selectedSite, selectedModule, selectedSubfolder, location.key, currentUserId, subfolders]);
 
     // Load module counts when viewing categories for a site
     useEffect(() => {
-        if (selectedSite && !selectedModule) {
+        if (selectedSite && !selectedModule && currentUserId) {
             const loadCounts = async () => {
                 try {
                     const siteId = getSiteId();
@@ -634,7 +646,6 @@ export default function SitepackManagement() {
                                     formCountsByCategory[cat] = (formCountsByCategory[cat] || 0) + 1;
                                     return;
                                 }
-                                if (!userOwnsFormSubmission(r, currentUserId)) return;
                                 formCountsByCategory[FRIDAY_PACK_FORMS_CATEGORY] =
                                     (formCountsByCategory[FRIDAY_PACK_FORMS_CATEGORY] || 0) + 1;
                             });
@@ -670,12 +681,12 @@ export default function SitepackManagement() {
 
     // Load documents when module + subfolder selected (location.key refreshes after saving a form).
     useEffect(() => {
-        if (!selectedSite || !selectedSubfolder || !selectedModule) {
+        if (!selectedSite || !selectedSubfolder || !selectedModule || !currentUserId) {
             setDocs([]);
             return;
         }
         reloadModuleDocuments();
-    }, [selectedSite, selectedSubfolder, selectedModule, location.key, currentUserId]);
+    }, [selectedSite, selectedSubfolder, selectedModule, location.key, currentUserId, subfolders]);
 
     const generalFormTitleToPath = useMemo(
         () => Object.fromEntries(TEMPLATES.map((t) => [t.title, t.path])),
@@ -728,7 +739,7 @@ export default function SitepackManagement() {
             setBuilderForms([]);
             try {
                 const [responsesRes, formsRes] = await Promise.all([
-                    fetchAllFormResponsesList({ category: "General forms," }),
+                    fetchAllFormResponsesList({ category: "General forms,__empty__" }),
                     api.get("/forms"),
                 ]);
                 if (cancelled) return;
@@ -905,20 +916,18 @@ export default function SitepackManagement() {
     };
 
     const reloadModuleDocuments = async () => {
-        if (!selectedSite || !selectedSubfolder || !selectedModule) return;
+        if (!selectedSite || !selectedSubfolder || !selectedModule || !currentUserId) return;
         setModuleItemsLoading(true);
         const siteId = getSiteId();
         const subfolderId = getSubfolderId();
         const moduleTitle = selectedModule.title;
         const allFormsView = isAllFormsSubfolder(selectedSubfolder);
         const unfiledView = isUnfiledSubfolder(selectedSubfolder);
+        const knownSubfolderIds = getKnownSubfolderIds();
         let allItems = [];
 
         try {
             const formsParams = sitepackFormFetchParams(moduleTitle, siteId);
-            if (!allFormsView && !unfiledView && subfolderId) {
-                formsParams.subfolderId = subfolderId;
-            }
 
             const [docsRes, formsRes] = await Promise.allSettled([
                 fetchDocuments(
@@ -926,9 +935,7 @@ export default function SitepackManagement() {
                     moduleTitle,
                     allFormsView || unfiledView ? undefined : subfolderId
                 ),
-                allFormsView || unfiledView
-                    ? fetchAllFormResponsesList(formsParams)
-                    : fetchFormResponsesList(formsParams),
+                fetchAllFormResponsesList(formsParams),
             ]);
 
             const documents = docsRes.status === "fulfilled" ? docsRes.value?.documents : [];
@@ -957,6 +964,7 @@ export default function SitepackManagement() {
                         subfolderId: scopeSubfolderId,
                         unfiledOnly: unfiledView,
                         allFormsOnly: allFormsView,
+                        knownSubfolderIds,
                     });
                 });
                 const mappedForms = siteResponses.map((r) => {

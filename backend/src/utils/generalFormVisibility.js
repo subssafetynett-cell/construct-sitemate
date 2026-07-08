@@ -61,7 +61,13 @@ function isSheqResponse(row) {
 function canViewFormResponse(row, userId, clientId, options = {}) {
   const { globalAccess = false, companyWideRead = false } = options;
   if (!row) return false;
-  if (row.submittedById === userId) return true;
+  if (
+    row.submittedById &&
+    userId &&
+    String(row.submittedById) === String(userId)
+  ) {
+    return true;
+  }
 
   const submitterClientId = row.submittedBy?.clientId;
   const sameCompany =

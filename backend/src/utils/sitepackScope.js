@@ -19,13 +19,13 @@ function sitepackColumnsForAnswers(answers) {
   return { siteId, subfolderId };
 }
 
+/**
+ * Prefer indexed FormResponse.siteId / subfolderId columns.
+ * Avoid OR with answers JSON path filters — those force full JSON scans and
+ * can OOM / 500 when answers contain large base64 images (Friday Pack logos).
+ */
 function buildSitepackFieldEquals(field, value) {
-  return {
-    OR: [
-      { answers: { path: [field], equals: value } },
-      { [field]: value },
-    ],
-  };
+  return { [field]: value };
 }
 
 function matchesSitepackScope(record, { siteId, subfolderId }) {

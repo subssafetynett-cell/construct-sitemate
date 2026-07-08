@@ -20,6 +20,7 @@ export function useGeneralFormLeave({
     subfolderId,
     category,
     listPath,
+    subfolderName,
     saving,
     canQuickSave,
     onQuickSave,
@@ -29,6 +30,8 @@ export function useGeneralFormLeave({
     const [searchParams] = useSearchParams();
     const monitoringSection = searchParams.get("monitoringSection");
     const leaveAfterSaveRef = useRef(false);
+    const resolvedSubfolderName =
+        subfolderName || searchParams.get("subfolderName") || undefined;
 
     const navigateBack = useCallback(() => {
         if (monitoringSection && siteId) {
@@ -44,6 +47,7 @@ export function useGeneralFormLeave({
                 state: sitepackNavState({
                     siteId,
                     subfolderId,
+                    subfolderName: resolvedSubfolderName,
                     moduleTitle: resolveSitepackModuleTitle(category, { siteId, subfolderId }),
                 }),
             });
@@ -54,7 +58,7 @@ export function useGeneralFormLeave({
         } else {
             navigate("/general-forms");
         }
-    }, [navigate, monitoringSection, siteId, subfolderId, category, listPath, searchParams]);
+    }, [navigate, monitoringSection, siteId, subfolderId, resolvedSubfolderName, category, listPath, searchParams]);
 
     const { isDirty, resetDirty } = useAutoFormDirty(watchDeps, { enabled, loading });
 

@@ -243,6 +243,13 @@ enum NonconformanceStatus {
   sent
 }
 
+enum NonconformanceRegisterStatus {
+  open
+  closed
+  accepted
+  rejected
+}
+
 model NonconformanceAction {
   id               String               @id @default(uuid())
   formResponseId   String?
@@ -250,6 +257,7 @@ model NonconformanceAction {
   reporterId       String
   clientId         String
   status           NonconformanceStatus @default(pending)
+  registerStatus   NonconformanceRegisterStatus @default(open)
   title            String
   correctionAction String               @default("")
   responsibleEmail String?

@@ -116,7 +116,7 @@ async function createNonconformanceFromFormSubmission({
       type: "nonconformance_reported",
       title: "New nonconformance reported",
       message: `New nonconformance reported by ${reporterName}`,
-      link: `/action-tracker?item=${action.id}`,
+      link: `/nonconformance?item=${action.id}`,
       metadata: {
         actionId: action.id,
         reporterId: submitter.id,
@@ -136,7 +136,7 @@ async function notifyReporterOfSentAction(action, assignee, reporter, notes) {
       type: "nonconformance_response",
       title: "Nonconformance response received",
       message: `${assigneeName} sent a response to your nonconformance report`,
-      link: `/action-tracker?item=${action.id}`,
+      link: `/nonconformance?item=${action.id}`,
       metadata: { actionId: action.id, assigneeId: assignee.id },
     },
   });
@@ -150,7 +150,7 @@ async function notifyReporterOfSentAction(action, assignee, reporter, notes) {
     <p><strong>Report:</strong> ${escapeHtml(action.title)}</p>
     <p><strong>Response:</strong></p>
     <p>${escapeHtml(notes || "No additional notes provided.")}</p>
-    <p><a href="${escapeHtml(buildAppUrl(`/action-tracker?item=${action.id}`))}">View in Action tracker</a></p>
+    <p><a href="${escapeHtml(buildAppUrl(`/nonconformance?item=${action.id}`))}">View in Nonconformance</a></p>
   `;
 
   await sendEmail({

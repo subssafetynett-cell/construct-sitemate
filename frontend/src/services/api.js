@@ -319,6 +319,13 @@ export const updateActionTrackerItem = async (id, payload) => {
   return response.data;
 };
 
+export const updateActionTrackerRegisterStatus = async (id, registerStatus) => {
+  const response = await api.patch(`/action-tracker/actions/${id}/register-status`, {
+    registerStatus,
+  });
+  return response.data;
+};
+
 export const sendActionTrackerItem = async (id, payload = {}) => {
   const response = await api.post(`/action-tracker/actions/${id}/send`, payload);
   return response.data;

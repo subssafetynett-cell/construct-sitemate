@@ -73,6 +73,7 @@ export default function UseForm() {
         state: sitepackNavState({
           siteId,
           subfolderId,
+          subfolderName: searchParams.get("subfolderName") || undefined,
           moduleTitle: category || FRIDAY_PACK_FORMS_CATEGORY,
         }),
       });

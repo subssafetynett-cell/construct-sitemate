@@ -1,8 +1,3 @@
-/** True for embedded base64 image payloads (the main list-view bloat). */
-function isDataImage(value) {
-  return typeof value === "string" && value.startsWith("data:image");
-}
-
 /**
  * Strip heavy binary fields from answers for list/table views.
  * Full payloads are still returned by GET /forms/responses/:id.
@@ -10,25 +5,29 @@ function isDataImage(value) {
 function compactFormResponseAnswers(answers) {
   if (!answers || typeof answers !== "object") return answers ?? {};
 
-  const out = { ...answers };
-
-  if (out.docInfo && typeof out.docInfo === "object") {
-    const { logo, logoRight, signature, ...rest } = out.docInfo;
-    out.docInfo = {
-      ...rest,
-      ...(logo && !isDataImage(logo) ? { logo } : {}),
-      ...(logoRight && !isDataImage(logoRight) ? { logoRight } : {}),
-      ...(signature && !isDataImage(signature) ? { signature } : {}),
-    };
-  }
-
-  if (out.formData && typeof out.formData === "object") {
-    const { images, ...formRest } = out.formData;
-    const imageCount = Array.isArray(images) ? images.length : 0;
-    out.formData = {
-      ...formRest,
-      images: imageCount ? { _count: imageCount } : [],
-    };
+  const out = {};
+  for (const [key, value] of Object.entries(answers)) {
+    // Drop embedded binary payloads from list views entirely.
+    if (typeof value === "string" && value.startsWith("data:image")) continue;
+    if (key === "docInfo" && value && typeof value === "object") {
+      const { logo, logoRight, signature, ...rest } = value;
+      out.docInfo = { ...rest };
+      continue;
+    }
+    if (key === "formData" && value && typeof value === "object") {
+      const { images, ...formRest } = value;
+      const imageCount = Array.isArray(images) ? images.length : 0;
+      out.formData = {
+        ...formRest,
+        ...(imageCount ? { images: { _count: imageCount } } : {}),
+      };
+      continue;
+    }
+    if (Array.isArray(value) && value.some((v) => typeof v === "string" && v.startsWith("data:image"))) {
+      out[key] = { _count: value.length };
+      continue;
+    }
+    out[key] = value;
   }
 
   return out;

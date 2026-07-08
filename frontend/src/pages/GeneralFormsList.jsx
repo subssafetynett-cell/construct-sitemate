@@ -68,7 +68,7 @@ export default function GeneralFormsList() {
         isLoading: loading,
         refetch: refetchSubmissions,
     } = useFormResponsesListQuery(
-        { category: "General forms," },
+        { category: "General forms,__empty__" },
         { fetchAll: true }
     );
 
