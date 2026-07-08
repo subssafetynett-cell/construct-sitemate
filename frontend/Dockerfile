@@ -7,8 +7,9 @@ FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
 
-# PaaS (Coolify) often passes --build-arg NODE_ENV=production. Vite must still be installed;
-# it is listed in package.json "dependencies" so `npm ci` always installs it.
+# PaaS (Coolify) often passes --build-arg NODE_ENV=production. Build tooling that
+# vite.config.js imports (vite, @vitejs/plugin-react, vite-plugin-pwa, etc.) must
+# live in package.json "dependencies" so `npm ci` still installs them.
 COPY package*.json ./
 RUN npm ci || npm install
 
