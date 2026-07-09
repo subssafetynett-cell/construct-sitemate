@@ -3,14 +3,15 @@
  */
 
 const DB_NAME = "sitemate-offline";
-const DB_VERSION = 1;
-const STORE_GET = "apiGetCache";
-const STORE_QUEUE = "offlineQueue";
+const DB_VERSION = 2;
+export const STORE_GET = "apiGetCache";
+export const STORE_QUEUE = "offlineQueue";
+export const STORE_DRAFTS = "formDrafts";
 
 const MAX_GET_ENTRIES = 200;
 const MAX_GET_BODY_CHARS = 2_500_000; // skip caching huge payloads (embedded images)
 
-function openDb() {
+export function openOfflineDb() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
       reject(new Error("IndexedDB unavailable"));
@@ -30,13 +31,23 @@ function openDb() {
         });
         store.createIndex("createdAt", "createdAt");
       }
+      if (!db.objectStoreNames.contains(STORE_DRAFTS)) {
+        const store = db.createObjectStore(STORE_DRAFTS, { keyPath: "localId" });
+        store.createIndex("updatedAt", "updatedAt");
+        store.createIndex("serverId", "serverId", { unique: false });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
   });
 }
 
-function txDone(tx) {
+/** @deprecated use openOfflineDb */
+function openDb() {
+  return openOfflineDb();
+}
+
+export function txDone(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -73,7 +84,7 @@ export async function putApiGetCache(key, payload) {
   try {
     const serialized = JSON.stringify(payload);
     if (serialized.length > MAX_GET_BODY_CHARS) return;
-    const db = await openDb();
+    const db = await openOfflineDb();
     const tx = db.transaction(STORE_GET, "readwrite");
     const store = tx.objectStore(STORE_GET);
     store.put({ key, payload, updatedAt: Date.now() });
@@ -87,7 +98,7 @@ export async function putApiGetCache(key, payload) {
 
 export async function getApiGetCache(key) {
   try {
-    const db = await openDb();
+    const db = await openOfflineDb();
     const entry = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_GET, "readonly");
       const req = tx.objectStore(STORE_GET).get(key);
@@ -137,6 +148,14 @@ export function shouldQueueWriteUrl(url = "", method = "post") {
     /\/forms\/[^/]+\/responses\/?$/.test(path) ||
     /\/forms\/responses\/[^/]+\/?$/.test(path) ||
     /\/documents\/upload\/?$/.test(path)
+  );
+}
+
+export function isFormResponseWriteUrl(url = "") {
+  const path = String(url).split("?")[0];
+  return (
+    /\/forms\/[^/]+\/responses\/?$/.test(path) ||
+    /\/forms\/responses\/[^/]+\/?$/.test(path)
   );
 }
 
@@ -196,7 +215,7 @@ export function deserializeRequestBody(serialized) {
 }
 
 export async function enqueueOfflineWrite(entry) {
-  const db = await openDb();
+  const db = await openOfflineDb();
   const tx = db.transaction(STORE_QUEUE, "readwrite");
   const record = {
     ...entry,
@@ -216,7 +235,7 @@ export async function enqueueOfflineWrite(entry) {
 
 export async function listOfflineQueue() {
   try {
-    const db = await openDb();
+    const db = await openOfflineDb();
     const rows = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_QUEUE, "readonly");
       const req = tx.objectStore(STORE_QUEUE).getAll();
@@ -231,7 +250,7 @@ export async function listOfflineQueue() {
 }
 
 export async function removeOfflineQueueItem(id) {
-  const db = await openDb();
+  const db = await openOfflineDb();
   const tx = db.transaction(STORE_QUEUE, "readwrite");
   tx.objectStore(STORE_QUEUE).delete(id);
   await txDone(tx);
@@ -251,7 +270,7 @@ export function subscribeOfflineQueue(listener) {
   return () => listeners.delete(listener);
 }
 
-function notifyQueueChanged() {
+export function notifyQueueChanged() {
   listeners.forEach((fn) => {
     try {
       fn();
@@ -267,3 +286,6 @@ export function createOfflineAxiosError(message = "Saved offline — will sync w
   err.isOfflineQueued = true;
   return err;
 }
+
+// silence unused when tree-shaken wrongly
+void openDb;
