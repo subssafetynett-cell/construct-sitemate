@@ -13,11 +13,19 @@ import {
   putApiGetCache,
   getApiGetCache,
   shouldCacheGetUrl,
-  shouldQueueWriteUrl,
-  serializeRequestBody,
-  enqueueOfflineWrite,
+  isFormResponsesListUrl,
+  isFormResponseDetailUrl,
   isBrowserOffline,
 } from "../utils/offlineStore.js";
+import { queueOfflineWriteFromConfig } from "../utils/offlineFormWrite.js";
+import {
+  getOfflineDraftByAnyId,
+  listOfflineDrafts,
+  draftToDetailRow,
+  draftToListRow,
+  draftMatchesListParams,
+  mergeDraftsIntoListPayload,
+} from "../utils/offlineFormDrafts.js";
 
 /** User/client lists on hosted tenants with large datasets. */
 export const LIST_FETCH_TIMEOUT_MS = 60_000;
@@ -101,15 +109,6 @@ export function formatFormSaveError(error) {
   return error?.response?.data?.message || error?.message || "Failed to save the form.";
 }
 
-function pickSerializableHeaders(headers) {
-  if (!headers || typeof headers !== "object") return {};
-  const out = {};
-  for (const key of ["Authorization", "authorization", "X-Acting-Client-Id", "x-acting-client-id"]) {
-    if (headers[key]) out[key] = headers[key];
-  }
-  return out;
-}
-
 function syntheticAxiosResponse(config, data, status = 200) {
   return {
     data,
@@ -160,6 +159,24 @@ api.interceptors.request.use(
       }
     }
 
+    // When offline, serve form response detail from local drafts.
+    if (method === "get" && isFormResponseDetailUrl(url)) {
+      const id = url.split("?")[0].split("/").pop();
+      try {
+        const draft = await getOfflineDraftByAnyId(id);
+        if (draft) {
+          const adapterResponse = syntheticAxiosResponse(config, {
+            success: true,
+            data: draftToDetailRow(draft),
+          });
+          config.adapter = async () => adapterResponse;
+          return config;
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+
     // When offline, serve GET from IndexedDB immediately (avoid long axios timeouts).
     if (method === "get" && isBrowserOffline() && shouldCacheGetUrl(url)) {
       const cacheKey = buildApiCacheKey({
@@ -171,7 +188,22 @@ api.interceptors.request.use(
       try {
         const cached = await getApiGetCache(cacheKey);
         if (cached != null) {
-          const adapterResponse = syntheticAxiosResponse(config, cached);
+          let payload = cached;
+          if (isFormResponsesListUrl(url)) {
+            payload = await mergeDraftsIntoListPayload(cached, config.params);
+          }
+          const adapterResponse = syntheticAxiosResponse(config, payload);
+          config.adapter = async () => adapterResponse;
+          return config;
+        }
+        // Form list with no cache: return pending offline drafts only.
+        if (isFormResponsesListUrl(url)) {
+          const drafts = await listOfflineDrafts(config.params);
+          const adapterResponse = syntheticAxiosResponse(config, {
+            success: true,
+            data: drafts.map(draftToListRow),
+            offlineDraftsOnly: true,
+          });
           config.adapter = async () => adapterResponse;
           return config;
         }
@@ -188,31 +220,13 @@ api.interceptors.request.use(
       );
     }
 
-    // When offline, queue form/document writes immediately (skip long upload timeouts).
-    if (
-      !config.__offlineReplay &&
-      isBrowserOffline() &&
-      shouldQueueWriteUrl(url, method)
-    ) {
+    // When offline, queue writes immediately (forms, uploads, template forms).
+    if (!config.__offlineReplay && isBrowserOffline() && method !== "get" && method !== "head") {
       try {
-        const body = await serializeRequestBody(config.data);
-        const queueId = await enqueueOfflineWrite({
-          method,
-          url,
-          params: config.params,
-          headers: pickSerializableHeaders(config.headers),
-          timeout: config.timeout,
-          body,
-          label: /documents\/upload/i.test(url) ? "Document upload" : "Form save",
-        });
-        const adapterResponse = syntheticAxiosResponse(config, {
-          success: true,
-          offlineQueued: true,
-          queueId,
-          message: "Saved offline — will sync when you're back online.",
-          data: null,
-        });
+        const payload = await queueOfflineWriteFromConfig(config);
+        const adapterResponse = syntheticAxiosResponse(config, payload);
         config.adapter = async () => adapterResponse;
+        return config;
       } catch (queueErr) {
         console.warn("[offline] failed to queue write before request", queueErr);
       }
@@ -236,6 +250,9 @@ api.interceptors.response.use(
         token,
       });
       putApiGetCache(key, response.data).catch(() => {});
+    }
+    if (method === "get" && isFormResponsesListUrl(url) && response.data) {
+      response.data = await mergeDraftsIntoListPayload(response.data, response.config?.params);
     }
     return response;
   },
@@ -265,37 +282,37 @@ api.interceptors.response.use(
       });
       const cached = await getApiGetCache(key);
       if (cached != null) {
-        return syntheticAxiosResponse(config, cached);
+        let payload = cached;
+        if (isFormResponsesListUrl(url)) {
+          payload = await mergeDraftsIntoListPayload(cached, config.params);
+        }
+        return syntheticAxiosResponse(config, payload);
+      }
+      if (isFormResponsesListUrl(url)) {
+        const drafts = await listOfflineDrafts(config.params);
+        return syntheticAxiosResponse(config, {
+          success: true,
+          data: drafts.map(draftToListRow),
+          offlineDraftsOnly: true,
+        });
+      }
+      if (isFormResponseDetailUrl(url)) {
+        const id = url.split("?")[0].split("/").pop();
+        const draft = await getOfflineDraftByAnyId(id);
+        if (draft) {
+          return syntheticAxiosResponse(config, {
+            success: true,
+            data: draftToDetailRow(draft),
+          });
+        }
       }
     }
 
-    // Queue form saves / document uploads while offline (or on network failure).
-    if (
-      !config.__offlineReplay &&
-      shouldQueueWriteUrl(url, method) &&
-      isNetworkFailure(error)
-    ) {
+    // Queue writes on network failure (forms sync in background when online).
+    if (!config.__offlineReplay && method !== "get" && method !== "head" && isNetworkFailure(error)) {
       try {
-        const body = await serializeRequestBody(config.data);
-        const queueId = await enqueueOfflineWrite({
-          method,
-          url,
-          params: config.params,
-          headers: pickSerializableHeaders(config.headers),
-          timeout: config.timeout,
-          body,
-          label:
-            /documents\/upload/i.test(url) ? "Document upload" : "Form save",
-        });
-
-        return syntheticAxiosResponse(config, {
-          success: true,
-          offlineQueued: true,
-          queueId,
-          message: "Saved offline — will sync when you're back online.",
-          // No fake server id — callers must not treat this as a persisted response.
-          data: null,
-        });
+        const payload = await queueOfflineWriteFromConfig(config);
+        return syntheticAxiosResponse(config, payload);
       } catch (queueErr) {
         console.warn("[offline] failed to queue write", queueErr);
       }

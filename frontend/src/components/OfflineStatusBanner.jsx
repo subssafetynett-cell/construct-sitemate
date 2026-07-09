@@ -88,9 +88,9 @@ export default function OfflineStatusBanner() {
           >
             {!online
               ? pending > 0
-                ? `You're offline. ${pending} change${pending === 1 ? "" : "s"} will sync when you're back online. Browsed data stays available from cache.`
-                : "You're offline. You can still browse recently loaded Site Pack data. Form saves and uploads queue until you're online."
-              : `${pending} change${pending === 1 ? "" : "s"} waiting to sync.`}
+                ? `You're offline. ${pending} form change${pending === 1 ? "" : "s"} saved locally and will sync automatically when you're back online.`
+                : "You're offline. You can create, edit, and save forms — changes sync when you're back online."
+              : `${pending} form change${pending === 1 ? "" : "s"} waiting to sync.`}
           </Alert>
         </Box>
       </Collapse>

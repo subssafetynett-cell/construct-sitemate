@@ -1543,7 +1543,8 @@ export default function SheqInstallationForm({
                     saveRequest
                 );
                 if (res.data?.offlineQueued) {
-                    /* queued — keep local draft state */
+                    const offlineData = res.data.data;
+                    savedId = offlineData?.id || offlineData?._id || existingId;
                 } else if (!res.data?.success) {
                     throw new Error(res.data?.message || "Update failed");
                 }
@@ -1572,7 +1573,8 @@ export default function SheqInstallationForm({
                         saveRequest
                     );
                     if (res.data?.offlineQueued) {
-                        savedId = null;
+                        const offlineData = res.data.data;
+                        savedId = offlineData?.id || offlineData?._id || null;
                     } else if (!res.data?.success) {
                         throw new Error(res.data?.message || "Save failed");
                     } else {

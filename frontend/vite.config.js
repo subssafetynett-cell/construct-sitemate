@@ -65,6 +65,7 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           // Avoid workbox-build terser crashes in CI / constrained environments
           mode: 'development',
+          importScripts: ['offline-sync-sw.js'],
           navigateFallback: `${basePath}index.html`,
           navigateFallbackDenylist: [/^\/api/, /^\/uploads/],
           runtimeCaching: [

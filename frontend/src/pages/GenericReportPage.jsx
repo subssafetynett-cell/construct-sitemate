@@ -578,10 +578,13 @@ export default function GenericReportPage({ pageTitle }) {
             }
 
             if (res.data?.offlineQueued) {
-                alert(
-                    res.data?.message ||
-                        "Saved offline — will sync when you're back online."
-                );
+                const offlineData = res.data.data;
+                if (offlineData) {
+                    const savedAnswers = withLogoPreviewFields(offlineData.answers || processedAnswers);
+                    setEditingId(offlineData.id || offlineData._id || editingId);
+                    setFormValues(savedAnswers);
+                }
+                alert(res.data?.message || "Saved offline — will sync when you're back online.");
                 setViewMode("viewed");
                 setLastResponse(null);
             } else if (res.data?.success) {

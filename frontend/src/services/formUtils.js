@@ -1,5 +1,12 @@
 import api, { formResponseSaveConfig } from './api';
 import { FRIDAY_PACK_FORMS_CATEGORY } from '../utils/generalFormSubmissions';
+import {
+  getOfflineTemplateFormId,
+  putOfflineTemplateForm,
+  isBrowserOffline,
+  createLocalFormId,
+} from '../utils/offlineStore.js';
+import { queueOfflineTemplateFormCreate } from '../utils/offlineFormWrite.js';
 
 function buildFormResponseBody(payload, category) {
     const siteId = payload?.siteId;
@@ -35,7 +42,10 @@ export async function saveGeneralFormResponse({
             body,
             requestConfig
         );
-        if (res.data?.offlineQueued) return persistedResponseId;
+        if (res.data?.offlineQueued) {
+            const localId = res.data?.data?.id || res.data?.data?._id;
+            return localId || persistedResponseId;
+        }
         return persistedResponseId;
     }
     const formId = await getOrCreateTemplateForm(formTitle);
@@ -44,7 +54,10 @@ export async function saveGeneralFormResponse({
         body,
         requestConfig
     );
-    if (res.data?.offlineQueued) return null;
+    if (res.data?.offlineQueued) {
+        const localId = res.data?.data?.id || res.data?.data?._id;
+        return localId || null;
+    }
     const saved = res.data?.data;
     return saved?.id || saved?._id || null;
 }
@@ -63,27 +76,31 @@ export const getOrCreateTemplateForm = async (formTitle) => {
     if (templateFormCache[formTitle]) {
         return templateFormCache[formTitle];
     }
+
+    const offlineCached = await getOfflineTemplateFormId(formTitle);
+    if (offlineCached) {
+        templateFormCache[formTitle] = offlineCached;
+        return offlineCached;
+    }
+
     try {
         const requestConfig = formResponseSaveConfig();
-        // First try a narrow title lookup; this avoids downloading every saved form before saving.
         const res = await api.get('/forms', {
             ...requestConfig,
             params: { title: formTitle },
         });
         if (res.data?.success && res.data.data) {
-            // Find existing
             const existing = res.data.data.find(f => f.title === formTitle);
             if (existing) {
                 const id = existing.id || existing._id;
                 templateFormCache[formTitle] = id;
+                await putOfflineTemplateForm(formTitle, id, { pending: false });
                 return id;
             }
         }
 
-        // If it doesn't exist, we must create a template representation
-        const createRes = await api.post('/forms', {
+        const createPayload = {
             title: formTitle,
-            // Submit an empty field array since the form structure is hardcoded in the frontend
             fields: [
                 {
                     id: "custom_hardcoded_form_data",
@@ -94,12 +111,35 @@ export const getOrCreateTemplateForm = async (formTitle) => {
             ],
             titleColor: "#000000",
             titleAlignment: "left"
-        }, requestConfig);
+        };
+
+        if (isBrowserOffline()) {
+            const queued = await queueOfflineTemplateFormCreate({
+                url: '/forms',
+                data: createPayload,
+                headers: {},
+                timeout: requestConfig.timeout,
+            });
+            const id = queued.form?.id || queued.form?._id || createLocalFormId();
+            templateFormCache[formTitle] = id;
+            await putOfflineTemplateForm(formTitle, id, { pending: true });
+            return id;
+        }
+
+        const createRes = await api.post('/forms', createPayload, requestConfig);
+
+        if (createRes.data?.offlineQueued && createRes.data?.form) {
+            const id = createRes.data.form.id || createRes.data.form._id;
+            templateFormCache[formTitle] = id;
+            await putOfflineTemplateForm(formTitle, id, { pending: true });
+            return id;
+        }
 
         if (createRes.data?.success && createRes.data.form) {
             const created = createRes.data.form;
             const id = created.id || created._id;
             templateFormCache[formTitle] = id;
+            await putOfflineTemplateForm(formTitle, id, { pending: false });
             return id;
         }
 

@@ -1,15 +1,18 @@
 /**
- * IndexedDB helpers for offline API GET cache and pending write queue.
+ * IndexedDB helpers for offline API GET cache, form drafts queue, and template forms.
  */
 
 const DB_NAME = "sitemate-offline";
 const DB_VERSION = 2;
-export const STORE_GET = "apiGetCache";
-export const STORE_QUEUE = "offlineQueue";
-export const STORE_DRAFTS = "formDrafts";
+const STORE_GET = "apiGetCache";
+const STORE_QUEUE = "offlineQueue";
+const STORE_DRAFTS = "formDrafts";
+const STORE_TEMPLATES = "templateForms";
+const STORE_ID_MAP = "idMap";
 
 const MAX_GET_ENTRIES = 200;
-const MAX_GET_BODY_CHARS = 2_500_000; // skip caching huge payloads (embedded images)
+const MAX_GET_BODY_CHARS = 2_500_000;
+const OFFLINE_SYNC_TAG = "sitemate-offline-flush";
 
 export function openOfflineDb() {
   return new Promise((resolve, reject) => {
@@ -18,8 +21,10 @@ export function openOfflineDb() {
       return;
     }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
+      const oldVersion = event.oldVersion || 0;
+
       if (!db.objectStoreNames.contains(STORE_GET)) {
         const store = db.createObjectStore(STORE_GET, { keyPath: "key" });
         store.createIndex("updatedAt", "updatedAt");
@@ -30,11 +35,24 @@ export function openOfflineDb() {
           autoIncrement: true,
         });
         store.createIndex("createdAt", "createdAt");
+        store.createIndex("localResponseId", "localResponseId");
+      } else if (oldVersion < 2) {
+        const tx = event.target.transaction;
+        const store = tx.objectStore(STORE_QUEUE);
+        if (!store.indexNames.contains("localResponseId")) {
+          store.createIndex("localResponseId", "localResponseId");
+        }
       }
       if (!db.objectStoreNames.contains(STORE_DRAFTS)) {
         const store = db.createObjectStore(STORE_DRAFTS, { keyPath: "localId" });
+        store.createIndex("serverId", "serverId");
         store.createIndex("updatedAt", "updatedAt");
-        store.createIndex("serverId", "serverId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_TEMPLATES)) {
+        db.createObjectStore(STORE_TEMPLATES, { keyPath: "title" });
+      }
+      if (!db.objectStoreNames.contains(STORE_ID_MAP)) {
+        db.createObjectStore(STORE_ID_MAP, { keyPath: "localId" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -42,7 +60,6 @@ export function openOfflineDb() {
   });
 }
 
-/** @deprecated use openOfflineDb */
 function openDb() {
   return openOfflineDb();
 }
@@ -59,6 +76,24 @@ export function isBrowserOffline() {
   return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 
+export function isOfflineLocalId(id) {
+  return /^offline-(res|form)-/i.test(String(id || ""));
+}
+
+export function createLocalResponseId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `offline-res-${crypto.randomUUID()}`;
+  }
+  return `offline-res-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function createLocalFormId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `offline-form-${crypto.randomUUID()}`;
+  }
+  return `offline-form-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function stableParams(params) {
   if (!params || typeof params !== "object") return "";
   try {
@@ -72,7 +107,6 @@ function stableParams(params) {
   }
 }
 
-/** Cache key scoped by auth token fragment so users don't share offline data. */
 export function buildApiCacheKey({ method = "get", url = "", params, token }) {
   const path = String(url).split("?")[0];
   const query = stableParams(params) || (String(url).includes("?") ? String(url).split("?")[1] : "");
@@ -84,21 +118,20 @@ export async function putApiGetCache(key, payload) {
   try {
     const serialized = JSON.stringify(payload);
     if (serialized.length > MAX_GET_BODY_CHARS) return;
-    const db = await openOfflineDb();
+    const db = await openDb();
     const tx = db.transaction(STORE_GET, "readwrite");
-    const store = tx.objectStore(STORE_GET);
-    store.put({ key, payload, updatedAt: Date.now() });
+    tx.objectStore(STORE_GET).put({ key, payload, updatedAt: Date.now() });
     await txDone(tx);
     await trimGetCache(db);
     db.close();
   } catch {
-    /* ignore quota / private mode */
+    /* ignore */
   }
 }
 
 export async function getApiGetCache(key) {
   try {
-    const db = await openOfflineDb();
+    const db = await openDb();
     const entry = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_GET, "readonly");
       const req = tx.objectStore(STORE_GET).get(key);
@@ -132,7 +165,6 @@ async function trimGetCache(db) {
   await txDone(tx);
 }
 
-/** Paths that must never be served from offline cache (auth / sensitive mutations only via network). */
 export function shouldCacheGetUrl(url = "") {
   const path = String(url).split("?")[0];
   if (/\/auth\//.test(path)) return false;
@@ -140,28 +172,45 @@ export function shouldCacheGetUrl(url = "") {
   return true;
 }
 
+export function isFormResponsesListUrl(url = "") {
+  const path = String(url).split("?")[0];
+  return path === "/forms/responses" || path.endsWith("/forms/responses");
+}
+
+export function isFormResponseDetailUrl(url = "") {
+  return /\/forms\/responses\/[^/]+\/?$/.test(String(url).split("?")[0]);
+}
+
+export function parseFormResponseWrite(url = "", method = "post") {
+  const path = String(url).split("?")[0];
+  const m = String(method).toLowerCase();
+  let match = path.match(/\/forms\/responses\/([^/]+)\/?$/);
+  if (match && m === "put") {
+    return { type: "update", responseId: match[1] };
+  }
+  match = path.match(/\/forms\/([^/]+)\/responses\/?$/);
+  if (match && m === "post") {
+    return { type: "create", formId: match[1] };
+  }
+  return null;
+}
+
+export function isFormTemplateCreateUrl(url = "", method = "post") {
+  const path = String(url).split("?")[0];
+  return String(method).toLowerCase() === "post" && /\/forms\/?$/.test(path);
+}
+
 export function shouldQueueWriteUrl(url = "", method = "post") {
   const m = String(method).toLowerCase();
   if (!["post", "put", "patch"].includes(m)) return false;
   const path = String(url).split("?")[0];
   return (
-    /\/forms\/[^/]+\/responses\/?$/.test(path) ||
-    /\/forms\/responses\/[^/]+\/?$/.test(path) ||
+    parseFormResponseWrite(url, method) != null ||
+    isFormTemplateCreateUrl(url, method) ||
     /\/documents\/upload\/?$/.test(path)
   );
 }
 
-export function isFormResponseWriteUrl(url = "") {
-  const path = String(url).split("?")[0];
-  return (
-    /\/forms\/[^/]+\/responses\/?$/.test(path) ||
-    /\/forms\/responses\/[^/]+\/?$/.test(path)
-  );
-}
-
-/**
- * Serialize axios config body for IndexedDB (JSON or FormData → files as ArrayBuffer).
- */
 export async function serializeRequestBody(data) {
   if (data == null) return { kind: "empty" };
   if (typeof FormData !== "undefined" && data instanceof FormData) {
@@ -214,12 +263,101 @@ export function deserializeRequestBody(serialized) {
   return undefined;
 }
 
+// ─── Template form offline map (title → formId) ─────────────────────────────
+
+export async function getOfflineTemplateFormId(title) {
+  const db = await openDb();
+  const row = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TEMPLATES, "readonly");
+    const req = tx.objectStore(STORE_TEMPLATES).get(String(title));
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return row?.formId || null;
+}
+
+export async function putOfflineTemplateForm(title, formId, { pending = false } = {}) {
+  const db = await openDb();
+  const tx = db.transaction(STORE_TEMPLATES, "readwrite");
+  tx.objectStore(STORE_TEMPLATES).put({
+    title: String(title),
+    formId,
+    pending,
+    updatedAt: Date.now(),
+  });
+  await txDone(tx);
+  db.close();
+}
+
+// ─── ID remap (local → server) ───────────────────────────────────────────────
+
+export async function putIdRemap(localId, serverId, kind = "response") {
+  const db = await openDb();
+  const tx = db.transaction(STORE_ID_MAP, "readwrite");
+  tx.objectStore(STORE_ID_MAP).put({ localId, serverId, kind, updatedAt: Date.now() });
+  await txDone(tx);
+  db.close();
+}
+
+export async function getIdRemap(localId) {
+  const db = await openDb();
+  const row = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_ID_MAP, "readonly");
+    const req = tx.objectStore(STORE_ID_MAP).get(String(localId));
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return row?.serverId || null;
+}
+
+export async function loadAllIdRemaps() {
+  const db = await openDb();
+  const rows = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_ID_MAP, "readonly");
+    const req = tx.objectStore(STORE_ID_MAP).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  const formMap = {};
+  const responseMap = {};
+  for (const row of rows) {
+    if (row.kind === "form") formMap[row.localId] = row.serverId;
+    else responseMap[row.localId] = row.serverId;
+  }
+  return { formMap, responseMap };
+}
+
+// ─── Offline write queue ───────────────────────────────────────────────────────
+
+async function findQueueByLocalResponseId(localResponseId) {
+  if (!localResponseId) return null;
+  const db = await openDb();
+  const row = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_QUEUE, "readonly");
+    const req = tx.objectStore(STORE_QUEUE).index("localResponseId").get(localResponseId);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return row;
+}
+
+async function findQueueByLocalFormId(localFormId) {
+  if (!localFormId) return null;
+  const items = await listOfflineQueue();
+  return items.find((i) => i.localFormId === localFormId) || null;
+}
+
 export async function enqueueOfflineWrite(entry) {
-  const db = await openOfflineDb();
+  const db = await openDb();
   const tx = db.transaction(STORE_QUEUE, "readwrite");
   const record = {
     ...entry,
-    createdAt: Date.now(),
+    createdAt: entry.createdAt || Date.now(),
+    updatedAt: Date.now(),
     status: "pending",
   };
   const id = await new Promise((resolve, reject) => {
@@ -230,12 +368,85 @@ export async function enqueueOfflineWrite(entry) {
   await txDone(tx);
   db.close();
   notifyQueueChanged();
+  await registerBackgroundSync();
   return id;
+}
+
+/** Coalesce form saves: one queue row per offline draft. */
+export async function upsertOfflineFormQueueItem(entry) {
+  const existing = entry.localResponseId
+    ? await findQueueByLocalResponseId(entry.localResponseId)
+    : null;
+
+  const db = await openDb();
+  const tx = db.transaction(STORE_QUEUE, "readwrite");
+  const store = tx.objectStore(STORE_QUEUE);
+
+  if (existing) {
+    const updated = {
+      ...existing,
+      ...entry,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      updatedAt: Date.now(),
+      status: "pending",
+    };
+    store.put(updated);
+    await txDone(tx);
+    db.close();
+    notifyQueueChanged();
+    await registerBackgroundSync();
+    return existing.id;
+  }
+
+  const record = {
+    ...entry,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    status: "pending",
+  };
+  const id = await new Promise((resolve, reject) => {
+    const req = store.add(record);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await txDone(tx);
+  db.close();
+  notifyQueueChanged();
+  await registerBackgroundSync();
+  return id;
+}
+
+export async function upsertOfflineTemplateQueueItem(entry) {
+  const existing = entry.localFormId
+    ? await findQueueByLocalFormId(entry.localFormId)
+    : null;
+  if (existing) return existing.id;
+  return enqueueOfflineWrite(entry);
+}
+
+export async function updateOfflineQueueItem(id, patch) {
+  const db = await openDb();
+  const existing = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_QUEUE, "readonly");
+    const req = tx.objectStore(STORE_QUEUE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+  if (!existing) {
+    db.close();
+    return;
+  }
+  const tx = db.transaction(STORE_QUEUE, "readwrite");
+  tx.objectStore(STORE_QUEUE).put({ ...existing, ...patch, updatedAt: Date.now() });
+  await txDone(tx);
+  db.close();
+  notifyQueueChanged();
 }
 
 export async function listOfflineQueue() {
   try {
-    const db = await openOfflineDb();
+    const db = await openDb();
     const rows = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_QUEUE, "readonly");
       const req = tx.objectStore(STORE_QUEUE).getAll();
@@ -250,7 +461,7 @@ export async function listOfflineQueue() {
 }
 
 export async function removeOfflineQueueItem(id) {
-  const db = await openOfflineDb();
+  const db = await openDb();
   const tx = db.transaction(STORE_QUEUE, "readwrite");
   tx.objectStore(STORE_QUEUE).delete(id);
   await txDone(tx);
@@ -280,12 +491,23 @@ export function notifyQueueChanged() {
   });
 }
 
+export async function registerBackgroundSync() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if ("sync" in reg) {
+      await reg.sync.register(OFFLINE_SYNC_TAG);
+    }
+  } catch {
+    /* Background Sync not supported or registration failed */
+  }
+}
+
+export { OFFLINE_SYNC_TAG };
+
 export function createOfflineAxiosError(message = "Saved offline — will sync when online") {
   const err = new Error(message);
   err.code = "OFFLINE_QUEUED";
   err.isOfflineQueued = true;
   return err;
 }
-
-// silence unused when tree-shaken wrongly
-void openDb;
