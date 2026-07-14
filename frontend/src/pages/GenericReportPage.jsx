@@ -356,6 +356,15 @@ export default function GenericReportPage({ pageTitle }) {
             // Keep Choose Form / catalog saves under this Reporting Concerns page category
             // so they list here instead of falling into "General forms".
             extra.category = pageTitle;
+            const listPathByTitle = {
+                "Health & Safety concern": "/report-health-safety",
+                "Quality concern": "/report-quality",
+                "Positive observation": "/report-positive",
+                "Sustainability concern": "/report-environmental",
+            };
+            if (listPathByTitle[pageTitle]) {
+                extra.listPath = listPathByTitle[pageTitle];
+            }
         }
         return extra;
     };

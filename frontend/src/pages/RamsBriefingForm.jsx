@@ -35,7 +35,12 @@ import FormTableCellTextField from "../components/FormTableCellTextField";
 import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { useGeneralFormSaveNavigate } from "../hooks/useGeneralFormSaveNavigate";
-import { appendTemplatesPageMetadata, templateSaveButtonLabel } from "../utils/templatePageContext";
+import {
+    appendTemplatesPageMetadata,
+    templateSaveButtonLabel,
+    isTemplatesPageEditContext,
+    isContextualFormFill,
+} from "../utils/templatePageContext";
 
 const DEFAULT_BRIEFING_LABELS = {
     headerTitle: "RAMS BRIEFING REGISTER",
@@ -117,7 +122,12 @@ export default function RamsBriefingForm() {
 
     const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
     /** Site pack / template fill: always allow typing in data cells (not label-only template edit). */
-    const canFillFields = !pdfLayout && (canEdit || isSitePackContext || Boolean(fromTemplateId));
+    const canFillFields =
+        !pdfLayout &&
+        (canEdit ||
+            isSitePackContext ||
+            Boolean(fromTemplateId) ||
+            isContextualFormFill(searchParams));
     /** General Forms template edit: editable boilerplate sentences and labels. */
     const canEditTemplateText = canEdit && !isSitePackContext && !pdfLayout;
 
@@ -771,11 +781,11 @@ export default function RamsBriefingForm() {
                 defaultName={formMetadata.name || `RAMS Briefing - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 defaultVisibility={formMetadata.visibility}
-                showVisibilityChoice={!siteId}
+                showVisibilityChoice={isTemplatesPageEditContext(searchParams)}
                 saving={saving}
-                templateFlow={!isSitePackContext}
+                templateFlow={isTemplatesPageEditContext(searchParams)}
                 isSitePackContext={isSitePackContext}
-                nameFieldLabel={isSitePackContext ? "Form name" : "Template name"}
+                nameFieldLabel={isTemplatesPageEditContext(searchParams) ? "Template name" : "Form name"}
             />
             {UnsavedDialog}
         </Layout>

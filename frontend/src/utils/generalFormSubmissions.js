@@ -91,9 +91,12 @@ export function includeFridayPackListRow(sub) {
  */
 export function isGeneralFormsPageSubmission(sub) {
   if (submissionHasSiteContext(sub)) return false;
+  // Monitoring / reporting concern fills belong on those pages, not Templates.
+  if (sub?.answers?.monitoringSection) return false;
 
   const category = (sub.category || "").trim();
   if (category === FRIDAY_PACK_FORMS_CATEGORY) return false;
+  if (category && category !== GENERAL_FORMS_CATEGORY) return false;
 
   if (sub?.answers?.savedFromTemplatesPage === true) {
     return category === GENERAL_FORMS_CATEGORY || category === "";

@@ -33,7 +33,12 @@ import FormTableCellTextField from "../components/FormTableCellTextField";
 import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { useGeneralFormSaveNavigate } from "../hooks/useGeneralFormSaveNavigate";
-import { appendTemplatesPageMetadata, templateSaveButtonLabel } from "../utils/templatePageContext";
+import {
+    appendTemplatesPageMetadata,
+    templateSaveButtonLabel,
+    isTemplatesPageEditContext,
+    isContextualFormFill,
+} from "../utils/templatePageContext";
 
 const FORM_TITLE = "Tool Box Talk Register";
 const FORM_BASE_PATH = "/general-forms/tool-box-talk";
@@ -125,7 +130,12 @@ export default function ToolBoxTalkForm() {
     const [persistedSubfolderId, setPersistedSubfolderId] = useState(null);
 
     const { canEdit, siteId, subfolderId, pdfLayout, contentReadOnly, isSitePackContext } = useGeneralFormTemplateAccess(action, downloading, persistedSiteId, persistedSubfolderId);
-    const canFillFields = !pdfLayout && (canEdit || isSitePackContext || Boolean(fromTemplateId));
+    const canFillFields =
+        !pdfLayout &&
+        (canEdit ||
+            isSitePackContext ||
+            Boolean(fromTemplateId) ||
+            isContextualFormFill(searchParams));
     const canEditTemplateText = canEdit && !isSitePackContext && !pdfLayout;
     const navigateAfterFirstSave = useGeneralFormSaveNavigate(FORM_BASE_PATH);
 
@@ -694,11 +704,11 @@ export default function ToolBoxTalkForm() {
                 defaultName={formMetadata.name || `Tool Box Talk - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 defaultVisibility={formMetadata.visibility}
-                showVisibilityChoice={!siteId}
+                showVisibilityChoice={isTemplatesPageEditContext(searchParams)}
                 saving={saving}
-                templateFlow={!isSitePackContext}
+                templateFlow={isTemplatesPageEditContext(searchParams)}
                 isSitePackContext={isSitePackContext}
-                nameFieldLabel={isSitePackContext ? "Form name" : "Template name"}
+                nameFieldLabel={isTemplatesPageEditContext(searchParams) ? "Template name" : "Form name"}
             />
             {UnsavedDialog}
         </Layout>

@@ -32,6 +32,7 @@ export function useGeneralFormLeave({
     const leaveAfterSaveRef = useRef(false);
     const resolvedSubfolderName =
         subfolderName || searchParams.get("subfolderName") || undefined;
+    const resolvedListPath = listPath || searchParams.get("listPath") || "";
 
     const navigateBack = useCallback(() => {
         if (monitoringSection && siteId) {
@@ -53,14 +54,15 @@ export function useGeneralFormLeave({
             });
             return;
         }
-        if (listPath) {
-            navigate(listPath);
+        if (resolvedListPath) {
+            navigate(resolvedListPath);
             return;
         }
         const concernPathByCategory = {
             "Health & Safety concern": "/report-health-safety",
             "Quality concern": "/report-quality",
             "Positive observation": "/report-positive",
+            "Sustainability concern": "/report-environmental",
         };
         if (category && concernPathByCategory[category]) {
             navigate(concernPathByCategory[category]);
@@ -71,7 +73,16 @@ export function useGeneralFormLeave({
             return;
         }
         navigate("/general-forms");
-    }, [navigate, monitoringSection, siteId, subfolderId, resolvedSubfolderName, category, listPath, searchParams]);
+    }, [
+        navigate,
+        monitoringSection,
+        siteId,
+        subfolderId,
+        resolvedSubfolderName,
+        category,
+        resolvedListPath,
+        searchParams,
+    ]);
 
     const { isDirty, resetDirty } = useAutoFormDirty(watchDeps, { enabled, loading });
 

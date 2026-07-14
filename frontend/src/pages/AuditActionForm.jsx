@@ -28,7 +28,7 @@ import FormDocumentHeader from "../components/FormDocumentHeader";
 import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { useGeneralFormSaveNavigate } from "../hooks/useGeneralFormSaveNavigate";
-import { appendTemplatesPageMetadata, templateSaveButtonLabel } from "../utils/templatePageContext";
+import { appendTemplatesPageMetadata, templateSaveButtonLabel, isTemplatesPageEditContext} from "../utils/templatePageContext";
 
 const FORM_TITLE = "Audit Action Form";
 const FORM_BASE_PATH = "/general-forms/audit-action-form";
@@ -734,11 +734,11 @@ export default function AuditActionForm() {
                 defaultName={formMetadata.name || `Audit Action - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 defaultVisibility={formMetadata.visibility}
-                showVisibilityChoice={!siteId}
+                showVisibilityChoice={isTemplatesPageEditContext(searchParams)}
                 saving={saving}
-                templateFlow={!siteId}
+                templateFlow={isTemplatesPageEditContext(searchParams)}
                 isSitePackContext={Boolean(siteId)}
-                nameFieldLabel={siteId ? "Form name" : "Template name"}
+                nameFieldLabel={isTemplatesPageEditContext(searchParams) ? "Template name" : "Form name"}
             />
             {UnsavedDialog}
         </Layout>

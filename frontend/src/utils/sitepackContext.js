@@ -2,6 +2,7 @@ import {
   FRIDAY_PACK_FORMS_CATEGORY,
   GENERAL_FORMS_CATEGORY,
 } from "./generalFormSubmissions";
+import { isTemplatesPageEditContext } from "./templatePageContext";
 
 export function normalizeSitepackId(value) {
   if (value == null) return null;
@@ -11,6 +12,10 @@ export function normalizeSitepackId(value) {
 
 /** Category for saves when opened from site pack (Friday Pack module) vs /general-forms. */
 export function resolveFormCategoryFromSearchParams(searchParams) {
+  // Templates library edits always save under General forms for the Templates page list.
+  if (isTemplatesPageEditContext(searchParams)) {
+    return GENERAL_FORMS_CATEGORY;
+  }
   const explicit = searchParams.get("category")?.trim();
   if (explicit) return explicit;
   if (normalizeSitepackId(searchParams.get("siteId"))) {

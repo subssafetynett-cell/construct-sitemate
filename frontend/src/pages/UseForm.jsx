@@ -87,12 +87,15 @@ export default function UseForm() {
           moduleTitle: category || FRIDAY_PACK_FORMS_CATEGORY,
         }),
       });
+    } else if (searchParams.get("listPath")) {
+      navigate(searchParams.get("listPath"));
     } else if (category && category !== GENERAL_FORMS_CATEGORY && category !== FRIDAY_PACK_FORMS_CATEGORY) {
       // Return to Reporting Concerns list when form was opened from those pages
       const concernPathByCategory = {
         "Health & Safety concern": "/report-health-safety",
         "Quality concern": "/report-quality",
         "Positive observation": "/report-positive",
+        "Sustainability concern": "/report-environmental",
       };
       navigate(concernPathByCategory[category] || "/forms");
     } else {
@@ -115,6 +118,8 @@ export default function UseForm() {
       if (siteId) processedAnswers.siteId = siteId;
       if (subfolderId) processedAnswers.subfolderId = subfolderId;
       if (monitoringSection) processedAnswers.monitoringSection = monitoringSection;
+      // Never keep Templates-library markers on fills started from other modules.
+      delete processedAnswers.savedFromTemplatesPage;
 
       const explicitCategory = category != null ? String(category).trim() : "";
       const resolvedCategory =

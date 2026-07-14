@@ -79,10 +79,11 @@ export function buildSheqFormUrl(template, { preview = false, ...extra } = {}) {
 
 export function buildTemplatePreviewUrl(template, extra = {}) {
   if (!template?.path) return "";
+  // Do not force Templates-page `source` here — callers from /general-forms
+  // pass it explicitly; monitoring / reporting concerns must not inherit it.
   if (template.type === "general") {
     const params = new URLSearchParams({
       preview: "true",
-      source: TEMPLATES_PAGE_SOURCE,
       ...extra,
     });
     const qs = params.toString();
@@ -92,7 +93,6 @@ export function buildTemplatePreviewUrl(template, extra = {}) {
     const params = new URLSearchParams({
       create: "true",
       preview: "true",
-      source: TEMPLATES_PAGE_SOURCE,
       ...extra,
     });
     const qs = params.toString();
@@ -105,7 +105,12 @@ export function buildTemplatePreviewUrl(template, extra = {}) {
 }
 
 export function buildTemplateViewEditUrl(template, extra = {}) {
-  const withSource = { source: TEMPLATES_PAGE_SOURCE, ...extra };
+  const withSource = {
+    source: TEMPLATES_PAGE_SOURCE,
+    // General-form library edits always persist under General forms.
+    ...(template.type === "general" ? { category: "General forms" } : {}),
+    ...extra,
+  };
   if (template.type === "sheq") {
     return buildSheqFormUrl(template, withSource);
   }
@@ -149,7 +154,7 @@ export function buildSavedTemplateEditUrl(submission) {
   }
 
   if (template.type === "general") {
-    return `${template.path}/${responseId}?source=${TEMPLATES_PAGE_SOURCE}`;
+    return `${template.path}/${responseId}?source=${TEMPLATES_PAGE_SOURCE}&category=General%20forms`;
   }
 
   if (template.type === "sheq") {

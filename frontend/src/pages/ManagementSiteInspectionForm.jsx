@@ -31,7 +31,7 @@ import {
 import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissionDeleteButton";
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { useGeneralFormSaveNavigate } from "../hooks/useGeneralFormSaveNavigate";
-import { appendTemplatesPageMetadata, templateSaveButtonLabel } from "../utils/templatePageContext";
+import { appendTemplatesPageMetadata, templateSaveButtonLabel, isTemplatesPageEditContext} from "../utils/templatePageContext";
 
 const FORM_TITLE = "Management Site Inspection Report";
 const FORM_BASE_PATH = "/general-forms/management-site-inspection";
@@ -701,11 +701,11 @@ export default function ManagementSiteInspectionForm() {
                 defaultName={formMetadata.name || `Management Inspection - ${new Date().toLocaleDateString()}`}
                 defaultTags={formMetadata.tags}
                 defaultVisibility={formMetadata.visibility}
-                showVisibilityChoice={!siteId}
+                showVisibilityChoice={isTemplatesPageEditContext(searchParams)}
                 saving={saving}
-                templateFlow={!siteId}
+                templateFlow={isTemplatesPageEditContext(searchParams)}
                 isSitePackContext={Boolean(siteId)}
-                nameFieldLabel={siteId ? "Form name" : "Template name"}
+                nameFieldLabel={isTemplatesPageEditContext(searchParams) ? "Template name" : "Form name"}
             />
             {UnsavedDialog}
         </Layout>

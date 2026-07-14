@@ -25,11 +25,26 @@ function resolveSaveCategory(category, hasSiteContext) {
 }
 
 function buildFormResponseBody(payload, category) {
-    const siteId = payload?.siteId;
-    const subfolderId = payload?.subfolderId;
+    // Templates-page library edits must never inherit site/folder scope.
+    const isTemplatesPageSave = payload?.savedFromTemplatesPage === true;
+    const answers = isTemplatesPageSave
+        ? (() => {
+            const next = { ...payload };
+            delete next.siteId;
+            delete next.subfolderId;
+            delete next.monitoringSection;
+            next.savedFromTemplatesPage = true;
+            return next;
+        })()
+        : payload;
+
+    const siteId = isTemplatesPageSave ? null : answers?.siteId;
+    const subfolderId = isTemplatesPageSave ? null : answers?.subfolderId;
     const hasSiteContext = siteId != null && String(siteId).trim() !== '';
-    const resolvedCategory = resolveSaveCategory(category, hasSiteContext);
-    const body = { answers: payload, category: resolvedCategory };
+    const resolvedCategory = isTemplatesPageSave
+        ? GENERAL_FORMS_CATEGORY
+        : resolveSaveCategory(category, hasSiteContext);
+    const body = { answers, category: resolvedCategory };
     if (hasSiteContext) {
         body.siteId = String(siteId).trim();
     }
