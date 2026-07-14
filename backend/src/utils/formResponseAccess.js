@@ -2,8 +2,6 @@ const prisma = require("../prismaClient");
 const { reqUserDbId, resolveTokenRole } = require("./userAuthorization");
 const {
   canViewFormResponse,
-  isSheqResponse,
-  siteContextPresent,
 } = require("./generalFormVisibility");
 const { getActingClientId, getScopedUser } = require("./actingClientScope");
 const { isGlobalSiteAccess } = require("./siteAccess");
@@ -49,8 +47,8 @@ function getFormResponseReadScope(user, actingClientId = null) {
     return { globalAccess: false, companyWideRead: true };
   }
 
-  const dbRole = user.role || "worker";
-  if (dbRole === "company_admin" && user.clientId) {
+  const effectiveRole = resolveTokenRole(user);
+  if (effectiveRole === "company_admin" && user.clientId) {
     return { globalAccess: false, companyWideRead: true };
   }
 
@@ -115,6 +113,7 @@ async function assertFormResponseAccess(req, responseId, { write = false } = {})
       clientId: true,
       answers: true,
       category: true,
+      form: { select: { title: true } },
       submittedBy: { select: { id: true, clientId: true } },
     },
   });
@@ -133,14 +132,10 @@ async function assertFormResponseAccess(req, responseId, { write = false } = {})
     const clientId = actingClientId || scoped?.clientId || req.user?.clientId;
     const readScope = getFormResponseReadScope(req.user, actingClientId);
 
-    // SHEQ Installation / Inspection list reports — admins may edit/delete like they can view.
-    if (isSheqResponse(row) && !siteContextPresent(row.answers)) {
-      const responseClientId = row.clientId || row.submittedBy?.clientId;
-      const sameCompany =
-        Boolean(clientId && responseClientId) && clientId === responseClientId;
-      if (readScope.globalAccess || (readScope.companyWideRead && sameCompany)) {
-        return { ok: true, row };
-      }
+    // Update/delete must match view/download — do not grant broader write than read
+    // (e.g. platform superadmin cannot edit private general forms they cannot view).
+    if (canViewFormResponse(row, userId, clientId, readScope)) {
+      return { ok: true, row };
     }
 
     return {
