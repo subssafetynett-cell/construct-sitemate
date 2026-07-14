@@ -21,6 +21,7 @@ model Client {
   updatedAt DateTime @updatedAt
   users     User[]
   sites     Site[]
+  formResponses FormResponse[]
   nonconformanceActions NonconformanceAction[]
   kpiDashboards KpiDashboard[]
 }
@@ -211,6 +212,10 @@ model FormResponse {
   submittedById String?
   submittedBy   User?   @relation(fields: [submittedById], references: [id])
 
+  /// Company at submit time — kept when the submitter later changes company.
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
   siteId      String?
   subfolderId String?
 
@@ -219,6 +224,7 @@ model FormResponse {
   @@index([submittedById])
   @@index([formId])
   @@index([submittedById, createdAt])
+  @@index([clientId])
   @@index([siteId])
   @@index([subfolderId])
   @@index([siteId, subfolderId])

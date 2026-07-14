@@ -296,13 +296,24 @@ export default function Sidebar({ className = "", style }) {
   const isActive = useCallback(
     (to, exact = false) => {
       const path = location.pathname || "";
+      const hasMonitoringContext = Boolean(searchParams.get("monitoringSection"));
+      const hasListPathContext = Boolean(searchParams.get("listPath"));
+      const hasEmbeddedFill = searchParams.get("embedded") === "true";
       const hasSitepackContext =
         Boolean(searchParams.get("siteId")) &&
         (searchParams.get("category") === "Friday Pack Forms" ||
           path.startsWith("/general-forms/"));
 
-      if (to === "/sitepack-management" && hasSitepackContext) return true;
-      if (to === "/general-forms" && hasSitepackContext) return false;
+      // Contextual fills (monitoring, site-pack, concerns, SHEQ) use form routes but are not Templates.
+      if (
+        to === "/general-forms" &&
+        (hasMonitoringContext || hasSitepackContext || hasListPathContext || hasEmbeddedFill)
+      ) {
+        return false;
+      }
+      if (to === "/sitepack-management" && hasSitepackContext && !hasMonitoringContext) {
+        return true;
+      }
 
       if (exact) {
         return path === to || (to === "/dashboard" && path === "/concern-reports");

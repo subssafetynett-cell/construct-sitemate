@@ -116,6 +116,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   const [deletingFolder, setDeletingFolder] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [templateFolderId, setTemplateFolderId] = useState(null);
+  const [siteSearch, setSiteSearch] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [formPanelOpen, setFormPanelOpen] = useState(false);
@@ -207,8 +208,8 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   );
 
   useEffect(() => {
-    if (routeSiteId) loadSites();
-  }, [loadSites, routeSiteId]);
+    loadSites();
+  }, [loadSites]);
 
   useEffect(() => {
     if (!routeSiteId) {
@@ -244,6 +245,14 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
     if (match) setSelectedFolder(match);
     else setSelectedFolder({ id: routeFolderId, name: "Folder" });
   }, [routeFolderId, folders, loadingFolders]);
+
+  const filteredSites = useMemo(() => {
+    const q = siteSearch.trim().toLowerCase();
+    if (!q) return sites;
+    return sites.filter((site) =>
+      String(site.name || "").toLowerCase().includes(q)
+    );
+  }, [sites, siteSearch]);
 
   const filteredTemplates = useMemo(
     () => filterMonitoringTemplates(templateSearch),
@@ -354,30 +363,32 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
     setTemplatePickerTab(TEMPLATE_TAB_LIBRARY);
     setTemplateSearch("");
     if (!routeSiteId) {
-      setTemplateDialogOpen(true);
+      setSnack({
+        open: true,
+        message: "Select a site first, then open a folder to add forms.",
+        severity: "info",
+      });
       return;
     }
-    if (insideFolder) {
+    if (routeFolderId) {
       setTemplateFolderId(routeFolderId);
       setTemplateDialogOpen(true);
       return;
     }
-    if (insideSite) {
-      if (folders.length === 0) {
-        setSnack({
-          open: true,
-          message: "Create a folder first, then select a template to add forms.",
-          severity: "info",
-        });
-        return;
-      }
-      if (folders.length === 1) {
-        setTemplateFolderId(folders[0].id);
-        setTemplateDialogOpen(true);
-        return;
-      }
-      setFolderPickerOpen(true);
+    if (folders.length === 0) {
+      setSnack({
+        open: true,
+        message: "Create a folder first, then select a template to add forms.",
+        severity: "info",
+      });
+      return;
     }
+    if (folders.length === 1) {
+      setTemplateFolderId(folders[0].id);
+      setTemplateDialogOpen(true);
+      return;
+    }
+    setFolderPickerOpen(true);
   };
 
   const handlePickFolderForTemplate = (folderId) => {
@@ -390,24 +401,51 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
 
   const activeTemplateFolderId = routeFolderId || templateFolderId;
 
+  const openFillPanel = (url, title) => {
+    if (!routeSiteId || !activeTemplateFolderId) {
+      setSnack({
+        open: true,
+        message: "Choose a site folder before filling a monitoring form.",
+        severity: "warning",
+      });
+      return;
+    }
+    if (!url) {
+      setSnack({
+        open: true,
+        message: "This template cannot be opened from monitoring.",
+        severity: "warning",
+      });
+      return;
+    }
+    const sep = url.includes("?") ? "&" : "?";
+    const embeddedUrl = `${url}${sep}embedded=true`;
+    formPanelWasEditRef.current = true;
+    setFormPanelRow(null);
+    setFormPanelTitle(title || "Fill form");
+    setFormPanelMode("edit");
+    setFormPanelUrl(embeddedUrl);
+    setFormPanelOpen(true);
+    closeTemplateDialog();
+  };
+
   const handleUseTemplate = (template) => {
-    if (routeSiteId && !activeTemplateFolderId) return;
+    if (!routeSiteId || !activeTemplateFolderId) return;
     const url = buildMonitoringFormUrl(template, {
       sectionKey,
-      siteId: routeSiteId || undefined,
-      folderId: activeTemplateFolderId || undefined,
+      siteId: routeSiteId,
+      folderId: activeTemplateFolderId,
       preview: false,
     });
-    closeTemplateDialog();
-    navigate(url);
+    openFillPanel(url, template.title);
   };
 
   const handlePreviewTemplate = (template) => {
-    if (routeSiteId && !activeTemplateFolderId) return;
+    if (!routeSiteId || !activeTemplateFolderId) return;
     const url = buildMonitoringFormUrl(template, {
       sectionKey,
-      siteId: routeSiteId || undefined,
-      folderId: activeTemplateFolderId || undefined,
+      siteId: routeSiteId,
+      folderId: activeTemplateFolderId,
       preview: true,
     });
     setPreviewUrl(url);
@@ -415,31 +453,22 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handleUseSavedTemplate = (submission) => {
-    if (routeSiteId && !activeTemplateFolderId) return;
+    if (!routeSiteId || !activeTemplateFolderId) return;
     const url = buildMonitoringSavedTemplateUrl(submission, {
       sectionKey,
-      siteId: routeSiteId || undefined,
-      folderId: activeTemplateFolderId || undefined,
+      siteId: routeSiteId,
+      folderId: activeTemplateFolderId,
       preview: false,
     });
-    if (!url) {
-      setSnack({
-        open: true,
-        message: "This saved template cannot be opened from monitoring.",
-        severity: "warning",
-      });
-      return;
-    }
-    closeTemplateDialog();
-    navigate(url);
+    openFillPanel(url, getMonitoringSubmissionTitle(submission));
   };
 
   const handlePreviewSavedTemplate = (submission) => {
-    if (routeSiteId && !activeTemplateFolderId) return;
+    if (!routeSiteId || !activeTemplateFolderId) return;
     const url = buildMonitoringSavedTemplateUrl(submission, {
       sectionKey,
-      siteId: routeSiteId || undefined,
-      folderId: activeTemplateFolderId || undefined,
+      siteId: routeSiteId,
+      folderId: activeTemplateFolderId,
       preview: true,
     });
     if (!url) return;
@@ -448,27 +477,26 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   };
 
   const handleUseBuilderForm = (form) => {
-    if (routeSiteId && !activeTemplateFolderId) return;
+    if (!routeSiteId || !activeTemplateFolderId) return;
     const formId = form._id || form.id;
     if (!formId) return;
     const url = buildMonitoringBuilderFormUrl(formId, {
       sectionKey,
-      siteId: routeSiteId || undefined,
-      folderId: activeTemplateFolderId || undefined,
+      siteId: routeSiteId,
+      folderId: activeTemplateFolderId,
       preview: false,
     });
-    closeTemplateDialog();
-    navigate(url);
+    openFillPanel(url, form.title || "Form");
   };
 
   const handlePreviewBuilderForm = (form) => {
-    if (routeSiteId && !activeTemplateFolderId) return;
+    if (!routeSiteId || !activeTemplateFolderId) return;
     const formId = form._id || form.id;
     if (!formId) return;
     const url = buildMonitoringBuilderFormUrl(formId, {
       sectionKey,
-      siteId: routeSiteId || undefined,
-      folderId: activeTemplateFolderId || undefined,
+      siteId: routeSiteId,
+      folderId: activeTemplateFolderId,
       preview: true,
     });
     setPreviewUrl(url);
@@ -568,15 +596,45 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
     setFormPanelOpen(true);
   };
 
-  const closeFormPanel = () => {
+  const closeFormPanel = useCallback(() => {
+    const wasEdit = formPanelWasEditRef.current;
+    const folderForRefresh = routeFolderId || templateFolderId;
     setFormPanelOpen(false);
     setFormPanelUrl("");
     setFormPanelRow(null);
-    if (formPanelWasEditRef.current && routeSiteId && routeFolderId) {
-      loadSubmissions(routeSiteId, routeFolderId);
-    }
     formPanelWasEditRef.current = false;
-  };
+
+    if (!wasEdit || !routeSiteId || !folderForRefresh) return;
+
+    if (routeFolderId) {
+      loadSubmissions(routeSiteId, routeFolderId);
+      return;
+    }
+    // Opened from the site view after picking a folder — go to that folder list.
+    navigate(monitoringFolderPath(sectionKey, routeSiteId, folderForRefresh));
+  }, [
+    routeSiteId,
+    routeFolderId,
+    templateFolderId,
+    loadSubmissions,
+    navigate,
+    sectionKey,
+  ]);
+
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "sitemate:monitoring-form-done") return;
+      closeFormPanel();
+      setSnack({
+        open: true,
+        message: "Form saved. It will appear in this folder’s list.",
+        severity: "success",
+      });
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [closeFormPanel]);
 
   const downloadSubmission = (row, format) => {
     if (!row || !routeSiteId || !routeFolderId) return;
@@ -630,7 +688,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
   const insideFolder = Boolean(routeSiteId && routeFolderId);
   const insideSite = Boolean(routeSiteId && !routeFolderId);
 
-  const actionButtons = insideFolder || insideSite || !routeSiteId ? (
+  const actionButtons = insideFolder || insideSite ? (
     <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", justifyContent: "flex-end" }}>
       {insideSite ? (
         <Button
@@ -661,7 +719,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
           "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
         }}
       >
-        Select Template
+        Select Forms
       </Button>
     </Box>
   ) : null;
@@ -716,7 +774,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
                   ? `${section.title} — select a template to fill, or review saved forms in this folder.`
                   : routeSiteId
                     ? `${section.title} — open a folder or create one to organise forms for this site.`
-                    : "Choose a template to start filling and saving monitoring forms."}
+                    : section.subtitle || "Select a site to fill monitoring forms and review saved submissions."}
               </Typography>
             </Box>
           </Box>
@@ -724,67 +782,119 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
         </Box>
 
         {!routeSiteId ? (
-          <Paper
-            elevation={0}
-            sx={{
-              borderRadius: 3,
-              border: `1px solid ${borderColor}`,
-              bgcolor: surfaceBg,
-              overflow: "hidden",
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                py: { xs: 8, md: 10 },
-                px: 3,
+          <Box>
+            <TextField
+              size="small"
+              fullWidth
+              placeholder="Search sites..."
+              value={siteSearch}
+              onChange={(e) => setSiteSearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search size={16} color={subColor} />
+                  </InputAdornment>
+                ),
               }}
-            >
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 3,
-                  bgcolor: "rgba(232, 159, 23, 0.12)",
-                  color: "#E89F17",
-                  display: "flex",
-                  mb: 2.5,
-                }}
-              >
-                <FileText size={32} />
+              sx={{
+                mb: 2.5,
+                maxWidth: 420,
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  bgcolor: surfaceBg,
+                },
+              }}
+            />
+            {loadingSites ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+                <CircularProgress sx={{ color: "#E89F17" }} />
               </Box>
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: 700, color: headingColor, mb: 1, maxWidth: 480 }}
-              >
-                Start with a template
-              </Typography>
-              <Typography sx={{ color: subColor, fontSize: "0.95rem", mb: 4, maxWidth: 520 }}>
-                Browse the template library, your saved templates, or form builder forms to begin
-                monitoring for {section.dashboardTitle || section.title}.
-              </Typography>
-              <Button
-                variant="contained"
-                startIcon={<FileText size={18} />}
-                onClick={openTemplateDialog}
+            ) : filteredSites.length === 0 ? (
+              <Paper
+                elevation={0}
                 sx={{
-                  bgcolor: "#E89F17",
-                  textTransform: "none",
-                  fontWeight: 600,
-                  borderRadius: "10px",
-                  px: 3,
-                  py: 1.25,
-                  boxShadow: "none",
-                  "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
+                  p: 6,
+                  textAlign: "center",
+                  borderRadius: 3,
+                  border: `1px solid ${borderColor}`,
+                  bgcolor: surfaceBg,
                 }}
               >
-                Select Template
-              </Button>
-            </Box>
-          </Paper>
+                <Typography sx={{ fontWeight: 600, color: headingColor, mb: 0.5 }}>
+                  No sites found
+                </Typography>
+                <Typography sx={{ color: subColor, fontSize: "0.9rem" }}>
+                  Create a site under Sites, then return here to start monitoring forms.
+                </Typography>
+              </Paper>
+            ) : (
+              <Grid container spacing={2.5}>
+                {filteredSites.map((site) => {
+                  const id = getSiteId(site);
+                  return (
+                    <Grid item xs={12} sm={6} md={4} key={id}>
+                      <Card
+                        elevation={0}
+                        sx={{
+                          border: `1px solid ${borderColor}`,
+                          borderRadius: 3,
+                          bgcolor: isDarkMode ? "#111827" : "#FFFFFF",
+                          height: "100%",
+                        }}
+                      >
+                        <CardContent sx={{ p: 2.5 }}>
+                          <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "flex-start" }}>
+                            <Box
+                              sx={{
+                                p: 1,
+                                borderRadius: 2,
+                                bgcolor: "rgba(232, 159, 23, 0.12)",
+                                color: "#E89F17",
+                                display: "flex",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Building2 size={20} />
+                            </Box>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography
+                                sx={{
+                                  fontWeight: 700,
+                                  color: headingColor,
+                                  fontSize: "1rem",
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {site.name || "Untitled site"}
+                              </Typography>
+                              <Typography sx={{ color: subColor, fontSize: "0.8rem", mt: 0.25 }}>
+                                Open to create folders and fill monitoring forms
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Button
+                            fullWidth
+                            variant="contained"
+                            endIcon={<ArrowRight size={16} />}
+                            onClick={() => navigate(monitoringSitePath(sectionKey, id))}
+                            sx={{
+                              bgcolor: "#E89F17",
+                              textTransform: "none",
+                              fontWeight: 600,
+                              boxShadow: "none",
+                              "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" },
+                            }}
+                          >
+                            Open site
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            )}
+          </Box>
         ) : insideSite ? (
           loadingFolders ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -934,7 +1044,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
                     "&:hover": { bgcolor: "#cc8b14" },
                   }}
                 >
-                  Select Template
+                  Select Forms
                 </Button>
               </Box>
             ) : (
@@ -1121,7 +1231,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
           </Box>
           <Box>
             <Typography sx={{ fontWeight: 700, color: headingColor, fontSize: "1.1rem" }}>
-              Select Template
+              Select Forms
             </Typography>
             <Typography variant="body2" sx={{ color: subColor, mt: 0.5 }}>
               Choose from templates, saved templates, or form builder forms.
@@ -1627,7 +1737,9 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
               {formPanelTitle}
             </Typography>
             <Typography variant="body2" sx={{ color: subColor, mt: 0.25 }}>
-              {formPanelMode === "view" ? "Read-only preview" : "Edit and save without leaving this folder"}
+              {formPanelMode === "view"
+                ? "Read-only preview"
+                : "Fill and save here — the form stays in this monitoring folder"}
             </Typography>
           </Box>
           {formPanelMode === "view" && formPanelRow ? (

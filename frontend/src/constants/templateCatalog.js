@@ -67,12 +67,17 @@ export function filterTemplateLibrary(search = "") {
 export function buildSheqFormUrl(template, { preview = false, ...extra } = {}) {
   if (!template?.sheqCategory) return template?.path || "";
   const params = new URLSearchParams();
+  // Form UI always uses the SHEQ module category; a different `category` in
+  // extras (e.g. Reporting Concerns) becomes saveCategory so saves list there.
   params.set("category", template.sheqCategory);
   if (preview) params.set("preview", "true");
   Object.entries(extra).forEach(([key, value]) => {
-    if (value != null && String(value).trim() !== "") {
-      params.set(key, String(value));
+    if (value == null || String(value).trim() === "") return;
+    if (key === "category" && String(value) !== template.sheqCategory) {
+      if (!extra.saveCategory) params.set("saveCategory", String(value));
+      return;
     }
+    params.set(key, String(value));
   });
   return `/sheq-install-form?${params.toString()}`;
 }

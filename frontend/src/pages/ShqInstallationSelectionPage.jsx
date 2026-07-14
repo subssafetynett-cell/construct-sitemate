@@ -21,7 +21,8 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import FormSelectionDialog from "../components/FormSelectionDialog";
 import TemplatePreviewDialog from "../components/TemplatePreviewDialog";
 import SheqInstallationForm from "./SheqInstallationForm";
-import { buildTemplatePreviewUrl } from "../constants/templateCatalog";
+import { buildTemplatePreviewUrl, buildTemplateUseUrl } from "../constants/templateCatalog";
+import { CONTEXTUAL_FORM_DONE, withEmbeddedFill } from "../utils/embeddedFormFill";
 
 const ShqInstallationSelectionPage = () => {
     const navigate = useNavigate();
@@ -45,6 +46,9 @@ const ShqInstallationSelectionPage = () => {
     const [formSessionKey, setFormSessionKey] = useState(0);
     const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
     const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
+    const [formPanelOpen, setFormPanelOpen] = useState(false);
+    const [formPanelUrl, setFormPanelUrl] = useState("");
+    const [formPanelTitle, setFormPanelTitle] = useState("");
     const [downloadTarget, setDownloadTarget] = useState(null);
 
     const customBlue = "#0284c7";
@@ -53,6 +57,7 @@ const ShqInstallationSelectionPage = () => {
     const borderColor = isDarkMode ? "#334155" : "#E2E8F0";
 
     const category = "SHEQ Installation";
+    const listPath = "/shq-installation";
 
     const fetchSubmissions = useCallback(async () => {
         setLoading(true);
@@ -71,6 +76,41 @@ const ShqInstallationSelectionPage = () => {
     useEffect(() => {
         fetchSubmissions();
     }, [fetchSubmissions, location.key]);
+
+    const closeFormPanel = useCallback(() => {
+        setFormPanelOpen(false);
+        setFormPanelUrl("");
+        setFormPanelTitle("");
+        fetchSubmissions();
+    }, [fetchSubmissions]);
+
+    const openFillPanel = useCallback((url, title) => {
+        if (!url) return;
+        setFormPanelTitle(title || "Fill form");
+        setFormPanelUrl(withEmbeddedFill(url));
+        setFormPanelOpen(true);
+        setTemplatesDialogOpen(false);
+    }, []);
+
+    useEffect(() => {
+        const onMessage = (event) => {
+            if (event.origin !== window.location.origin) return;
+            if (event.data?.type !== CONTEXTUAL_FORM_DONE) return;
+            closeFormPanel();
+            setSnack({
+                open: true,
+                message: "Form saved. It will appear in this list.",
+                severity: "success",
+            });
+        };
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
+    }, [closeFormPanel]);
+
+    const getFillContextExtra = () => ({
+        category,
+        listPath,
+    });
 
     const handleDelete = async () => {
         if (!deleteId || deleteInFlight) return;
@@ -184,6 +224,7 @@ const ShqInstallationSelectionPage = () => {
 
     const handleTemplateSelection = (item) => {
         const isPreview = Boolean(item?.preview);
+        const extra = getFillContextExtra();
 
         if (item?.type === "sheq-blank") {
             const url = `/sheq-install-form?category=${encodeURIComponent(category)}${isPreview ? "&preview=true" : ""}`;
@@ -221,35 +262,29 @@ const ShqInstallationSelectionPage = () => {
         if (item?.type === "catalog-template" && item.template) {
             const template = item.template;
             if (isPreview) {
-                openTemplatePreview(buildTemplatePreviewUrl(template));
+                openTemplatePreview(buildTemplatePreviewUrl(template, extra));
                 return;
             }
-            if (template.type === "sheq" && template.sheqCategory === category) {
+            if (template.type === "sheq" || template.type === "report") {
+                // Stay on this SHEQ page; report modules are filled under Reporting Concerns.
                 openInlineFromTemplate(null);
                 return;
             }
-            if (template.type === "sheq") {
-                navigate(`/sheq-install-form?category=${encodeURIComponent(template.sheqCategory)}`);
-            } else if (template.type === "report") {
-                navigate(`${template.path}?create=true`);
-            } else if (template.path) {
-                navigate(template.path);
-            }
-            setTemplatesDialogOpen(false);
+            const url = buildTemplateUseUrl(template, extra);
+            if (url) openFillPanel(url, template.title);
             return;
         }
 
         const form = item?.form;
         const formId = form?.id || form?._id;
         if (formId) {
+            const params = new URLSearchParams({ ...extra });
             if (isPreview) {
-                openTemplatePreview(
-                    `/forms/${formId}/use?category=${encodeURIComponent(category)}&preview=true`
-                );
+                params.set("preview", "true");
+                openTemplatePreview(`/forms/${formId}/use?${params.toString()}`);
                 return;
             }
-            navigate(`/forms/${formId}/use?category=${encodeURIComponent(category)}`);
-            setTemplatesDialogOpen(false);
+            openFillPanel(`/forms/${formId}/use?${params.toString()}`, form.title || "Form");
         }
     };
 
@@ -311,7 +346,7 @@ const ShqInstallationSelectionPage = () => {
                                 },
                             }}
                         >
-                            Choose Templates
+                            Select Forms
                         </Button>
                     </Box>
                 </Box>
@@ -463,6 +498,45 @@ const ShqInstallationSelectionPage = () => {
                     setTemplatePreviewUrl("");
                 }}
             />
+
+            <Dialog
+                open={formPanelOpen}
+                onClose={closeFormPanel}
+                fullWidth
+                maxWidth="lg"
+                PaperProps={{
+                    sx: {
+                        height: "min(90vh, 900px)",
+                        borderRadius: 3,
+                        display: "flex",
+                        flexDirection: "column",
+                        bgcolor: isDarkMode ? "#1e293b" : "#fff",
+                    },
+                }}
+            >
+                <DialogTitle sx={{ fontWeight: 700, color: textColor }}>
+                    <Typography component="span" sx={{ fontWeight: 700, fontSize: "1.1rem" }}>
+                        {formPanelTitle}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: subTextColor, mt: 0.25 }}>
+                        Fill and save here — the form stays on this page
+                    </Typography>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0, flex: 1, overflow: "hidden" }}>
+                    {formPanelUrl ? (
+                        <iframe
+                            src={formPanelUrl}
+                            title={formPanelTitle || "Form"}
+                            style={{ border: "none", width: "100%", height: "100%" }}
+                        />
+                    ) : null}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${borderColor}` }}>
+                    <Button onClick={closeFormPanel} sx={{ textTransform: "none" }}>
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Action Menu */}
             <Menu 

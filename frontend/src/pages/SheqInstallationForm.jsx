@@ -1294,7 +1294,7 @@ export default function SheqInstallationForm({
     submissionId: propsId, 
     category: propsCategory,
     fromTemplateId: propsFromTemplateId,
-    embedded = false,
+    embedded: propsEmbedded = false,
     isModal = false,
     autoDownload = false,
     onClose,
@@ -1306,6 +1306,7 @@ export default function SheqInstallationForm({
     
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const embedded = propsEmbedded || searchParams.get("embedded") === "true";
     
     const siteId = searchParams.get("siteId");
     const subfolderId = searchParams.get("subfolderId");
@@ -1423,14 +1424,17 @@ export default function SheqInstallationForm({
         sectionPhotos: {},
     });
 
+    const listPathFromQuery = searchParams.get("listPath");
     const listPath =
-        isTemplatesPageEdit
+        listPathFromQuery ||
+        (isTemplatesPageEdit
             ? "/general-forms"
             : category === SHEQ_INSPECTION_CATEGORY
               ? "/sheq-inspection"
               : category === SHEQ_INSTALLATION_CATEGORY
                 ? "/shq-installation"
-                : "/general-forms";
+                : "/general-forms");
+    const saveCategoryOverride = searchParams.get("saveCategory");
 
     const prepareSavePayload = async (name = "", tags = "") => {
         const payload = buildSavePayload(name, tags);
@@ -1507,7 +1511,9 @@ export default function SheqInstallationForm({
                 : null;
             const saveCategory = isTemplatesPageEdit
                 ? GENERAL_FORMS_CATEGORY
-                : monitoringMeta?.category || category;
+                : monitoringMeta?.category ||
+                  (saveCategoryOverride && String(saveCategoryOverride).trim()) ||
+                  category;
             const formTitleForSave = isTemplatesPageEdit
                 ? templateCatalogTitle
                 : templateTitle;
@@ -1921,12 +1927,14 @@ export default function SheqInstallationForm({
         if (!ok) return;
         setSaveDialogOpen(false);
         resetDirty();
-        if (leaveAfterSaveRef.current) {
-            if ((isModal || embedded) && onClose) {
-                leaveAfterSaveRef.current = false;
-                onClose(true);
-                return;
-            }
+        if ((isModal || embedded) && onClose) {
+            leaveAfterSaveRef.current = false;
+            onClose(true);
+            return;
+        }
+        // Embedded iframe fills (monitoring) — notify parent and leave fill flow.
+        if (embedded || leaveAfterSaveRef.current) {
+            leaveAfterSaveRef.current = false;
             finishSaveAndNavigate();
         }
     };

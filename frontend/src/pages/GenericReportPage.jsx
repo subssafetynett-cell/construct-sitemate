@@ -74,6 +74,7 @@ import {
     withGeneralFormVisibility,
     GENERAL_FORM_VISIBILITY,
 } from "../utils/generalFormVisibility";
+import { CONTEXTUAL_FORM_DONE, withEmbeddedFill } from "../utils/embeddedFormFill";
 import {
     appendTemplatesPageMetadata,
     isTemplatesPageEditContext,
@@ -258,6 +259,9 @@ export default function GenericReportPage({ pageTitle }) {
     const [templateSaveOpen, setTemplateSaveOpen] = useState(false);
     const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
     const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
+    const [formPanelOpen, setFormPanelOpen] = useState(false);
+    const [formPanelUrl, setFormPanelUrl] = useState("");
+    const [formPanelTitle, setFormPanelTitle] = useState("");
     const [templateMetadata, setTemplateMetadata] = useState({
         name: "",
         tags: "",
@@ -376,6 +380,32 @@ export default function GenericReportPage({ pageTitle }) {
         setDialogOpen(false);
     };
 
+    const closeFormPanel = useCallback(() => {
+        setFormPanelOpen(false);
+        setFormPanelUrl("");
+        setFormPanelTitle("");
+        setViewMode("initial");
+        fetchSubmissions();
+    }, [fetchSubmissions]);
+
+    const openFillPanel = useCallback((url, title) => {
+        if (!url) return;
+        setFormPanelTitle(title || "Fill form");
+        setFormPanelUrl(withEmbeddedFill(url));
+        setFormPanelOpen(true);
+        setDialogOpen(false);
+    }, []);
+
+    useEffect(() => {
+        const onMessage = (event) => {
+            if (event.origin !== window.location.origin) return;
+            if (event.data?.type !== CONTEXTUAL_FORM_DONE) return;
+            closeFormPanel();
+        };
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
+    }, [closeFormPanel]);
+
     const handleSelectSavedTemplate = async (submission, { preview = false } = {}) => {
         const responseId = submission?.id || submission?._id;
         if (!responseId) return;
@@ -405,18 +435,22 @@ export default function GenericReportPage({ pageTitle }) {
                     return;
                 }
 
-                let url = null;
+                // Report concern modules: fill the built-in form on this page.
                 if (template.type === "report") {
-                    url = pathWithSearchParams(template.path, { ...extra, create: "true" });
-                } else if (template.type === "general") {
+                    handleOpenConcernForm();
+                    setDialogOpen(false);
+                    return;
+                }
+
+                let url = null;
+                if (template.type === "general") {
                     url = pathWithSearchParams(template.path, extra);
                 } else if (template.type === "sheq") {
                     url = buildSheqFormUrl(template, extra);
                 }
 
                 if (url) {
-                    setDialogOpen(false);
-                    navigate(url);
+                    openFillPanel(url, template.title || getSubmissionTitle(sub));
                     return;
                 }
             }
@@ -454,10 +488,15 @@ export default function GenericReportPage({ pageTitle }) {
             openTemplatePreviewUrl(buildTemplatePreviewUrl(template, extra));
             return;
         }
+        // Stay on this Reporting Concerns page — don't navigate to Templates / other modules.
+        if (template.type === "report") {
+            handleOpenConcernForm();
+            setDialogOpen(false);
+            return;
+        }
         const url = buildTemplateUseUrl(template, extra);
         if (!url) return;
-        setDialogOpen(false);
-        navigate(url);
+        openFillPanel(url, template.title);
     };
 
     const handleSelectBuilderForm = async (form, { preview = false } = {}) => {
@@ -598,20 +637,38 @@ export default function GenericReportPage({ pageTitle }) {
                     setFormValues(savedAnswers);
                 }
                 alert(res.data?.message || "Saved offline — will sync when you're back online.");
-                setViewMode("viewed");
                 setLastResponse(null);
+                fetchSubmissions();
+                if (isTemplatesPageEdit) {
+                    setViewMode("viewed");
+                } else {
+                    setSelectedForm(null);
+                    setActiveFormKind(null);
+                    setFormValues({});
+                    setEditingId(null);
+                    setViewMode("initial");
+                }
             } else if (res.data?.success) {
                 const newSub = res.data.data;
                 const savedAnswers = withLogoPreviewFields(newSub?.answers || processedAnswers);
 
                 // Transition immediately instead of showing a modal
                 setEditingId(null);
-                setSelectedForm(selectedForm);
-                setActiveFormKind(inferFormDisplayKind(selectedForm, pageTitle));
-                setFormValues(savedAnswers);
-                setViewMode("viewed");
                 setLastResponse(null);
                 fetchSubmissions();
+                // Return to the list so the new/updated row shows right away
+                // (Templates library edits keep the form open for further edits).
+                if (isTemplatesPageEdit) {
+                    setSelectedForm(selectedForm);
+                    setActiveFormKind(inferFormDisplayKind(selectedForm, pageTitle));
+                    setFormValues(savedAnswers);
+                    setViewMode("viewed");
+                } else {
+                    setSelectedForm(null);
+                    setActiveFormKind(null);
+                    setFormValues({});
+                    setViewMode("initial");
+                }
             }
         } catch (err) {
             console.error("Submission failed", err);
@@ -1115,7 +1172,7 @@ export default function GenericReportPage({ pageTitle }) {
                                         "&:hover": { bgcolor: "#cc8b14", boxShadow: "none" }
                                     }}
                                 >
-                                    Choose Form
+                                    Select Forms
                                 </Button>
                             </Box>
                         )}
@@ -1315,6 +1372,66 @@ export default function GenericReportPage({ pageTitle }) {
                     setTemplatePreviewUrl("");
                 }}
             />
+
+            <Dialog
+                open={formPanelOpen}
+                onClose={closeFormPanel}
+                fullWidth
+                maxWidth="lg"
+                PaperProps={{
+                    sx: {
+                        height: "min(90vh, 900px)",
+                        borderRadius: 3,
+                        display: "flex",
+                        flexDirection: "column",
+                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
+                    },
+                }}
+            >
+                <DialogTitle
+                    sx={{
+                        fontWeight: 700,
+                        color: isDarkMode ? "#F9FAFB" : "#111827",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 2,
+                        pr: 1,
+                    }}
+                >
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography component="span" sx={{ fontWeight: 700, fontSize: "1.1rem" }}>
+                            {formPanelTitle}
+                        </Typography>
+                        <Typography
+                            variant="body2"
+                            sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", mt: 0.25 }}
+                        >
+                            Fill and save here — the form stays on this page
+                        </Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0, flex: 1, overflow: "hidden" }}>
+                    {formPanelUrl ? (
+                        <iframe
+                            src={formPanelUrl}
+                            title={formPanelTitle || "Form"}
+                            style={{ border: "none", width: "100%", height: "100%" }}
+                        />
+                    ) : null}
+                </DialogContent>
+                <DialogActions
+                    sx={{
+                        px: 3,
+                        py: 2,
+                        borderTop: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB",
+                    }}
+                >
+                    <Button onClick={closeFormPanel} sx={{ textTransform: "none" }}>
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Success Dialog */}
             <Dialog open={successOpen} maxWidth="xs" fullWidth>

@@ -29,10 +29,18 @@ export function monitoringFolderPath(sectionKey, siteId, folderId) {
 export function monitoringFormSearchParams(sectionKey, siteId, extra = {}) {
   const section = getMonitoringSection(sectionKey);
   if (!section) return { ...extra };
+  const folderId = extra.subfolderId || extra.folderId;
+  const listPath =
+    siteId && folderId
+      ? monitoringFolderPath(sectionKey, siteId, folderId)
+      : siteId
+        ? monitoringSitePath(sectionKey, siteId)
+        : section.basePath;
   return {
     siteId,
     category: section.category,
     monitoringSection: sectionKey,
+    listPath,
     ...extra,
   };
 }

@@ -151,10 +151,11 @@ async function buildFormsByCompany(prisma) {
       COALESCE(counts."count", 0)::int AS "count"
     FROM "Client" c
     LEFT JOIN (
-      SELECT u."clientId", COUNT(fr.id)::int AS "count"
-      FROM "User" u
-      INNER JOIN "FormResponse" fr ON fr."submittedById" = u.id
-      GROUP BY u."clientId"
+      SELECT COALESCE(fr."clientId", u."clientId") AS "clientId", COUNT(fr.id)::int AS "count"
+      FROM "FormResponse" fr
+      LEFT JOIN "User" u ON u.id = fr."submittedById"
+      WHERE COALESCE(fr."clientId", u."clientId") IS NOT NULL
+      GROUP BY COALESCE(fr."clientId", u."clientId")
     ) counts ON counts."clientId" = c.id
     ORDER BY "count" DESC, c.name ASC
   `;
@@ -175,7 +176,12 @@ async function buildDashboardResponseWhere(prisma, actor, actingClientId = null)
   if (!actor?.id) return { id: { in: [] } };
 
   if (actingClientId) {
-    return { submittedBy: { clientId: actingClientId } };
+    return {
+      OR: [
+        { clientId: actingClientId },
+        { AND: [{ clientId: null }, { submittedBy: { clientId: actingClientId } }] },
+      ],
+    };
   }
 
   if (isGlobalSiteAccess(actor)) {
@@ -185,7 +191,12 @@ async function buildDashboardResponseWhere(prisma, actor, actingClientId = null)
   const role = actor.role || "worker";
 
   if (role === "company_admin" && actor.clientId) {
-    return { submittedBy: { clientId: actor.clientId } };
+    return {
+      OR: [
+        { clientId: actor.clientId },
+        { AND: [{ clientId: null }, { submittedBy: { clientId: actor.clientId } }] },
+      ],
+    };
   }
 
   if (role === "site_manager") {
@@ -279,7 +290,12 @@ async function fetchMonthlySubmissionCounts(prisma, responseWhere) {
   }
 
   const submittedById = responseWhere?.submittedById;
-  const clientId = responseWhere?.submittedBy?.clientId;
+  const clientId =
+    responseWhere?.clientId ||
+    responseWhere?.submittedBy?.clientId ||
+    responseWhere?.OR?.find((clause) => clause.clientId)?.clientId ||
+    responseWhere?.OR?.find((clause) => clause.AND)?.AND?.find((c) => c.submittedBy?.clientId)
+      ?.submittedBy?.clientId;
 
   let rows;
   if (submittedById) {
@@ -300,8 +316,11 @@ async function fetchMonthlySubmissionCounts(prisma, responseWhere) {
         EXTRACT(MONTH FROM fr."createdAt")::int AS month,
         COUNT(*)::int AS count
       FROM "FormResponse" fr
-      INNER JOIN "User" u ON u.id = fr."submittedById"
-      WHERE u."clientId" = ${clientId}
+      LEFT JOIN "User" u ON u.id = fr."submittedById"
+      WHERE (
+          fr."clientId" = ${clientId}
+          OR (fr."clientId" IS NULL AND u."clientId" = ${clientId})
+        )
         AND fr."createdAt" >= ${since}
       GROUP BY 1, 2
       ORDER BY 1, 2`;

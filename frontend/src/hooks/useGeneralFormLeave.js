@@ -35,12 +35,34 @@ export function useGeneralFormLeave({
     const resolvedListPath = listPath || searchParams.get("listPath") || "";
 
     const navigateBack = useCallback(() => {
+        const embedded = searchParams.get("embedded") === "true";
+        if (embedded) {
+            try {
+                window.parent?.postMessage(
+                    {
+                        type: "sitemate:monitoring-form-done",
+                        monitoringSection,
+                        siteId,
+                        subfolderId,
+                        listPath: resolvedListPath || undefined,
+                    },
+                    window.location.origin
+                );
+            } catch {
+                /* ignore cross-window errors */
+            }
+            return;
+        }
         if (monitoringSection && siteId) {
             if (subfolderId) {
                 navigate(monitoringFolderPath(monitoringSection, siteId, subfolderId));
             } else {
                 navigate(monitoringSitePath(monitoringSection, siteId));
             }
+            return;
+        }
+        if (monitoringSection && resolvedListPath) {
+            navigate(resolvedListPath);
             return;
         }
         if (siteId) {

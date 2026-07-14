@@ -69,9 +69,11 @@ function canViewFormResponse(row, userId, clientId, options = {}) {
     return true;
   }
 
-  const submitterClientId = row.submittedBy?.clientId;
+  // Prefer company stamped on the response at submit time so company moves
+  // for the user do not re-home historical submissions.
+  const responseClientId = row.clientId || row.submittedBy?.clientId;
   const sameCompany =
-    Boolean(clientId && submitterClientId) && clientId === submitterClientId;
+    Boolean(clientId && responseClientId) && clientId === responseClientId;
 
   // SHEQ Installation / Inspection — operational reports.
   // Admins / acting superadmin see all non-site-pack SHEQ (including private); others fall through.

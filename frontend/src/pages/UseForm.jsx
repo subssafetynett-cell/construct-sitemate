@@ -70,6 +70,23 @@ export default function UseForm() {
   });
 
   const navigateBack = () => {
+    if (searchParams.get("embedded") === "true") {
+      try {
+        window.parent?.postMessage(
+          {
+            type: "sitemate:monitoring-form-done",
+            monitoringSection,
+            siteId,
+            subfolderId,
+            listPath: searchParams.get("listPath") || undefined,
+          },
+          window.location.origin
+        );
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     if (monitoringSection && siteId) {
       if (subfolderId) {
         navigate(monitoringFolderPath(monitoringSection, siteId, subfolderId));

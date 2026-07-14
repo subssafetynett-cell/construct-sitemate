@@ -14,10 +14,23 @@ function buildOwnFormResponseWhere(userId) {
   return { submittedById: userId };
 }
 
+/**
+ * Company scope uses FormResponse.clientId (company at submit time), with a
+ * legacy fallback to submittedBy.clientId for rows not yet backfilled.
+ */
+function buildCompanyClientFormResponseWhere(clientId) {
+  if (!clientId) return { id: { in: [] } };
+  return {
+    OR: [
+      { clientId },
+      { AND: [{ clientId: null }, { submittedBy: { clientId } }] },
+    ],
+  };
+}
+
 /** All submissions for an organisation (superadmin acting as company). */
 function buildActingClientFormResponseWhere(actingClientId) {
-  if (!actingClientId) return { id: { in: [] } };
-  return { submittedBy: { clientId: actingClientId } };
+  return buildCompanyClientFormResponseWhere(actingClientId);
 }
 
 /**
@@ -71,13 +84,17 @@ function buildCompanyFormResponseWhere(
   if (globalAccess) return {};
   if (companyWideRead) {
     if (!clientId) return {};
-    return { submittedBy: { clientId } };
+    return buildCompanyClientFormResponseWhere(clientId);
   }
   // Field roles: own rows + same-company rows (public/private filtered in canViewFormResponse).
   // Site-pack fills stay submitter-only at the visibility layer.
   if (!clientId) return { submittedById: userId };
   return {
-    OR: [{ submittedById: userId }, { submittedBy: { clientId } }],
+    OR: [
+      { submittedById: userId },
+      { clientId },
+      { AND: [{ clientId: null }, { submittedBy: { clientId } }] },
+    ],
   };
 }
 
@@ -95,6 +112,7 @@ async function assertFormResponseAccess(req, responseId, { write = false } = {})
     select: {
       id: true,
       submittedById: true,
+      clientId: true,
       answers: true,
       category: true,
       submittedBy: { select: { id: true, clientId: true } },
@@ -117,9 +135,9 @@ async function assertFormResponseAccess(req, responseId, { write = false } = {})
 
     // SHEQ Installation / Inspection list reports — admins may edit/delete like they can view.
     if (isSheqResponse(row) && !siteContextPresent(row.answers)) {
-      const submitterClientId = row.submittedBy?.clientId;
+      const responseClientId = row.clientId || row.submittedBy?.clientId;
       const sameCompany =
-        Boolean(clientId && submitterClientId) && clientId === submitterClientId;
+        Boolean(clientId && responseClientId) && clientId === responseClientId;
       if (readScope.globalAccess || (readScope.companyWideRead && sameCompany)) {
         return { ok: true, row };
       }
@@ -150,6 +168,7 @@ async function assertOwnFormResponse(req, responseId) {
 
 module.exports = {
   buildOwnFormResponseWhere,
+  buildCompanyClientFormResponseWhere,
   buildActingClientFormResponseWhere,
   buildCompanyFormResponseWhere,
   getFormResponseReadScope,

@@ -320,12 +320,21 @@ exports.saveResponse = async (req, res) => {
 
     const sitepackColumns = sitepackColumnsForAnswers(sanitizedAnswers);
 
+    // Snapshot company at save time so later user company changes don't move/hide this row.
+    const submitter = await prisma.user.findUnique({
+      where: { id: submitterId },
+      select: { clientId: true },
+    });
+    const responseClientId =
+      req.actingClient?.id || submitter?.clientId || req.user?.clientId || null;
+
     const response = await prisma.formResponse.create({
       data: {
         answers: sanitizedAnswers,
         category: resolveFormResponseCategory(category),
         formId: form.id,
         submittedById: submitterId,
+        clientId: responseClientId || undefined,
         siteId: sitepackColumns.siteId,
         subfolderId: sitepackColumns.subfolderId,
       }

@@ -1262,7 +1262,7 @@ export default function UsersPage() {
                     companyname: selectedClient ? selectedClient.name : "",
                   }));
                 }}
-                helperText="Changing company moves this user to that organisation"
+                helperText="Moves the user to that organisation. Forms they already completed stay on the original company pages."
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     borderRadius: 3,
