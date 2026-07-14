@@ -3,61 +3,105 @@
  */
 
 const DB_NAME = "sitemate-offline";
-const DB_VERSION = 2;
+/** Bump when stores/indexes change — also used to repair incomplete prior upgrades. */
+const DB_VERSION = 3;
 const STORE_GET = "apiGetCache";
 const STORE_QUEUE = "offlineQueue";
 const STORE_DRAFTS = "formDrafts";
 const STORE_TEMPLATES = "templateForms";
 const STORE_ID_MAP = "idMap";
 
+const REQUIRED_STORES = [
+  STORE_GET,
+  STORE_QUEUE,
+  STORE_DRAFTS,
+  STORE_TEMPLATES,
+  STORE_ID_MAP,
+];
+
 const MAX_GET_ENTRIES = 200;
 const MAX_GET_BODY_CHARS = 2_500_000;
 const OFFLINE_SYNC_TAG = "sitemate-offline-flush";
 
-export function openOfflineDb() {
+function ensureOfflineSchema(db, oldVersion, upgradeTx) {
+  if (!db.objectStoreNames.contains(STORE_GET)) {
+    const store = db.createObjectStore(STORE_GET, { keyPath: "key" });
+    store.createIndex("updatedAt", "updatedAt");
+  }
+  if (!db.objectStoreNames.contains(STORE_QUEUE)) {
+    const store = db.createObjectStore(STORE_QUEUE, {
+      keyPath: "id",
+      autoIncrement: true,
+    });
+    store.createIndex("createdAt", "createdAt");
+    store.createIndex("localResponseId", "localResponseId");
+  } else if (oldVersion < 2 && upgradeTx) {
+    const store = upgradeTx.objectStore(STORE_QUEUE);
+    if (!store.indexNames.contains("localResponseId")) {
+      store.createIndex("localResponseId", "localResponseId");
+    }
+  } else if (upgradeTx && db.objectStoreNames.contains(STORE_QUEUE)) {
+    const store = upgradeTx.objectStore(STORE_QUEUE);
+    if (!store.indexNames.contains("localResponseId")) {
+      store.createIndex("localResponseId", "localResponseId");
+    }
+  }
+  if (!db.objectStoreNames.contains(STORE_DRAFTS)) {
+    const store = db.createObjectStore(STORE_DRAFTS, { keyPath: "localId" });
+    store.createIndex("serverId", "serverId");
+    store.createIndex("updatedAt", "updatedAt");
+  }
+  if (!db.objectStoreNames.contains(STORE_TEMPLATES)) {
+    db.createObjectStore(STORE_TEMPLATES, { keyPath: "title" });
+  }
+  if (!db.objectStoreNames.contains(STORE_ID_MAP)) {
+    db.createObjectStore(STORE_ID_MAP, { keyPath: "localId" });
+  }
+}
+
+function missingOfflineStores(db) {
+  return REQUIRED_STORES.filter((name) => !db.objectStoreNames.contains(name));
+}
+
+function openOfflineDbAtVersion(version) {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
       reject(new Error("IndexedDB unavailable"));
       return;
     }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const req = indexedDB.open(DB_NAME, version);
     req.onupgradeneeded = (event) => {
       const db = req.result;
       const oldVersion = event.oldVersion || 0;
-
-      if (!db.objectStoreNames.contains(STORE_GET)) {
-        const store = db.createObjectStore(STORE_GET, { keyPath: "key" });
-        store.createIndex("updatedAt", "updatedAt");
-      }
-      if (!db.objectStoreNames.contains(STORE_QUEUE)) {
-        const store = db.createObjectStore(STORE_QUEUE, {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        store.createIndex("createdAt", "createdAt");
-        store.createIndex("localResponseId", "localResponseId");
-      } else if (oldVersion < 2) {
-        const tx = event.target.transaction;
-        const store = tx.objectStore(STORE_QUEUE);
-        if (!store.indexNames.contains("localResponseId")) {
-          store.createIndex("localResponseId", "localResponseId");
-        }
-      }
-      if (!db.objectStoreNames.contains(STORE_DRAFTS)) {
-        const store = db.createObjectStore(STORE_DRAFTS, { keyPath: "localId" });
-        store.createIndex("serverId", "serverId");
-        store.createIndex("updatedAt", "updatedAt");
-      }
-      if (!db.objectStoreNames.contains(STORE_TEMPLATES)) {
-        db.createObjectStore(STORE_TEMPLATES, { keyPath: "title" });
-      }
-      if (!db.objectStoreNames.contains(STORE_ID_MAP)) {
-        db.createObjectStore(STORE_ID_MAP, { keyPath: "localId" });
-      }
+      ensureOfflineSchema(db, oldVersion, event.target.transaction);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
+    req.onblocked = () => {
+      console.warn("[offline] IndexedDB open blocked — close other tabs using Site Mate");
+    };
   });
+}
+
+/**
+ * Open the offline DB, repairing schema if a prior deploy left stores missing
+ * at the current version (which skips onupgradeneeded).
+ */
+export async function openOfflineDb() {
+  let db = await openOfflineDbAtVersion(DB_VERSION);
+  let missing = missingOfflineStores(db);
+  if (missing.length === 0) return db;
+
+  console.warn("[offline] repairing IndexedDB, missing stores:", missing.join(", "));
+  const repairVersion = Math.max(db.version, DB_VERSION) + 1;
+  db.close();
+  db = await openOfflineDbAtVersion(repairVersion);
+  missing = missingOfflineStores(db);
+  if (missing.length > 0) {
+    db.close();
+    throw new Error(`IndexedDB still missing stores: ${missing.join(", ")}`);
+  }
+  return db;
 }
 
 function openDb() {
@@ -266,28 +310,37 @@ export function deserializeRequestBody(serialized) {
 // ─── Template form offline map (title → formId) ─────────────────────────────
 
 export async function getOfflineTemplateFormId(title) {
-  const db = await openDb();
-  const row = await new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_TEMPLATES, "readonly");
-    const req = tx.objectStore(STORE_TEMPLATES).get(String(title));
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-  db.close();
-  return row?.formId || null;
+  try {
+    const db = await openDb();
+    const row = await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_TEMPLATES, "readonly");
+      const req = tx.objectStore(STORE_TEMPLATES).get(String(title));
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return row?.formId || null;
+  } catch (err) {
+    console.warn("[offline] template lookup failed", err?.message || err);
+    return null;
+  }
 }
 
 export async function putOfflineTemplateForm(title, formId, { pending = false } = {}) {
-  const db = await openDb();
-  const tx = db.transaction(STORE_TEMPLATES, "readwrite");
-  tx.objectStore(STORE_TEMPLATES).put({
-    title: String(title),
-    formId,
-    pending,
-    updatedAt: Date.now(),
-  });
-  await txDone(tx);
-  db.close();
+  try {
+    const db = await openDb();
+    const tx = db.transaction(STORE_TEMPLATES, "readwrite");
+    tx.objectStore(STORE_TEMPLATES).put({
+      title: String(title),
+      formId,
+      pending,
+      updatedAt: Date.now(),
+    });
+    await txDone(tx);
+    db.close();
+  } catch (err) {
+    console.warn("[offline] template cache write failed", err?.message || err);
+  }
 }
 
 // ─── ID remap (local → server) ───────────────────────────────────────────────

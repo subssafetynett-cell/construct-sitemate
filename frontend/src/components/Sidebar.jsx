@@ -270,7 +270,11 @@ export default function Sidebar({ className = "", style }) {
             setStats(globalCachedStats);
           }
         })
-        .catch((err) => console.error("Error fetching stats:", err));
+        .catch((err) => {
+          // Back off on gateway failures so we don't spam /users/stats.
+          globalStatsLastFetch = Date.now();
+          console.warn("Error fetching stats:", err?.message || err);
+        });
     } else {
       setStats(globalCachedStats);
     }

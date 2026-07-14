@@ -48,8 +48,15 @@ const api = axios.create({
 
 const MAX_UPLOAD_MB = 50;
 
+function isGatewayOrTransientFailure(status) {
+  return status === 502 || status === 503 || status === 504;
+}
+
 function isNetworkFailure(error) {
   if (isBrowserOffline()) return true;
+  const status = error?.response?.status;
+  // Bad gateway / upstream down — allow offline queue + cache fallback.
+  if (isGatewayOrTransientFailure(status)) return true;
   if (error?.response) return false;
   const code = error?.code || "";
   const msg = String(error?.message || "");

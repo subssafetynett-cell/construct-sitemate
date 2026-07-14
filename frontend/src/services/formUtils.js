@@ -103,25 +103,70 @@ export async function saveGeneralFormResponse({
  */
 const templateFormCache = {};
 
+function isTransientApiFailure(error) {
+    if (isBrowserOffline()) return true;
+    const status = error?.response?.status;
+    if (status === 502 || status === 503 || status === 504) return true;
+    if (error?.response) return false;
+    const code = error?.code || "";
+    const msg = String(error?.message || "");
+    return (
+        code === "ERR_NETWORK" ||
+        code === "ECONNABORTED" ||
+        /network error|failed to fetch|load failed|offline/i.test(msg)
+    );
+}
+
+async function queueLocalTemplateForm(formTitle, createPayload, requestConfig) {
+    const queued = await queueOfflineTemplateFormCreate({
+        url: "/forms",
+        data: createPayload,
+        headers: {},
+        timeout: requestConfig.timeout,
+    });
+    const id = queued.form?.id || queued.form?._id || createLocalFormId();
+    templateFormCache[formTitle] = id;
+    await putOfflineTemplateForm(formTitle, id, { pending: true });
+    return id;
+}
+
 export const getOrCreateTemplateForm = async (formTitle) => {
     if (templateFormCache[formTitle]) {
         return templateFormCache[formTitle];
     }
 
-    const offlineCached = await getOfflineTemplateFormId(formTitle);
-    if (offlineCached) {
-        templateFormCache[formTitle] = offlineCached;
-        return offlineCached;
+    try {
+        const offlineCached = await getOfflineTemplateFormId(formTitle);
+        if (offlineCached) {
+            templateFormCache[formTitle] = offlineCached;
+            return offlineCached;
+        }
+    } catch (err) {
+        console.warn("Offline template cache unavailable", err?.message || err);
     }
 
+    const requestConfig = formResponseSaveConfig();
+    const createPayload = {
+        title: formTitle,
+        fields: [
+            {
+                id: "custom_hardcoded_form_data",
+                type: "text",
+                label: "Form Data Indicator",
+                required: false,
+            },
+        ],
+        titleColor: "#000000",
+        titleAlignment: "left",
+    };
+
     try {
-        const requestConfig = formResponseSaveConfig();
-        const res = await api.get('/forms', {
+        const res = await api.get("/forms", {
             ...requestConfig,
             params: { title: formTitle },
         });
         if (res.data?.success && res.data.data) {
-            const existing = res.data.data.find(f => f.title === formTitle);
+            const existing = res.data.data.find((f) => f.title === formTitle);
             if (existing) {
                 const id = existing.id || existing._id;
                 templateFormCache[formTitle] = id;
@@ -130,34 +175,11 @@ export const getOrCreateTemplateForm = async (formTitle) => {
             }
         }
 
-        const createPayload = {
-            title: formTitle,
-            fields: [
-                {
-                    id: "custom_hardcoded_form_data",
-                    type: "text",
-                    label: "Form Data Indicator",
-                    required: false
-                }
-            ],
-            titleColor: "#000000",
-            titleAlignment: "left"
-        };
-
         if (isBrowserOffline()) {
-            const queued = await queueOfflineTemplateFormCreate({
-                url: '/forms',
-                data: createPayload,
-                headers: {},
-                timeout: requestConfig.timeout,
-            });
-            const id = queued.form?.id || queued.form?._id || createLocalFormId();
-            templateFormCache[formTitle] = id;
-            await putOfflineTemplateForm(formTitle, id, { pending: true });
-            return id;
+            return queueLocalTemplateForm(formTitle, createPayload, requestConfig);
         }
 
-        const createRes = await api.post('/forms', createPayload, requestConfig);
+        const createRes = await api.post("/forms", createPayload, requestConfig);
 
         if (createRes.data?.offlineQueued && createRes.data?.form) {
             const id = createRes.data.form.id || createRes.data.form._id;
@@ -177,6 +199,13 @@ export const getOrCreateTemplateForm = async (formTitle) => {
         throw new Error("Could not create template form");
     } catch (e) {
         console.error("Failed to get/create template form:", e);
+        if (isTransientApiFailure(e)) {
+            try {
+                return await queueLocalTemplateForm(formTitle, createPayload, requestConfig);
+            } catch (queueErr) {
+                console.error("Offline template queue also failed:", queueErr);
+            }
+        }
         throw e;
     }
 };
