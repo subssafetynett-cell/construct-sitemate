@@ -304,9 +304,14 @@ exports.updateAction = asyncHandler(async (req, res) => {
   });
 
   // Drafts remain private to the assignee. Only non-draft updates are copied
-  // into the linked report for the reporter to view.
+  // into the linked report for the reporter to view. The update itself is
+  // committed, so a sync failure must not turn the save into an error.
   if (!asDraft) {
-    await syncLinkedFormResponse(updated, updated.status);
+    try {
+      await syncLinkedFormResponse(updated, updated.status);
+    } catch (err) {
+      console.error("Failed to sync linked form response after update:", err);
+    }
   }
 
   res.json({
@@ -384,14 +389,24 @@ exports.sendActionToReporter = asyncHandler(async (req, res) => {
     },
   });
 
-  await syncLinkedFormResponse(updated, "sent");
+  // The send is committed at this point — post-send steps must not turn the
+  // response into an error, or the client retries and hits the "already sent" guard.
+  try {
+    await syncLinkedFormResponse(updated, "sent");
+  } catch (err) {
+    console.error("Failed to sync linked form response after send:", err);
+  }
 
-  await notifyReporterOfSentAction(
-    updated,
-    updated.assignee,
-    updated.reporter,
-    responseNotes
-  );
+  try {
+    await notifyReporterOfSentAction(
+      updated,
+      updated.assignee,
+      updated.reporter,
+      responseNotes
+    );
+  } catch (err) {
+    console.error("Failed to notify reporter of sent action:", err);
+  }
 
   res.json({
     success: true,

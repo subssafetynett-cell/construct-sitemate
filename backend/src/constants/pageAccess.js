@@ -10,7 +10,7 @@ const APP_PAGES = [
   { key: "view-invite", label: "View invitation", paths: ["/view-invite"], alwaysOn: true },
   { key: "create-sites", label: "Create sites", paths: ["/create-sites"] },
   { key: "sitepack-management", label: "Sitepack management", paths: ["/sitepack-management"] },
-  { key: "action-tracker", label: "Nonconformance", paths: ["/nonconformance", "/action-tracker"] },
+  { key: "action-tracker", label: "Nonconformance", paths: ["/nonconformance", "/action-tracker", "/nc", "/nc-calendar", "/nc-dashboard"] },
   { key: "general-forms", label: "Templates", paths: ["/general-forms"] },
   { key: "saved-signatures", label: "Saved signatures", paths: ["/saved-signatures"] },
   { key: "forms", label: "Form builder", paths: ["/forms", "/form-build", "/create-form"] },

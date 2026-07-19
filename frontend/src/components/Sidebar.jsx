@@ -7,15 +7,12 @@ import {
   ChevronDown,
   LayoutDashboard,
   ListChecks,
-  Sun,
-  Moon,
   PenLine,
   BarChart3,
   MessageSquareWarning,
   TrendingUp,
   ClipboardList,
 } from "lucide-react";
-import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { Link as RouterLink, useLocation, useSearchParams } from "react-router-dom";
 import { MONITORING_SECTIONS } from "../constants/monitoringSections";
@@ -224,11 +221,31 @@ const MENU_GROUPS = [
   },
   {
     id: "action-tracker",
-    pageKey: "action-tracker",
     heading: "Nonconformance",
     icon: ListChecks,
-    to: "/nonconformance",
     roles: ALL_ROLES,
+    items: [
+      {
+        id: "nonconformance-list",
+        pageKey: "action-tracker",
+        label: "Nonconformances",
+        to: "/nonconformance",
+        exact: true,
+      },
+      {
+        id: "all-nonconformances",
+        pageKey: "action-tracker",
+        label: "All Nonconformances",
+        to: "/nonconformance/all",
+        roles: COMPANY_ADMINS,
+      },
+      {
+        id: "nonconformance-dashboard",
+        pageKey: "action-tracker",
+        label: "Dashboard",
+        to: "/nc-dashboard",
+      },
+    ],
   },
 ];
 
@@ -242,7 +259,6 @@ function isMenuEntryActive(item, isActive, canSeeItem = () => true) {
 }
 
 export default function Sidebar({ className = "", style }) {
-  const { isDarkMode, toggleTheme } = useTheme();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [openGroup, setOpenGroup] = useState(null);
@@ -502,37 +518,6 @@ export default function Sidebar({ className = "", style }) {
             <p className="truncate text-xs capitalize text-slate-400">
               {(role || "user").replace(/_/g, " ")}
             </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-[#27303E] p-1">
-          <div className="flex gap-1 rounded-full bg-[#111827] p-1">
-            <button
-              type="button"
-              onClick={() => isDarkMode && toggleTheme()}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-medium transition-colors",
-                !isDarkMode
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
-              )}
-            >
-              <Sun size={14} />
-              Light
-            </button>
-            <button
-              type="button"
-              onClick={() => !isDarkMode && toggleTheme()}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-medium transition-colors",
-                isDarkMode
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
-              )}
-            >
-              <Moon size={14} />
-              Dark
-            </button>
           </div>
         </div>
       </div>

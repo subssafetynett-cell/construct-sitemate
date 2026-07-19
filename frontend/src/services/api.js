@@ -552,7 +552,10 @@ export const fetchActionTrackerItem = async (id) => {
 };
 
 export const updateActionTrackerItem = async (id, payload) => {
-  const response = await api.put(`/action-tracker/actions/${id}`, payload);
+  // Payloads can carry base64 evidence images; allow the long save timeout.
+  const response = await api.put(`/action-tracker/actions/${id}`, payload, {
+    timeout: FORM_RESPONSE_SAVE_TIMEOUT_MS,
+  });
   return response.data;
 };
 
@@ -564,7 +567,10 @@ export const updateActionTrackerRegisterStatus = async (id, registerStatus) => {
 };
 
 export const sendActionTrackerItem = async (id, payload = {}) => {
-  const response = await api.post(`/action-tracker/actions/${id}/send`, payload);
+  // Payloads can carry base64 evidence images; allow the long save timeout.
+  const response = await api.post(`/action-tracker/actions/${id}/send`, payload, {
+    timeout: FORM_RESPONSE_SAVE_TIMEOUT_MS,
+  });
   return response.data;
 };
 
@@ -577,6 +583,73 @@ export const reviewActionTrackerItem = async (
     decision,
     rejectionReason,
   });
+  return response.data;
+};
+
+export const createNonconformance = async (payload) => {
+  const response = await api.post("/nc", payload);
+  return response.data;
+};
+
+export const fetchNonconformances = async (params = {}) => {
+  const response = await api.get("/nc", { params });
+  return response.data;
+};
+
+export const fetchNonconformance = async (id) => {
+  const response = await api.get(`/nc/${id}`);
+  return response.data;
+};
+
+export const saveNonconformanceResponse = async (id, payload) => {
+  const response = await api.patch(`/nc/${id}/response`, payload, {
+    timeout: FORM_RESPONSE_SAVE_TIMEOUT_MS,
+  });
+  return response.data;
+};
+
+export const uploadNonconformanceAttachments = async (id, responseId, files) => {
+  const formData = new FormData();
+  formData.append("responseId", responseId);
+  files.forEach((file) => formData.append("files", file));
+  const response = await api.post(`/nc/${id}/attachments`, formData, {
+    timeout: UPLOAD_TIMEOUT_MS,
+  });
+  return response.data;
+};
+
+export const acceptNonconformance = async (id) => {
+  const response = await api.post(`/nc/${id}/accept`);
+  return response.data;
+};
+
+export const rejectNonconformance = async (id, reason) => {
+  const response = await api.post(`/nc/${id}/reject`, { reason });
+  return response.data;
+};
+
+export const reopenNonconformance = async (id, reason) => {
+  const response = await api.post(`/nc/${id}/reopen`, { reason });
+  return response.data;
+};
+
+export const fetchNcAssignableUsers = async (id) => {
+  const response = await api.get(`/nc/${id}/assignable-users`);
+  return response.data;
+};
+
+export const reassignNonconformance = async (id, assigneeId, reason) => {
+  const response = await api.patch(`/nc/${id}/reassign`, { assigneeId, reason });
+  return response.data;
+};
+
+export const forceNonconformanceStatus = async (id, status, reason) => {
+  const response = await api.patch(`/nc/${id}/force-status`, { status, reason });
+  return response.data;
+};
+
+export const fetchNonconformanceHistory = async (id) => {
+  const response = await api.get(`/nc/${id}/history`);
   return response.data;
 };
 

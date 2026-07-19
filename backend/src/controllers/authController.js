@@ -301,6 +301,8 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
         res.status(err.status || 500).json({
             success: false,
             message: err.message || 'Could not verify email',
+            ...(err.expired ? { expired: true } : {}),
+            ...(err.email ? { email: err.email } : {}),
         });
     }
 });

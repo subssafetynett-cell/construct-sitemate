@@ -18,6 +18,7 @@ import api, {
     fetchFormResponseById,
     formResponseSaveConfig,
     formatFormSaveError,
+    fetchAssignableUsers,
 } from "../services/api";
 import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getMonitoringSection } from "../constants/monitoringSections";
@@ -612,8 +613,31 @@ const EMPTY_NONCONFORMANCE_FINDING = {
     remedialAction: "",
     timing: "",
     personResponsible: "",
+    personResponsibleId: "",
+    personResponsibleEmail: "",
     dateClosed: "",
 };
+
+/** Date-closed values were free text before the date picker; keep old values readable. */
+function normalizeFindingDateClosed(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return "";
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${parsed.getFullYear()}-${month}-${day}`;
+}
+
+function formatFindingDateClosed(value) {
+    const iso = normalizeFindingDateClosed(value);
+    if (iso) {
+        const [year, month, day] = iso.split("-");
+        return `${day}/${month}/${year}`;
+    }
+    return String(value || "").trim();
+}
 
 function formDataScoreIsNonconforming(score) {
     return String(score) === "1";
@@ -640,15 +664,18 @@ function collectNonconformingItems(formSections, installationMeasures) {
 
 function mergeNonconformanceFindingsFromSave(formSections, installationMeasures, savedFindings = {}) {
     const merged = {};
-    collectNonconformingItems(formSections, installationMeasures).forEach(({ key }) => {
+    collectNonconformingItems(formSections, installationMeasures).forEach(({ key, itemName }) => {
         const im = installationMeasures[key] || {};
         const saved = savedFindings[key] || {};
         merged[key] = {
             ...EMPTY_NONCONFORMANCE_FINDING,
             ...saved,
+            itemName,
             remedialAction: saved.remedialAction || im.remedial || "",
             timing: saved.timing || im.timing || "",
             personResponsible: saved.personResponsible || im.responsibility || "",
+            personResponsibleId: saved.personResponsibleId || "",
+            personResponsibleEmail: saved.personResponsibleEmail || "",
             dateClosed: saved.dateClosed || "",
         };
     });
@@ -2226,6 +2253,44 @@ export default function SheqInstallationForm({
     );
 
     const showNonconformanceSection = nonconformingItems.length > 0;
+
+    const [assignableUsers, setAssignableUsers] = useState([]);
+    const [assignableUsersError, setAssignableUsersError] = useState("");
+    useEffect(() => {
+        if (!showNonconformanceSection || isViewMode || downloading) return undefined;
+        let cancelled = false;
+        fetchAssignableUsers()
+            .then((res) => {
+                if (cancelled) return;
+                setAssignableUsers(Array.isArray(res?.users) ? res.users : []);
+                setAssignableUsersError("");
+            })
+            .catch(() => {
+                if (!cancelled)
+                    setAssignableUsersError("Could not load the users list. Please try again.");
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once when the section appears
+    }, [showNonconformanceSection, isViewMode, downloading]);
+
+    const updateResponsiblePerson = (itemKey, userId) => {
+        const user = assignableUsers.find((u) => String(u.id) === String(userId));
+        setFormData((prev) => ({
+            ...prev,
+            nonconformanceFindings: {
+                ...(prev.nonconformanceFindings || {}),
+                [itemKey]: {
+                    ...EMPTY_NONCONFORMANCE_FINDING,
+                    ...(prev.nonconformanceFindings?.[itemKey] || {}),
+                    personResponsible: user ? user.name : "",
+                    personResponsibleId: user ? user.id : "",
+                    personResponsibleEmail: user ? user.email : "",
+                },
+            },
+        }));
+    };
 
     const confirmDeleteSection = (sectionKey) => {
         setDeleteDialog({ open: true, type: 'special_section', sectionKey, catIdx: null, subIdx: null, itemIdx: null });
@@ -4215,17 +4280,50 @@ export default function SheqInstallationForm({
                                                             {finding.personResponsible || " "}
                                                         </Typography>
                                                     ) : (
-                                                        <TextField
-                                                            fullWidth
-                                                            variant="standard"
-                                                            placeholder="Person responsible"
-                                                            value={finding.personResponsible}
-                                                            onChange={(e) =>
-                                                                updateNonconformanceFinding(row.key, "personResponsible", e.target.value)
-                                                            }
-                                                            InputProps={{ disableUnderline: true }}
-                                                            sx={fieldSx}
-                                                        />
+                                                        <Box sx={{ width: "100%" }}>
+                                                            <TextField
+                                                                fullWidth
+                                                                select
+                                                                variant="standard"
+                                                                value={
+                                                                    finding.personResponsibleId
+                                                                        ? String(finding.personResponsibleId)
+                                                                        : ""
+                                                                }
+                                                                onChange={(e) =>
+                                                                    updateResponsiblePerson(row.key, e.target.value)
+                                                                }
+                                                                SelectProps={{ native: true }}
+                                                                InputProps={{ disableUnderline: true }}
+                                                                sx={fieldSx}
+                                                            >
+                                                                <option value="">Select person...</option>
+                                                                {finding.personResponsibleId &&
+                                                                !assignableUsers.some(
+                                                                    (u) =>
+                                                                        String(u.id) ===
+                                                                        String(finding.personResponsibleId)
+                                                                ) ? (
+                                                                    <option value={String(finding.personResponsibleId)}>
+                                                                        {finding.personResponsible ||
+                                                                            finding.personResponsibleEmail ||
+                                                                            "Previously selected user"}
+                                                                    </option>
+                                                                ) : null}
+                                                                {assignableUsers.map((u) => (
+                                                                    <option key={u.id} value={String(u.id)}>
+                                                                        {u.name} ({u.email})
+                                                                    </option>
+                                                                ))}
+                                                            </TextField>
+                                                            {assignableUsersError ? (
+                                                                <Typography
+                                                                    sx={{ fontSize: "0.7rem", color: "#dc2626", px: 0.5 }}
+                                                                >
+                                                                    {assignableUsersError}
+                                                                </Typography>
+                                                            ) : null}
+                                                        </Box>
                                                     )}
                                                 </Box>
                                                 <Box
@@ -4239,14 +4337,14 @@ export default function SheqInstallationForm({
                                                 >
                                                     {downloading ? (
                                                         <Typography sx={{ px: 0.5, fontSize: "0.8rem" }}>
-                                                            {finding.dateClosed || " "}
+                                                            {formatFindingDateClosed(finding.dateClosed) || " "}
                                                         </Typography>
                                                     ) : (
                                                         <TextField
                                                             fullWidth
+                                                            type="date"
                                                             variant="standard"
-                                                            placeholder="Date closed"
-                                                            value={finding.dateClosed}
+                                                            value={normalizeFindingDateClosed(finding.dateClosed)}
                                                             onChange={(e) =>
                                                                 updateNonconformanceFinding(row.key, "dateClosed", e.target.value)
                                                             }

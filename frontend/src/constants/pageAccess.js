@@ -31,7 +31,7 @@ export const PAGE_PATH_PREFIXES = [
   { key: "view-invite", paths: ["/view-invite"], alwaysOn: true },
   { key: "create-sites", paths: ["/create-sites"] },
   { key: "sitepack-management", paths: ["/sitepack-management"] },
-  { key: "action-tracker", paths: ["/nonconformance", "/action-tracker"] },
+  { key: "action-tracker", paths: ["/nonconformance", "/action-tracker", "/nc", "/nc-calendar", "/nc-dashboard"] },
   { key: "general-forms", paths: ["/general-forms"] },
   { key: "saved-signatures", paths: ["/saved-signatures"] },
   { key: "forms", paths: ["/forms", "/form-build", "/create-form"] },

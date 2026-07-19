@@ -74,6 +74,90 @@ function buildNonconformancePayload(answers = {}, formResponseId, reporterId, cl
   };
 }
 
+async function resolveNcAssignee(assigneeId, clientId) {
+  const assignee = await prisma.user.findFirst({
+    where: { id: assigneeId, clientId, active: true },
+    select: { id: true, email: true, firstName: true, lastName: true, accessMode: true },
+  });
+  if (!assignee) {
+    const error = new Error("Assignee must be an active user in your company.");
+    error.status = 400;
+    throw error;
+  }
+  if (String(assignee.accessMode || "standard").toLowerCase() === "view_only") {
+    const error = new Error("A view-only user cannot be assigned a nonconformance.");
+    error.status = 400;
+    throw error;
+  }
+  return assignee;
+}
+
+async function createNcRecord({
+  submitter,
+  assignee,
+  title,
+  description,
+  category,
+  priority,
+  dueDate,
+  formResponseId,
+  createdNote,
+}) {
+  const ncNumber = `NC-${new Date().getUTCFullYear()}-${crypto
+    .randomBytes(4)
+    .toString("hex")
+    .toUpperCase()}`;
+
+  const action = await prisma.$transaction(async (tx) => {
+    const created = await tx.nonconformance.create({
+      data: {
+        ncNumber,
+        title,
+        description,
+        category,
+        priority,
+        reporterId: submitter.id,
+        assigneeId: assignee.id,
+        clientId: submitter.clientId,
+        dueDate,
+        status: "assigned",
+        sourceFormResponseId: formResponseId || null,
+      },
+    });
+    await tx.ncHistory.createMany({
+      data: [
+        {
+          nonconformanceId: created.id,
+          action: "created",
+          actorId: submitter.id,
+          notes: `${created.ncNumber} ${createdNote}`,
+        },
+        {
+          nonconformanceId: created.id,
+          action: "assigned",
+          actorId: submitter.id,
+          notes: `Assigned to ${formatUserName(assignee)}.`,
+        },
+      ],
+    });
+    return created;
+  });
+
+  const { notifyNcUser } = require("./ncNotificationService");
+  try {
+    await notifyNcUser({
+      nonconformance: action,
+      recipient: assignee,
+      actorId: submitter.id,
+      type: "assigned",
+      message: `${action.ncNumber} has been assigned to you and is due ${dueDate.toLocaleDateString("en-GB")}.`,
+    });
+  } catch (err) {
+    console.error("NC assignment notification failed after creation:", err);
+  }
+  return action;
+}
+
 async function createNonconformanceFromFormSubmission({
   answers,
   formResponseId,
@@ -85,78 +169,115 @@ async function createNonconformanceFromFormSubmission({
   });
   if (!submitter?.clientId) return null;
 
-  const payload = buildNonconformancePayload(
-    answers,
+  const assigneeId = String(answers?.noncon_responsible_user_id || "").trim();
+  const dueDate = answers?.noncon_date ? new Date(answers.noncon_date) : null;
+  if (!assigneeId || !dueDate || Number.isNaN(dueDate.getTime())) return null;
+  if (formResponseId) {
+    const existing = await prisma.nonconformance.findUnique({
+      where: { sourceFormResponseId: formResponseId },
+    });
+    if (existing) return existing;
+  }
+
+  const assignee = await resolveNcAssignee(assigneeId, submitter.clientId);
+
+  const category = String(answers?.noncon_category || answers?.category || "Concern").trim();
+  const rawPriority = String(answers?.noncon_priority || "medium").toLowerCase();
+  const priority = ["low", "medium", "high", "critical"].includes(rawPriority)
+    ? rawPriority
+    : "medium";
+  const title =
+    String(answers?.report_heading || answers?.project_name || "Nonconformance report").trim();
+  const description =
+    String(answers?.observation_details || answers?.noncon_action || title).trim();
+
+  return createNcRecord({
+    submitter,
+    assignee,
+    title,
+    description,
+    category,
+    priority,
+    dueDate,
     formResponseId,
-    submitter.id,
+    createdNote: "created from a concern report.",
+  });
+}
+
+const SHEQ_DEFAULT_DUE_DAYS = 14;
+
+/**
+ * SHEQ service / installation reports collect nonconformance findings in
+ * answers.formData.nonconformanceFindings. When at least one finding has a
+ * responsible person selected, create a single NC record for the report so it
+ * appears on the Nonconformance dashboard.
+ */
+async function createNonconformanceFromSheqSubmission({
+  answers,
+  formResponseId,
+  submitterId,
+  category,
+}) {
+  if (!formResponseId) return null;
+
+  const rawFindings = answers?.formData?.nonconformanceFindings;
+  if (!rawFindings || typeof rawFindings !== "object") return null;
+  const findings = Object.entries(rawFindings)
+    .map(([key, value]) => ({ key, ...(value || {}) }))
+    .filter((f) => f && (f.itemName || f.remedialAction || f.personResponsibleId));
+  const assignedFinding = findings.find((f) =>
+    String(f.personResponsibleId || "").trim()
+  );
+  if (!assignedFinding) return null;
+
+  const existing = await prisma.nonconformance.findUnique({
+    where: { sourceFormResponseId: formResponseId },
+  });
+  if (existing) return existing;
+
+  const submitter = await prisma.user.findUnique({
+    where: { id: submitterId },
+    select: { id: true, clientId: true, firstName: true, lastName: true, email: true },
+  });
+  if (!submitter?.clientId) return null;
+
+  const assignee = await resolveNcAssignee(
+    String(assignedFinding.personResponsibleId).trim(),
     submitter.clientId
   );
-  if (!payload) return null;
 
-  // Safe to call again on report edits: notify only on first assignment.
-  if (formResponseId) {
-    const existing = await prisma.nonconformanceAction.findFirst({
-      where: { formResponseId, assigneeId: payload.assigneeId },
-      select: { id: true },
-    });
-    if (existing) return null;
-  }
+  const isService = /inspection/i.test(String(category || ""));
+  const ncCategory = isService ? "SHEQ Service" : "SHEQ Installation";
+  const client = String(answers?.formData?.client || "").trim();
+  const reportName = String(answers?.name || "").trim();
+  const title = `${client || reportName || ncCategory} — Nonconformance findings`;
 
-  const assignee = await prisma.user.findFirst({
-    where: { id: payload.assigneeId, clientId: submitter.clientId, active: true },
-    select: { id: true, email: true, firstName: true, lastName: true, accessMode: true },
+  const description = findings
+    .map((f) => {
+      const item = String(f.itemName || f.key || "Checklist item").trim();
+      const remedial = String(f.remedialAction || "").trim();
+      const timing = String(f.timing || "").trim();
+      let line = `• ${item}`;
+      if (remedial) line += ` — ${remedial}`;
+      if (timing) line += ` (timing: ${timing})`;
+      return line;
+    })
+    .join("\n");
+
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + SHEQ_DEFAULT_DUE_DAYS);
+
+  return createNcRecord({
+    submitter,
+    assignee,
+    title,
+    description: description || title,
+    category: ncCategory,
+    priority: "medium",
+    dueDate,
+    formResponseId,
+    createdNote: `created from a ${ncCategory} report.`,
   });
-  if (!assignee) return null;
-  if (String(assignee.accessMode || "standard").toLowerCase() === "view_only") {
-    return null;
-  }
-
-  const action = await prisma.nonconformanceAction.create({
-    data: {
-      ...payload,
-      status: "pending",
-    },
-  });
-
-  const reporterName = formatUserName(submitter);
-  await prisma.userNotification.create({
-    data: {
-      userId: assignee.id,
-      type: "nonconformance_reported",
-      title: "New nonconformance reported",
-      message: `New nonconformance reported by ${reporterName}`,
-      link: `/nonconformance?item=${action.id}`,
-      metadata: {
-        actionId: action.id,
-        reporterId: submitter.id,
-        reporterName,
-      },
-    },
-  });
-
-  if (assignee.email) {
-    const correction = String(answers?.noncon_action || "").trim();
-    const observation = String(answers?.observation_details || "").trim();
-    const subject = `Nonconformance raised: ${action.title}`;
-    const html = `
-      <p>Hello ${escapeHtml(formatUserName(assignee))},</p>
-      <p><strong>${escapeHtml(reporterName)}</strong> has raised a nonconformance and assigned you as the responsible person.</p>
-      <p><strong>Report:</strong> ${escapeHtml(action.title)}</p>
-      ${observation ? `<p><strong>Observation:</strong></p><p>${escapeHtml(observation)}</p>` : ""}
-      ${correction ? `<p><strong>Required correction:</strong></p><p>${escapeHtml(correction)}</p>` : ""}
-      <p><a href="${escapeHtml(buildAppUrl(`/nonconformance?item=${action.id}`))}">View and respond to the nonconformance</a></p>
-    `;
-
-    await sendEmail({
-      to: assignee.email,
-      subject,
-      html,
-    }).catch((err) => {
-      console.error("Nonconformance assignment email failed:", err);
-    });
-  }
-
-  return action;
 }
 
 async function notifyReporterOfSentAction(action, assignee, reporter, notes) {
@@ -235,6 +356,7 @@ module.exports = {
   buildNonconformanceGroupKey,
   buildNonconformancePayload,
   createNonconformanceFromFormSubmission,
+  createNonconformanceFromSheqSubmission,
   formatUserName,
   notifyAssigneeOfRejectedAction,
   notifyReporterOfSentAction,

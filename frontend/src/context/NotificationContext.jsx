@@ -79,6 +79,7 @@ export function NotificationProvider({ children }) {
         prev.map((row) => (row.id === notification.id ? { ...row, read: true } : row))
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
+      cachedCountRef.current = Math.max(0, cachedCountRef.current - 1);
     } catch {
       /* ignore */
     }
@@ -89,6 +90,7 @@ export function NotificationProvider({ children }) {
       await markAllNotificationsRead();
       setNotifications((prev) => prev.map((row) => ({ ...row, read: true })));
       setUnreadCount(0);
+      cachedCountRef.current = 0;
       lastUnreadFetchRef.current = Date.now();
     } catch {
       /* ignore */
@@ -120,6 +122,7 @@ export function NotificationProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNotifications() {
   const ctx = useContext(NotificationContext);
   if (!ctx) {

@@ -156,15 +156,23 @@ export default function TopNav({
             <Box
               sx={{
                 position: "absolute",
-                top: 8,
-                right: 8,
-                width: 9,
-                height: 9,
-                borderRadius: "50%",
+                top: 2,
+                right: 0,
+                minWidth: 18,
+                height: 18,
+                px: 0.5,
+                borderRadius: 9,
                 bgcolor: "#EF4444",
-                border: `2px solid ${isDarkMode ? "#111827" : "#FFFFFF"}`,
+                color: "#fff",
+                border: `1px solid ${isDarkMode ? "#111827" : "#FFFFFF"}`,
+                fontSize: 10,
+                fontWeight: 800,
+                lineHeight: "16px",
+                textAlign: "center",
               }}
-            />
+            >
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </Box>
           ) : null}
         </IconButton>
         <IconButton

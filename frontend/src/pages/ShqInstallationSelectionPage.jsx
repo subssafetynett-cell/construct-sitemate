@@ -59,6 +59,34 @@ const ShqInstallationSelectionPage = () => {
     const category = "SHEQ Installation";
     const listPath = "/shq-installation";
 
+    // Responsible person + open/closed state come from the linked NC record,
+    // with the saved findings as a fallback for older reports.
+    const getNcMeta = (sub) => {
+        const nc = sub?.nonconformance;
+        const findings = sub?.answers?.formData?.nonconformanceFindings;
+        const findingList =
+            findings && typeof findings === "object" ? Object.values(findings) : [];
+        const hasFindings = Boolean(nc) || findingList.length > 0;
+
+        let responsible = "";
+        if (nc?.assignee) {
+            responsible = `${nc.assignee.firstName || ""} ${nc.assignee.lastName || ""}`.trim() || nc.assignee.email || "";
+        }
+        if (!responsible) {
+            responsible = [
+                ...new Set(
+                    findingList.map((f) => String(f?.personResponsible || "").trim()).filter(Boolean)
+                ),
+            ].join(", ");
+        }
+
+        return {
+            hasFindings,
+            responsible,
+            closed: nc?.status === "closed",
+        };
+    };
+
     const fetchSubmissions = useCallback(async () => {
         setLoading(true);
         try {
@@ -379,7 +407,8 @@ const ShqInstallationSelectionPage = () => {
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Si No</TableCell>
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Date</TableCell>
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Client / Form name</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Site address</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Responsible person</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Status</TableCell>
                                             {showCreatorColumn && (
                                             <TableCell sx={{ fontWeight: 600, color: subTextColor, fontSize: "0.75rem" }}>Created by</TableCell>
                                             )}
@@ -391,8 +420,8 @@ const ShqInstallationSelectionPage = () => {
                                             const subId = sub.id || sub._id;
                                             const answers = sub.answers || {};
                                             const client = answers.formData?.client || sub.form?.title || sub.formId?.title || "Untitled";
-                                            const site = answers.formData?.siteAddress || "N/A";
                                             const date = new Date(sub.createdAt).toLocaleDateString('en-GB');
+                                            const ncMeta = getNcMeta(sub);
 
                                             return (
                                                 <TableRow key={subId} hover sx={{ "&:last-child td": { border: 0 } }}>
@@ -404,7 +433,32 @@ const ShqInstallationSelectionPage = () => {
                                                     {category === "SHEQ Installation" ? "SHEQ Installation" : (sub.form?.title || "Standard Form")}
                                                 </Typography>
                                             </TableCell>
-                                            <TableCell sx={{ color: subTextColor }}>{site}</TableCell>
+                                            <TableCell sx={{ color: subTextColor, fontSize: "0.85rem" }}>
+                                                {ncMeta.responsible || "—"}
+                                            </TableCell>
+                                            <TableCell>
+                                                {ncMeta.hasFindings ? (
+                                                    <Box
+                                                        component="span"
+                                                        sx={{
+                                                            display: "inline-block",
+                                                            px: 1.25,
+                                                            py: 0.4,
+                                                            borderRadius: "999px",
+                                                            fontSize: "0.72rem",
+                                                            fontWeight: 700,
+                                                            bgcolor: ncMeta.closed
+                                                                ? "rgba(34, 197, 94, 0.12)"
+                                                                : "rgba(239, 68, 68, 0.12)",
+                                                            color: ncMeta.closed ? "#15803d" : "#dc2626",
+                                                        }}
+                                                    >
+                                                        {ncMeta.closed ? "Closed" : "Opened"}
+                                                    </Box>
+                                                ) : (
+                                                    <Typography component="span" sx={{ color: subTextColor, fontSize: "0.85rem" }}>—</Typography>
+                                                )}
+                                            </TableCell>
                                             {showCreatorColumn && (
                                             <TableCell sx={{ color: subTextColor, fontSize: "0.8rem" }}>
                                                 {formatSubmitterDisplay(sub.submittedBy)}

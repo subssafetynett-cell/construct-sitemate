@@ -25,6 +25,7 @@ const savedSignatureRoutes = require("./src/routes/savedSignatureRoutes");
 const kpiDashboardRoutes = require("./src/routes/kpiDashboardRoutes");
 const actionTrackerRoutes = require("./src/routes/actionTrackerRoutes");
 const notificationRoutes = require("./src/routes/notificationRoutes");
+const nonconformanceRoutes = require("./src/routes/nonconformanceRoutes");
 
 const path = require("node:path");
 const fs = require("node:fs");
@@ -185,6 +186,7 @@ app.use("/api/saved-signatures", savedSignatureRoutes);
 app.use("/api/kpi-dashboard", kpiDashboardRoutes);
 app.use("/api/action-tracker", actionTrackerRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/nc", nonconformanceRoutes);
 
 app.use((err, req, res, next) => { 
   console.error("Error Handler:", err);

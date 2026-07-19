@@ -23,6 +23,7 @@ model Client {
   sites     Site[]
   formResponses FormResponse[]
   nonconformanceActions NonconformanceAction[]
+  nonconformances Nonconformance[]
   kpiDashboards KpiDashboard[]
 }
 
@@ -68,6 +69,11 @@ model User {
   assignedNonconformances NonconformanceAction[] @relation("NonconformanceAssignee")
   reportedNonconformances NonconformanceAction[] @relation("NonconformanceReporter")
   notifications UserNotification[]
+  assignedNcRecords Nonconformance[] @relation("NcAssignee")
+  reportedNcRecords Nonconformance[] @relation("NcReporter")
+  submittedNcResponses NcResponse[] @relation("NcResponseSubmitter")
+  ncHistoryEntries NcHistory[] @relation("NcHistoryActor")
+  ncNotifications Notification[] @relation("NcNotificationUser")
 }
 
 model SavedSignature {
@@ -211,6 +217,7 @@ model FormResponse {
 
   submittedById String?
   submittedBy   User?   @relation(fields: [submittedById], references: [id])
+  nonconformance Nonconformance?
 
   /// Company at submit time — kept when the submitter later changes company.
   clientId String?
@@ -245,9 +252,42 @@ enum AccessMode {
 
 enum NonconformanceStatus {
   pending
+  assigned
   draft
   sent
+  response_submitted
+  under_review
+  reopened
   closed
+}
+
+enum NonconformancePriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum NcHistoryAction {
+  created
+  assigned
+  draft_saved
+  response_submitted
+  under_review
+  reopened
+  rejection_reason
+  accepted
+  closed
+  notification_sent
+  email_sent
+  admin_override
+}
+
+enum NcNotificationType {
+  assigned
+  response_submitted
+  rejected_reopened
+  accepted_closed
 }
 
 enum NonconformanceRegisterStatus {
@@ -302,6 +342,110 @@ model UserNotification {
 
   @@index([userId, read])
   @@index([userId, createdAt])
+}
+
+model Nonconformance {
+  id                   String                   @id @default(uuid())
+  ncNumber             String                   @unique @map("nc_number")
+  title                String
+  description          String
+  category             String
+  priority             NonconformancePriority  @default(medium)
+  reporterId           String                   @map("reporter_id")
+  assigneeId           String                   @map("assignee_id")
+  clientId             String                   @map("client_id")
+  dueDate              DateTime                 @map("due_date") @db.Date
+  status               NonconformanceStatus     @default(assigned)
+  closedAt             DateTime?                @map("closed_at")
+  sourceFormResponseId String?                  @unique @map("source_form_response_id")
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+
+  reporter    User           @relation("NcReporter", fields: [reporterId], references: [id])
+  assignee    User           @relation("NcAssignee", fields: [assigneeId], references: [id])
+  client      Client         @relation(fields: [clientId], references: [id])
+  sourceFormResponse FormResponse? @relation(fields: [sourceFormResponseId], references: [id], onDelete: SetNull)
+  responses   NcResponse[]
+  history     NcHistory[]
+  notifications Notification[]
+
+  @@index([assigneeId, status])
+  @@index([reporterId, status])
+  @@index([clientId, status])
+  @@index([clientId, dueDate])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([createdAt])
+  @@map("nonconformances")
+}
+
+model NcResponse {
+  id               String    @id @default(uuid())
+  nonconformanceId String    @map("nonconformance_id")
+  correctionDone   String    @map("correction_done")
+  rootCause        String    @map("root_cause")
+  correctiveAction String    @map("corrective_action")
+  isDraft          Boolean   @default(true) @map("is_draft")
+  version          Int
+  submittedById    String    @map("submitted_by")
+  submittedAt      DateTime? @map("submitted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  nonconformance Nonconformance @relation(fields: [nonconformanceId], references: [id], onDelete: Cascade)
+  submittedBy    User           @relation("NcResponseSubmitter", fields: [submittedById], references: [id])
+  attachments    NcAttachment[]
+
+  @@unique([nonconformanceId, version])
+  @@index([nonconformanceId, isDraft])
+  @@map("nc_responses")
+}
+
+model NcAttachment {
+  id         String   @id @default(uuid())
+  responseId String   @map("response_id")
+  fileName   String   @map("file_name")
+  fileUrl    String   @map("file_url")
+  mimeType   String   @map("mime_type")
+  fileSize   Int?     @map("file_size")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  response NcResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
+  @@map("nc_attachments")
+}
+
+model NcHistory {
+  id               String          @id @default(uuid())
+  nonconformanceId String          @map("nonconformance_id")
+  action           NcHistoryAction
+  actorId          String          @map("actor_id")
+  notes            String?
+  createdAt        DateTime        @default(now()) @map("created_at")
+
+  nonconformance Nonconformance @relation(fields: [nonconformanceId], references: [id], onDelete: Cascade)
+  actor          User           @relation("NcHistoryActor", fields: [actorId], references: [id])
+
+  @@index([nonconformanceId, createdAt])
+  @@map("nc_history")
+}
+
+model Notification {
+  id               String             @id @default(uuid())
+  userId           String             @map("user_id")
+  nonconformanceId String             @map("nonconformance_id")
+  type             NcNotificationType
+  message          String
+  isRead           Boolean            @default(false) @map("is_read")
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  user           User           @relation("NcNotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  nonconformance Nonconformance @relation(fields: [nonconformanceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
 
 model SiteDocument {

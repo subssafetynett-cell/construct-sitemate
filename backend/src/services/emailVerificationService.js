@@ -185,14 +185,21 @@ async function verifyEmailWithToken(token) {
 
   const record = await prisma.emailVerificationToken.findUnique({
     where: { tokenHash: hashToken(raw) },
-    include: { user: { select: { id: true, active: true, emailVerified: true } } },
+    include: {
+      user: { select: { id: true, email: true, active: true, emailVerified: true } },
+    },
   });
 
   if (!record || record.usedAt || record.expiresAt < new Date()) {
     const err = new Error(
-      "This verification link is invalid or has expired. Use resend verification on the sign-in page to request a new link."
+      "This verification link is invalid or has expired. Request a new verification link below."
     );
     err.status = 400;
+    err.expired = true;
+    // Let the frontend offer one-click resend for a known, still-unverified account.
+    if (record?.user && record.user.active !== false && !record.user.emailVerified) {
+      err.email = record.user.email;
+    }
     throw err;
   }
 

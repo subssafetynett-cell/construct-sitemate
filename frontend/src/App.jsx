@@ -31,7 +31,11 @@ const SitepackManagement = lazy(() => import('./pages/SitepackManagement'));
 const ConcernReportDashboard = lazy(() => import('./pages/ConcernReportDashboard'));
 const MonitoringSectionDashboardPage = lazy(() => import('./pages/MonitoringSectionDashboardPage'));
 const MonitoringSectionPage = lazy(() => import('./pages/MonitoringSectionPage'));
-const ActionTrackerPage = lazy(() => import('./pages/ActionTrackerPage'));
+const NonconformanceDashboardPage = lazy(() => import('./pages/NonconformanceDashboardPage'));
+const NonconformanceDetailPage = lazy(() => import('./pages/NonconformanceDetailPage'));
+const NonconformanceCalendarPage = lazy(() => import('./pages/NonconformanceCalendarPage'));
+const NonconformanceAnalyticsPage = lazy(() => import('./pages/NonconformanceAnalyticsPage'));
+const NonconformanceAllPage = lazy(() => import('./pages/NonconformanceAllPage'));
 const AuditReportDashboard = lazy(() => import('./pages/AuditReportDashboard'));
 const GeneralFormsList = lazy(() => import('./pages/GeneralFormsList'));
 const SavedSignaturesPage = lazy(() => import('./pages/SavedSignaturesPage'));
@@ -240,7 +244,11 @@ function App() {
           <Route path="/dashboard/quality-management-kpis/site/:siteId" element={<RequireAuth><MonitoringSectionPage section="quality" /></RequireAuth>} />
           <Route path="/dashboard/food-safety-management/site/:siteId/folder/:folderId" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
           <Route path="/dashboard/food-safety-management/site/:siteId" element={<RequireAuth><MonitoringSectionPage section="food-safety" /></RequireAuth>} />
-          <Route path="/nonconformance" element={<RequireAuth><ActionTrackerPage /></RequireAuth>} />
+          <Route path="/nonconformance" element={<RequireAuth><NonconformanceDashboardPage /></RequireAuth>} />
+          <Route path="/nonconformance/all" element={<RequireAuth><RoleGuard allowedRoles={ADMIN_PLUS}><NonconformanceAllPage /></RoleGuard></RequireAuth>} />
+          <Route path="/nc/:id" element={<RequireAuth><NonconformanceDetailPage /></RequireAuth>} />
+          <Route path="/nc-calendar" element={<RequireAuth><NonconformanceCalendarPage /></RequireAuth>} />
+          <Route path="/nc-dashboard" element={<RequireAuth><NonconformanceAnalyticsPage /></RequireAuth>} />
           <Route path="/action-tracker" element={<Navigate to="/nonconformance" replace />} />
           <Route path="/concern-reports" element={<RequireAuth><ConcernReportDashboard /></RequireAuth>} />
           <Route path="/audit-reports" element={<RequireAuth><AuditReportDashboard /></RequireAuth>} />

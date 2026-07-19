@@ -1,7 +1,10 @@
 const prisma = require("../prismaClient");
 const { sendEmail } = require("../services/emailService");
 const { notifyAdminsOfNewFormSubmission } = require("../services/formSubmissionNotifyService");
-const { createNonconformanceFromFormSubmission } = require("../services/nonconformanceActionService");
+const {
+  createNonconformanceFromFormSubmission,
+  createNonconformanceFromSheqSubmission,
+} = require("../services/nonconformanceActionService");
 const { assertGeneralFormTemplateWrite } = require("../utils/generalFormTemplatePolicy");
 const {
   buildCompanyFormResponseWhere,
@@ -33,7 +36,6 @@ function resolveFormResponseCategory(category) {
     ? String(category).trim()
     : null;
 }
-
 /** Category filter for list queries (includes legacy SHEQ rows with null category). */
 function buildCategoryWhere(categoryParam) {
   if (!categoryParam) return null;
@@ -289,6 +291,25 @@ exports.saveResponse = async (req, res) => {
       };
     }
 
+    const isConcernSubmission =
+      formId === STATIC_CONCERN_FORM_ID &&
+      !/positive observation/i.test(String(category || ""));
+    if (isConcernSubmission) {
+      const assigneeId = String(
+        sanitizedAnswers.noncon_responsible_user_id || ""
+      ).trim();
+      const dueDate = sanitizedAnswers.noncon_date
+        ? new Date(sanitizedAnswers.noncon_date)
+        : null;
+      if (!assigneeId || !dueDate || Number.isNaN(dueDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Select a responsible person and due date before submitting this concern.",
+        });
+      }
+    }
+
     const gate = assertGeneralFormTemplateWrite(req, sanitizedAnswers, req.body, {
       formId,
       category,
@@ -349,13 +370,28 @@ exports.saveResponse = async (req, res) => {
       console.error("Form submission admin notification failed:", err);
     });
 
-    createNonconformanceFromFormSubmission({
-      answers: sanitizedAnswers,
-      formResponseId: response.id,
-      submitterId,
-    }).catch((err) => {
-      console.error("Nonconformance action creation failed:", err);
-    });
+    if (isConcernSubmission) {
+      // The form response is already committed — an NC creation failure must
+      // not turn the save into an error, or the client retries and duplicates.
+      try {
+        await createNonconformanceFromFormSubmission({
+          answers: sanitizedAnswers,
+          formResponseId: response.id,
+          submitterId,
+        });
+      } catch (err) {
+        console.error("Nonconformance creation failed after concern submission:", err);
+      }
+    } else if (isSheqCategory(category)) {
+      createNonconformanceFromSheqSubmission({
+        answers: sanitizedAnswers,
+        formResponseId: response.id,
+        submitterId,
+        category,
+      }).catch((err) => {
+        console.error("SHEQ nonconformance creation failed:", err);
+      });
+    }
 
     res.json({ success: true, data: response });
   } catch (err) {
@@ -425,6 +461,16 @@ exports.getAllResponses = async (req, res) => {
         form: { select: { title: true } },
         submittedBy: {
           select: { id: true, clientId: true, firstName: true, lastName: true, email: true },
+        },
+        nonconformance: {
+          select: {
+            id: true,
+            status: true,
+            assigneeId: true,
+            assignee: {
+              select: { id: true, firstName: true, lastName: true, email: true },
+            },
+          },
         },
       },
     };
@@ -507,6 +553,36 @@ exports.getResponseById = async (req, res) => {
         submittedBy: {
           select: { id: true, clientId: true, firstName: true, lastName: true, email: true },
         },
+        nonconformance: {
+          select: {
+            id: true,
+            status: true,
+            assigneeId: true,
+            closedAt: true,
+            assignee: {
+              select: { id: true, firstName: true, lastName: true, email: true },
+            },
+            responses: {
+              where: { isDraft: false },
+              orderBy: { version: "desc" },
+              take: 1,
+              select: {
+                id: true,
+                correctionDone: true,
+                rootCause: true,
+                correctiveAction: true,
+                version: true,
+                submittedAt: true,
+                submittedBy: {
+                  select: { id: true, firstName: true, lastName: true, email: true },
+                },
+                attachments: {
+                  select: { id: true, fileName: true, fileUrl: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!response) {
@@ -561,13 +637,25 @@ exports.updateResponse = async (req, res) => {
     // A responsible person can also be assigned while editing a report.
     // The service skips assignees that were already notified for this report.
     if (owned.row.submittedById) {
-      createNonconformanceFromFormSubmission({
-        answers: sanitizedAnswers,
-        formResponseId: id,
-        submitterId: owned.row.submittedById,
-      }).catch((err) => {
-        console.error("Nonconformance action creation failed:", err);
-      });
+      const effectiveCategory = data.category || owned.row.category;
+      if (isSheqCategory(effectiveCategory)) {
+        createNonconformanceFromSheqSubmission({
+          answers: sanitizedAnswers,
+          formResponseId: id,
+          submitterId: owned.row.submittedById,
+          category: effectiveCategory,
+        }).catch((err) => {
+          console.error("SHEQ nonconformance creation failed:", err);
+        });
+      } else {
+        createNonconformanceFromFormSubmission({
+          answers: sanitizedAnswers,
+          formResponseId: id,
+          submitterId: owned.row.submittedById,
+        }).catch((err) => {
+          console.error("Nonconformance action creation failed:", err);
+        });
+      }
     }
 
     res.json({ success: true, data: updated });

@@ -653,7 +653,8 @@ export default function GenericReportPage({ pageTitle }) {
         const title = getSubmissionTitle(row).toLowerCase();
         const date = row?.createdAt ? new Date(row.createdAt).toLocaleDateString().toLowerCase() : "";
         const creator = String(formatSubmitterDisplay(row?.submittedBy) || "").toLowerCase();
-        return title.includes(query) || date.includes(query) || creator.includes(query);
+        const responsible = getResponsiblePersonName(row).toLowerCase();
+        return title.includes(query) || date.includes(query) || creator.includes(query) || responsible.includes(query);
     };
 
     const matchesStatusFilter = (row) => {
@@ -665,14 +666,27 @@ export default function GenericReportPage({ pageTitle }) {
     const currentUserEmail = String(currentUser?.email || "").trim().toLowerCase();
     const currentUserName = formatUserDisplayName(currentUser).trim().toLowerCase().replace(/\s+/g, " ");
 
-    // Every saved concern starts Open (red). It becomes Closed only when a later
-    // edit stamps noncon_status = "closed" (nonconformance completed).
-    const isConcernClosed = (row) => row?.answers?.noncon_status === "closed";
+    const getResponsiblePersonName = (row) => {
+        const assignee = row?.nonconformance?.assignee;
+        return (
+            [assignee?.firstName, assignee?.lastName].filter(Boolean).join(" ").trim() ||
+            assignee?.email ||
+            String(row?.answers?.noncon_responsible || "").trim() ||
+            String(row?.answers?.noncon_responsible_email || "").trim() ||
+            "—"
+        );
+    };
+
+    // The normalized NC workflow is authoritative. Keep the answer fallback for
+    // older concern records that predate the linked Nonconformance model.
+    const isConcernClosed = (row) =>
+        row?.nonconformance?.status === "closed" ||
+        (!row?.nonconformance && row?.answers?.noncon_status === "closed");
 
     // Match Responsible person by user id, email, or display name.
     const isAssignedToMe = (row) => {
         const answers = row?.answers || {};
-        const assignedId = answers.noncon_responsible_user_id;
+        const assignedId = row?.nonconformance?.assigneeId || answers.noncon_responsible_user_id;
         if (assignedId && currentUserId && String(assignedId) === currentUserId) return true;
 
         const assignedEmail = String(answers.noncon_responsible_email || "").trim().toLowerCase();
@@ -705,20 +719,13 @@ export default function GenericReportPage({ pageTitle }) {
         return true;
     };
 
-    const assignedCount = isConcernTabsPage ? submissions.filter(isAssignedToMe).length : 0;
-    const raisedCount = isConcernTabsPage ? submissions.filter(isRaisedByMe).length : 0;
-    const scheduledItems = isConcernTabsPage
-        ? submissions.filter((row) => isAssignedToMe(row) && parseNonconDate(row?.answers?.noncon_date))
-        : [];
     const isAssignedResponseEdit =
         isConcernTabsPage &&
-        concernTab === "assigned" &&
         viewMode === "editing" &&
         Boolean(lastResponse) &&
         isAssignedToMe(lastResponse);
     const isReporterReviewView =
         isConcernTabsPage &&
-        concernTab === "raised" &&
         viewMode === "viewed" &&
         Boolean(lastResponse) &&
         isRaisedByMe(lastResponse) &&
@@ -1023,6 +1030,17 @@ export default function GenericReportPage({ pageTitle }) {
     const submitReport = async () => {
         if (!selectedForm) return;
 
+        const requiresNonconformanceAssignment =
+            activeFormKind === "concern" && pageTitle !== "Positive observation";
+        if (
+            requiresNonconformanceAssignment &&
+            (!String(formValues.noncon_responsible_user_id || "").trim() ||
+                !String(formValues.noncon_date || "").trim())
+        ) {
+            alert("Select an Assignee (responsible person) and Due Date before submitting.");
+            return;
+        }
+
         setIsSubmitting(true);
         try {
             let workingValues = { ...formValues };
@@ -1215,8 +1233,32 @@ export default function GenericReportPage({ pageTitle }) {
                 setViewMode("initial");
             }
         } catch (err) {
+            const serverMessage = err?.response?.data?.message || "";
+
+            // A previous attempt (e.g. one that timed out client-side) may have
+            // already completed the send on the server. Treat that as success.
+            if (!asDraft && /already been sent/i.test(serverMessage)) {
+                await fetchSubmissions();
+                alert("Response saved and sent to the reporter.");
+                setSelectedForm(null);
+                setActiveFormKind(null);
+                setFormValues({});
+                setEditingId(null);
+                setLastResponse(null);
+                setAssignedAction(null);
+                setViewMode("initial");
+                return;
+            }
+
+            if (err?.code === "ECONNABORTED" || /timeout/i.test(err?.message || "")) {
+                alert(
+                    "The request timed out, but it may still have gone through. Please refresh the list before trying again."
+                );
+                return;
+            }
+
             alert(
-                err?.response?.data?.message ||
+                serverMessage ||
                     (asDraft
                         ? "Could not save the draft."
                         : "Could not send the response to the reporter.")
@@ -1409,6 +1451,22 @@ export default function GenericReportPage({ pageTitle }) {
                 }
             }
 
+            // Surface the linked NC's latest submitted response inside the concern
+            // view using the existing "Assignee nonconformance response" section.
+            const ncResponseOverlay = () => {
+                if (mode !== "viewed") return {};
+                const nc = fullSub?.nonconformance;
+                const latest = nc?.responses?.[0];
+                if (!latest) return {};
+                return {
+                    noncon_response_status: nc.status === "closed" ? "closed" : "sent",
+                    noncon_response_correction: latest.correctionDone || "",
+                    noncon_response_root_cause: latest.rootCause || "",
+                    noncon_response_corrective_action: latest.correctiveAction || "",
+                    ...(nc.status === "closed" ? { noncon_status: "closed" } : {}),
+                };
+            };
+
             const formId =
                 fullSub.form?.id ||
                 fullSub.formId?._id ||
@@ -1447,12 +1505,10 @@ export default function GenericReportPage({ pageTitle }) {
                 const openingAssignedResponse =
                     mode === "editing" &&
                     isConcernTabsPage &&
-                    concernTab === "assigned" &&
                     isAssignedToMe(fullSub);
                 const openingReporterReview =
                     mode === "viewed" &&
                     isConcernTabsPage &&
-                    concernTab === "raised" &&
                     isRaisedByMe(fullSub);
 
                 if (openingAssignedResponse || openingReporterReview) {
@@ -1470,19 +1526,20 @@ export default function GenericReportPage({ pageTitle }) {
                             return;
                         }
                         setAssignedAction(null);
-                        setFormValues(withLogoPreviewFields(fullSub.answers || {}));
+                        setFormValues(withLogoPreviewFields({ ...(fullSub.answers || {}), ...ncResponseOverlay() }));
                     } else {
                         setAssignedAction(action);
                         setFormValues(
                             withLogoPreviewFields({
                                 ...(fullSub.answers || {}),
                                 ...(openingAssignedResponse ? action.details || {} : {}),
+                                ...ncResponseOverlay(),
                             })
                         );
                     }
                 } else {
                     setAssignedAction(null);
-                    setFormValues(withLogoPreviewFields(fullSub.answers || {}));
+                    setFormValues(withLogoPreviewFields({ ...(fullSub.answers || {}), ...ncResponseOverlay() }));
                 }
                 setSelectedForm(loadedForm);
                 setActiveFormKind(inferFormDisplayKind(loadedForm, pageTitle));
@@ -2016,21 +2073,8 @@ export default function GenericReportPage({ pageTitle }) {
                                     }}
                                 >
                                     <Tab value="all" label="All reports" />
-                                    <Tab value="assigned" label={`Assigned to me (${assignedCount})`} />
-                                    <Tab value="raised" label={`Raised by me (${raisedCount})`} />
-                                    <Tab value="scheduled" label={`Scheduled (${scheduledItems.length})`} />
                                 </Tabs>
                             )}
-                            {isConcernTabsPage && concernTab === "scheduled" ? (
-                                <ConcernScheduleCalendar
-                                    items={scheduledItems}
-                                    isDarkMode={isDarkMode}
-                                    getTitle={getSubmissionTitle}
-                                    isClosed={isConcernClosed}
-                                    onOpen={(row) => openSubmissionView(row, "viewed")}
-                                />
-                            ) : (
-                            <>
                             <Box sx={{ p: 2, pb: 1, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
                                 <TextField
                                     fullWidth
@@ -2110,6 +2154,9 @@ export default function GenericReportPage({ pageTitle }) {
                                             {showCreatorColumn && (
                                             <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.75rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Created by</TableCell>
                                             )}
+                                            {isConcernTabsPage && (
+                                            <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.75rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Responsible person</TableCell>
+                                            )}
                                             <TableCell sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.75rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Status</TableCell>
                                             <TableCell align="right" sx={{ fontWeight: 600, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.75rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>Actions</TableCell>
                                         </TableRow>
@@ -2123,12 +2170,8 @@ export default function GenericReportPage({ pageTitle }) {
                                                 const emptyMessage =
                                                     isConcernTabsPage && statusFilter !== "all"
                                                         ? `No ${statusFilter === "open" ? "opened" : "closed"} reports found.`
-                                                        : isConcernTabsPage && concernTab === "assigned"
-                                                        ? "No nonconformance reports are assigned to you."
-                                                        : isConcernTabsPage && concernTab === "raised"
-                                                        ? "You have not raised any reports yet."
                                                         : "No submissions found.";
-                                                return <TableRow><TableCell colSpan={showCreatorColumn ? 6 : 5} align="center" sx={{ py: 4, color: isDarkMode ? "#9CA3AF" : "inherit", borderBottom: "none" }}>{emptyMessage}</TableCell></TableRow>;
+                                                return <TableRow><TableCell colSpan={(showCreatorColumn ? 6 : 5) + (isConcernTabsPage ? 1 : 0)} align="center" sx={{ py: 4, color: isDarkMode ? "#9CA3AF" : "inherit", borderBottom: "none" }}>{emptyMessage}</TableCell></TableRow>;
                                             }
 
                                             return paginated.map((row, idx) => {
@@ -2140,6 +2183,9 @@ export default function GenericReportPage({ pageTitle }) {
                                                     <TableCell sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>{new Date(row.createdAt).toLocaleDateString()}</TableCell>
                                                     {showCreatorColumn && (
                                                     <TableCell sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.8rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>{formatSubmitterDisplay(row.submittedBy)}</TableCell>
+                                                    )}
+                                                    {isConcernTabsPage && (
+                                                    <TableCell sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.8rem", borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>{getResponsiblePersonName(row)}</TableCell>
                                                     )}
                                                     <TableCell sx={{ borderBottom: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB" }}>
                                                         {isConcernTabsPage ? (
@@ -2190,8 +2236,6 @@ export default function GenericReportPage({ pageTitle }) {
                                     }}
                                 />
                             </Box>
-                            </>
-                            )}
                         </Paper>
                     )}
 
@@ -2292,6 +2336,10 @@ export default function GenericReportPage({ pageTitle }) {
                                             readOnly={true}
                                             formType={concernFormTypeFromPageTitle(pageTitle)}
                                             pdfLayout={downloading}
+                                            ncClosed={
+                                                (lastResponse ? isConcernClosed(lastResponse) : false) ||
+                                                (pdfExportValues ?? formValues)?.noncon_status === "closed"
+                                            }
                                         />
                                     ) : (
                                         <>

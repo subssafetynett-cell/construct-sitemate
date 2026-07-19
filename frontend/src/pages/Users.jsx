@@ -31,6 +31,7 @@ import {
   InputAdornment,
   Tabs,
   Tab,
+  Checkbox,
 } from "@mui/material";
 import {
   ToggleOff as ToggleOffIcon,
@@ -266,6 +267,11 @@ export default function UsersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteUser, setDeleteUser] = useState(null);
   const [deleteInFlight, setDeleteInFlight] = useState(false);
+
+  // Bulk delete state (superadmin only)
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [accessSaving, setAccessSaving] = useState(false);
 
@@ -637,6 +643,7 @@ export default function UsersPage() {
     setDeleteDialogOpen(false);
     setDeleteUser(null);
     setUsers((prev) => prev.filter((u) => (u._id ?? u.id) !== userId));
+    setSelectedIds((prev) => prev.filter((id) => id !== userId));
     setSnack({ open: true, msg: "User deleted successfully", severity: "success" });
 
     try {
@@ -658,6 +665,58 @@ export default function UsersPage() {
     } finally {
       setDeleteInFlight(false);
     }
+  };
+
+  // BULK DELETE (superadmin only)
+  const selfId = currentUser?._id ?? currentUser?.id;
+  const isSelectableUser = (u) => (u._id ?? u.id) !== selfId;
+
+  const toggleSelectUser = (userId) => {
+    setSelectedIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const selectablePageIds = paginatedUsers.filter(isSelectableUser).map((u) => u._id ?? u.id);
+  const allPageSelected =
+    selectablePageIds.length > 0 && selectablePageIds.every((id) => selectedIds.includes(id));
+  const somePageSelected = selectablePageIds.some((id) => selectedIds.includes(id));
+
+  const toggleSelectAllOnPage = () => {
+    setSelectedIds((prev) =>
+      allPageSelected
+        ? prev.filter((id) => !selectablePageIds.includes(id))
+        : [...new Set([...prev, ...selectablePageIds])]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedIds.length || bulkDeleteInFlight) return;
+    setBulkDeleteInFlight(true);
+
+    const failed = [];
+    for (const userId of selectedIds) {
+      try {
+        const res = await api.delete(`/users/${userId}`, { timeout: LIST_FETCH_TIMEOUT_MS });
+        if (!res?.data?.success) throw new Error(res?.data?.message || "Failed to delete");
+        setUsers((prev) => prev.filter((u) => (u._id ?? u.id) !== userId));
+      } catch (err) {
+        console.error("Bulk delete user error:", userId, err);
+        failed.push(userId);
+      }
+    }
+
+    const deletedCount = selectedIds.length - failed.length;
+    setSelectedIds(failed);
+    setBulkDeleteDialogOpen(false);
+    setBulkDeleteInFlight(false);
+    setSnack({
+      open: true,
+      msg: failed.length
+        ? `Deleted ${deletedCount} user${deletedCount === 1 ? "" : "s"}, ${failed.length} failed`
+        : `${deletedCount} user${deletedCount === 1 ? "" : "s"} deleted successfully`,
+      severity: failed.length ? "warning" : "success",
+    });
   };
 
   return (
@@ -965,10 +1024,63 @@ export default function UsersPage() {
           </Box >
         ) : (
           <Box>
+            {isSuperAdminAccount && selectedIds.length > 0 && (
+              <Box
+                sx={{
+                  mb: 1.5,
+                  px: 2,
+                  py: 1,
+                  borderRadius: 3,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 2,
+                  bgcolor: isDarkMode ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2",
+                  border: `1px solid ${isDarkMode ? "rgba(239, 68, 68, 0.35)" : "#FECACA"}`,
+                }}
+              >
+                <Typography sx={{ fontWeight: 600, fontSize: "0.9rem", color: isDarkMode ? "#FCA5A5" : "#B91C1C" }}>
+                  {selectedIds.length} user{selectedIds.length === 1 ? "" : "s"} selected
+                </Typography>
+                <Box sx={{ display: "flex", gap: 1 }}>
+                  <Button
+                    size="small"
+                    onClick={() => setSelectedIds([])}
+                    disabled={bulkDeleteInFlight}
+                    sx={{ textTransform: "none", color: isDarkMode ? "#9CA3AF" : "#6B7280" }}
+                  >
+                    Clear selection
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="error"
+                    startIcon={<Trash2 size={15} />}
+                    onClick={() => setBulkDeleteDialogOpen(true)}
+                    disabled={bulkDeleteInFlight}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 50, px: 2 }}
+                  >
+                    Delete selected
+                  </Button>
+                </Box>
+              </Box>
+            )}
             <TableContainer component={Paper} elevation={0} sx={{ border: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden", bgcolor: isDarkMode ? "#111827" : "#FFFFFF" }}>
               <Table>
                 <TableHead>
                   <TableRow sx={{ bgcolor: isDarkMode ? "#1B212C" : "#F9FAFB" }}>
+                    {isSuperAdminAccount && (
+                      <TableCell padding="checkbox" sx={{ borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>
+                        <Checkbox
+                          size="small"
+                          checked={allPageSelected}
+                          indeterminate={somePageSelected && !allPageSelected}
+                          onChange={toggleSelectAllOnPage}
+                          sx={{ color: isDarkMode ? "#9CA3AF" : undefined }}
+                          inputProps={{ "aria-label": "Select all users on this page" }}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#9CA3AF" : "#6B7280", fontSize: "0.85rem", textTransform: "none", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>SL No</TableCell>
                     <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", textTransform: "none", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Name</TableCell>
                     <TableCell sx={{ fontWeight: 500, color: isDarkMode ? "#F9FAFB" : "#6B7280", fontSize: "0.85rem", textTransform: "none", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>Email</TableCell>
@@ -982,8 +1094,22 @@ export default function UsersPage() {
                 <TableBody>
                   {paginatedUsers.map((user, idx) => {
                     const slNo = page * rowsPerPage + idx + 1;
+                    const userId = user._id ?? user.id;
+                    const canSelect = isSuperAdminAccount && isSelectableUser(user);
                     return (
-                      <TableRow key={user._id ?? user.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                      <TableRow key={userId} hover selected={selectedIds.includes(userId)} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                        {isSuperAdminAccount && (
+                          <TableCell padding="checkbox" sx={{ borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>
+                            <Checkbox
+                              size="small"
+                              checked={selectedIds.includes(userId)}
+                              disabled={!canSelect}
+                              onChange={() => toggleSelectUser(userId)}
+                              sx={{ color: isDarkMode ? "#9CA3AF" : undefined }}
+                              inputProps={{ "aria-label": `Select ${user.firstName || user.email || "user"}` }}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell sx={{ color: isDarkMode ? "#F9FAFB" : "#111827", fontWeight: 500, borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>{slNo}</TableCell>
 
                         <TableCell sx={{ borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>
@@ -1059,7 +1185,7 @@ export default function UsersPage() {
                   })}
                   {filteredUsers.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={isSuperAdminAccount ? 7 : 6} align="center" sx={{ py: 4, color: isDarkMode ? "#9CA3AF" : "inherit", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>No users found.</TableCell>
+                      <TableCell colSpan={isSuperAdminAccount ? 8 : 6} align="center" sx={{ py: 4, color: isDarkMode ? "#9CA3AF" : "inherit", borderColor: isDarkMode ? "#374151" : "rgba(224, 224, 224, 1)" }}>No users found.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -2018,6 +2144,28 @@ export default function UsersPage() {
         </DialogActions>
       </Dialog>
 
+      {/* Bulk Delete Dialog (superadmin) */}
+      <Dialog
+        open={bulkDeleteDialogOpen}
+        onClose={() => !bulkDeleteInFlight && setBulkDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 4, bgcolor: isDarkMode ? "#111827" : "#FFFFFF", color: isDarkMode ? "#F9FAFB" : "inherit" } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete Selected Users</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: isDarkMode ? "#9CA3AF" : "inherit" }}>
+            Are you sure you want to delete <b style={{ color: isDarkMode ? "#F9FAFB" : "inherit" }}>{selectedIds.length}</b> selected user{selectedIds.length === 1 ? "" : "s"}? This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setBulkDeleteDialogOpen(false)} disabled={bulkDeleteInFlight} sx={{ color: isDarkMode ? "#9CA3AF" : "inherit" }}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={handleBulkDelete} disabled={bulkDeleteInFlight} sx={{ borderRadius: 50, px: 3 }}>
+            {bulkDeleteInFlight ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Invite User Dialog */}
       <Dialog
         open={inviteDialogOpen}
@@ -2334,21 +2482,10 @@ export default function UsersPage() {
                 };
                 const res = await api.post('/users/invite', payload, { timeout: LIST_FETCH_TIMEOUT_MS });
                 if (res?.data?.success) {
-                  const baseMsg = res.data.message || `${inviteForm.firstName} has been invited successfully`;
-                  const detail =
-                    res.data.emailSent === false && res.data.emailError
-                      ? ` ${res.data.emailError}`
-                      : "";
-                  const severity =
-                    res.data.emailSent === false
-                      ? "error"
-                      : res.data.emailCapturedInMailpit
-                        ? "info"
-                        : "success";
                   setSnack({
                     open: true,
-                    msg: baseMsg + detail,
-                    severity,
+                    msg: "User invited",
+                    severity: "success",
                   });
                   setInviteDialogOpen(false);
                   const created = res.data.user;

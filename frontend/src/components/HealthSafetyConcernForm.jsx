@@ -251,6 +251,7 @@ const HealthSafetyConcernForm = ({
   formType = "health_safety",
   pdfLayout = false,
   assignedResponseMode = false,
+  ncClosed = false,
 }) => {
   const [internalValues, setInternalValues] = useState({});
   const values = externalValues ?? internalValues;
@@ -655,7 +656,14 @@ const HealthSafetyConcernForm = ({
           </div>
         ) : null}
 
-        <div style={{ ...styles.section, border: "2px solid #ef4444" }}>
+        <div
+          style={{
+            ...styles.section,
+            border: "3px solid #ef4444",
+            boxShadow:
+              "0 0 0 4px rgba(239, 68, 68, 0.15), 0 8px 24px rgba(239, 68, 68, 0.25)",
+          }}
+        >
           <div style={styles.sectionLabel}>Nonconformance summary</div>
           <div style={{ ...styles.row, ...styles.col2 }}>
             {summary.map(([label, value]) => (
@@ -759,8 +767,20 @@ const HealthSafetyConcernForm = ({
       number: "6",
       fields: [
         { id: "noncon_action", label: "Correction action", type: "textarea", fullWidth: true },
-        { id: "noncon_responsible", label: "Responsible person", type: "user_email" },
-        { id: "noncon_date", label: "Date completed", type: "date" },
+        {
+          id: "noncon_category",
+          label: "Category",
+          type: "select",
+          options: ["Safety", "Quality", "Environmental", "Process", "Other"],
+        },
+        {
+          id: "noncon_priority",
+          label: "Priority",
+          type: "select",
+          options: ["low", "medium", "high", "critical"],
+        },
+        { id: "noncon_responsible", label: "Assignee (responsible person) *", type: "user_email", required: true },
+        { id: "noncon_date", label: "Due date *", type: "date", required: true },
         { id: "noncon_photo", label: "Nonconformance photo", type: "photo", fullWidth: true },
       ],
     },
@@ -841,10 +861,30 @@ const HealthSafetyConcernForm = ({
         )}
       </div>
 
+      {pdfLayout && (
+        <div data-pdf-block style={{ ...styles.field, marginBottom: 18 }}>
+          <label style={styles.label}>Status</label>
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: 15,
+              color: ncClosed ? "#15803d" : "#dc2626",
+            }}
+          >
+            {ncClosed ? "Closed" : "Opened"}
+          </div>
+        </div>
+      )}
+
       {schema.map((section) => {
-        // Red border box around Nonconformance in the on-screen view only (never in exports).
+        // Status border box around Nonconformance in the on-screen view only (never
+        // in exports): red while the NC is open, green once it is closed.
         const highlightNoncon =
           section.id === "nonconformance" && readOnly && !pdfLayout;
+        const highlightColor = ncClosed ? "#22c55e" : "#ef4444";
+        const highlightShadow = ncClosed
+          ? "0 0 0 4px rgba(34, 197, 94, 0.15), 0 8px 24px rgba(34, 197, 94, 0.25)"
+          : "0 0 0 4px rgba(239, 68, 68, 0.15), 0 8px 24px rgba(239, 68, 68, 0.25)";
         return (
         <div
           key={section.id}
@@ -852,7 +892,12 @@ const HealthSafetyConcernForm = ({
           style={{
             ...styles.section,
             ...(highlightNoncon
-              ? { border: "2px solid #ef4444", borderRadius: 12, padding: "1.25rem" }
+              ? {
+                  border: `3px solid ${highlightColor}`,
+                  borderRadius: 12,
+                  padding: "1.25rem",
+                  boxShadow: highlightShadow,
+                }
               : null),
           }}
         >
@@ -876,9 +921,28 @@ const HealthSafetyConcernForm = ({
                     <input
                       style={styles.input}
                       type="date"
+                      required={Boolean(field.required)}
                       value={values[field.id] || ""}
                       onChange={(e) => handleChange(field.id, e.target.value)}
                     />
+                  )
+                ) : field.type === "select" ? (
+                  readOnly ? (
+                    <div style={styles.input}>{values[field.id] || "N/A"}</div>
+                  ) : (
+                    <select
+                      style={{ ...styles.input, background: "#fff" }}
+                      required={Boolean(field.required)}
+                      value={values[field.id] || ""}
+                      onChange={(e) => handleChange(field.id, e.target.value)}
+                    >
+                      <option value="">Select {field.label.toLowerCase()}...</option>
+                      {(field.options || []).map((option) => (
+                        <option key={option} value={option}>
+                          {option.charAt(0).toUpperCase() + option.slice(1)}
+                        </option>
+                      ))}
+                    </select>
                   )
                 ) : field.type === "textarea" ? (
                   readOnly ? (
@@ -999,7 +1063,21 @@ const HealthSafetyConcernForm = ({
 
       {(["sent", "closed"].includes(values.noncon_response_status) ||
         ["accepted", "rejected"].includes(values.noncon_response_decision)) && (
-        <div data-pdf-block style={styles.section}>
+        <div
+          data-pdf-block
+          style={{
+            ...styles.section,
+            ...(ncClosed && readOnly && !pdfLayout
+              ? {
+                  border: "3px solid #22c55e",
+                  borderRadius: 12,
+                  padding: "1.25rem",
+                  boxShadow:
+                    "0 0 0 4px rgba(34, 197, 94, 0.15), 0 8px 24px rgba(34, 197, 94, 0.25)",
+                }
+              : null),
+          }}
+        >
           <div style={styles.sectionLabel}>Assignee nonconformance response</div>
           {[
             {
