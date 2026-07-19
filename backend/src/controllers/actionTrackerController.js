@@ -103,6 +103,19 @@ async function syncLinkedFormResponse(action, responseStatus, extraAnswers = {})
   });
 }
 
+/**
+ * Closed and accepted register statuses mean the workflow is finished, so the
+ * response can no longer be edited or resent. Rejected reopens the item for
+ * rework and stays editable.
+ */
+function isFinishedAction(row) {
+  return (
+    row.status === "closed" ||
+    row.registerStatus === "closed" ||
+    row.registerStatus === "accepted"
+  );
+}
+
 function resolveGroupKey(row) {
   if (row.groupKey) return row.groupKey;
   const d = row.details || {};
@@ -242,6 +255,12 @@ exports.updateAction = asyncHandler(async (req, res) => {
   if (existing.status === "sent") {
     return res.status(400).json({ success: false, message: "This response has already been sent." });
   }
+  if (isFinishedAction(existing)) {
+    return res.status(400).json({
+      success: false,
+      message: "This nonconformance is finished and can no longer be edited.",
+    });
+  }
 
   const asDraft = req.body?.asDraft === true;
   const responseNotes =
@@ -312,6 +331,15 @@ exports.sendActionToReporter = asyncHandler(async (req, res) => {
   });
   if (!existing) {
     return res.status(404).json({ success: false, message: "Action not found" });
+  }
+  if (existing.status === "sent") {
+    return res.status(400).json({ success: false, message: "This response has already been sent." });
+  }
+  if (isFinishedAction(existing)) {
+    return res.status(400).json({
+      success: false,
+      message: "This nonconformance is finished and can no longer be sent.",
+    });
   }
 
   const responseNotes =
@@ -422,7 +450,7 @@ exports.reviewSentAction = asyncHandler(async (req, res) => {
     where: { id: existing.id },
     data:
       decision === "accept"
-        ? { registerStatus: "closed", details }
+        ? { registerStatus: "closed", status: "closed", details }
         : {
             registerStatus: "open",
             status: "draft",
@@ -435,7 +463,7 @@ exports.reviewSentAction = asyncHandler(async (req, res) => {
     },
   });
 
-  await syncLinkedFormResponse(updated, "sent", {
+  await syncLinkedFormResponse(updated, updated.status, {
     noncon_status: decision === "accept" ? "closed" : "open",
     noncon_response_decision:
       decision === "accept" ? "accepted" : "rejected",

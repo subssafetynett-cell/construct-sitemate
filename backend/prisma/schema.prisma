@@ -247,6 +247,7 @@ enum NonconformanceStatus {
   pending
   draft
   sent
+  closed
 }
 
 enum NonconformanceRegisterStatus {

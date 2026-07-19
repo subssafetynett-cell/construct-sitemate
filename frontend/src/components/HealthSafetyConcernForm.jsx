@@ -997,7 +997,8 @@ const HealthSafetyConcernForm = ({
         );
       })}
 
-      {values.noncon_response_status === "sent" && (
+      {(["sent", "closed"].includes(values.noncon_response_status) ||
+        ["accepted", "rejected"].includes(values.noncon_response_decision)) && (
         <div data-pdf-block style={styles.section}>
           <div style={styles.sectionLabel}>Assignee nonconformance response</div>
           {[

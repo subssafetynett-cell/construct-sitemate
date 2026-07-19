@@ -81,11 +81,27 @@ function statusChip(status) {
   switch (status) {
     case "sent":
       return { label: "Sent", color: "success" };
+    case "closed":
+      return { label: "Closed", color: "default" };
     case "draft":
       return { label: "Draft", color: "warning" };
     default:
       return { label: "Pending", color: "info" };
   }
+}
+
+/**
+ * Sent (awaiting review) and finished responses can no longer be edited.
+ * Matches the backend guard: closed and accepted register statuses mean the
+ * workflow is finished; rejected reopens the item and stays editable.
+ */
+function isLockedAction(action) {
+  return (
+    action?.status === "sent" ||
+    action?.status === "closed" ||
+    action?.registerStatus === "closed" ||
+    action?.registerStatus === "accepted"
+  );
 }
 
 function registerStatusChip(registerStatus) {
@@ -491,7 +507,7 @@ function RegisterListTab({
                             <Eye size={16} />
                           </IconButton>
                         </Tooltip>
-                        {row.isAssignee && row.status !== "sent" ? (
+                        {row.isAssignee && !isLockedAction(row) ? (
                           <Tooltip title="Edit response">
                             <IconButton size="small" onClick={() => onOpenItem(row.id, "edit")}>
                               <Pencil size={16} />
@@ -663,7 +679,7 @@ function ScheduleTab({ items, headingColor, subColor, borderColor, onOpenItem })
     return items
       .map((item) => {
         const due = resolveDueDate(item);
-        const overdue = due ? due < today && item.status !== "sent" : false;
+        const overdue = due ? due < today && !isLockedAction(item) : false;
         return { item, due, overdue };
       })
       .sort((a, b) => {
@@ -721,7 +737,7 @@ function ScheduleTab({ items, headingColor, subColor, borderColor, onOpenItem })
                 <TableCell align="right">
                   <Button
                     size="small"
-                    onClick={() => onOpenItem(item.id, item.status !== "sent" ? "edit" : "view")}
+                    onClick={() => onOpenItem(item.id, isLockedAction(item) ? "view" : "edit")}
                     sx={{ textTransform: "none" }}
                   >
                     Manage
@@ -811,7 +827,7 @@ function DetailManageTab({
           return (
             <Box
               key={row.id}
-              onClick={() => onSelectFinding(row.id, row.status !== "sent" ? "edit" : "view")}
+              onClick={() => onSelectFinding(row.id, isLockedAction(row) ? "view" : "edit")}
               sx={{
                 px: 2,
                 py: 1.5,
@@ -934,7 +950,7 @@ function DetailManageTab({
                   )}
                 </Box>
                 <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 3 }}>
-                  {latestAction?.status !== "sent" ? (
+                  {!isLockedAction(latestAction) ? (
                     detailMode === "edit" ? (
                       <>
                         <Button
@@ -1127,7 +1143,7 @@ export default function ActionTrackerPage() {
     if (mainTab !== 2 || itemIdFromUrl || assignedItems.length === 0) return;
     const selectedIsAssigned = assignedItems.some((row) => row.id === selectedId);
     if (!selectedIsAssigned) {
-      loadDetail(assignedItems[0].id, assignedItems[0].status !== "sent" ? "edit" : "view");
+      loadDetail(assignedItems[0].id, isLockedAction(assignedItems[0]) ? "view" : "edit");
     }
   }, [mainTab, assignedItems, selectedId, itemIdFromUrl, loadDetail]);
 
@@ -1246,7 +1262,7 @@ export default function ActionTrackerPage() {
   };
 
   const canEditLatest =
-    latestAction?.status !== "sent" && versionTab === 0 && detailMode === "edit";
+    !isLockedAction(latestAction) && versionTab === 0 && detailMode === "edit";
 
   const showVersionTabs = relatedActions.length > 1;
 
