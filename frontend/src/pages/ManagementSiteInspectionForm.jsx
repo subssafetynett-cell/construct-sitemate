@@ -20,7 +20,7 @@ import {
     resolveFormCategoryFromSearchParams,
 } from "../utils/sitepackContext";
 import { saveGeneralFormResponse } from "../services/formUtils";
-import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { useAutoFormDownload } from "../hooks/useAutoFormDownload";
 import { useRef } from "react";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
@@ -207,19 +207,15 @@ export default function ManagementSiteInspectionForm() {
         }
     }, [seedSubmissionId]);
 
-    useEffect(() => {
-        const docKey = persistedResponseId || seedSubmissionId;
-        if (!loading && action === "download" && docKey) {
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(containerRef, `ManagementInspection_${docKey}`, () => {
-                    setDownloading(false);
-                    // Close the newly opened tab
-                    window.close();
-                });
-            }, 300);
-        }
-    }, [loading, action, persistedResponseId, seedSubmissionId]);
+    const downloadDocKey = persistedResponseId || seedSubmissionId;
+    useAutoFormDownload({
+        loading,
+        action,
+        docKey: downloadDocKey,
+        containerRef,
+        fileNamePrefix: "ManagementInspection",
+        setDownloading,
+    });
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);

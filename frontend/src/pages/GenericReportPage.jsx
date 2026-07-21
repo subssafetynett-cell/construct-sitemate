@@ -85,7 +85,6 @@ import {
     withGeneralFormVisibility,
     GENERAL_FORM_VISIBILITY,
 } from "../utils/generalFormVisibility";
-import { CONTEXTUAL_FORM_DONE, withEmbeddedFill } from "../utils/embeddedFormFill";
 import {
     appendTemplatesPageMetadata,
     isTemplatesPageEditContext,
@@ -151,6 +150,9 @@ const CONCERN_PDF_OPTIONS = {
     minJpegQuality: 0.6,
     maxOutputBytes: 5 * 1024 * 1024,
     targetMaxBytes: 1.5 * 1024 * 1024,
+    // Construct Lifts wordmark needs more height to stay readable on A4.
+    rightLogoMaxHeightMm: 16,
+    rightLogoMaxWidthMm: 62,
 };
 
 const WEEKLY_PDF_OPTIONS = {
@@ -562,6 +564,7 @@ export default function GenericReportPage({ pageTitle }) {
     const subfolderId = searchParams.get("subfolderId");
     const monitoringSection = searchParams.get("monitoringSection");
     const urlResponseId = searchParams.get("responseId");
+    const urlDownloadAction = String(searchParams.get("action") || "").toLowerCase();
     const shouldAutoCreate = searchParams.get("create") === "true";
     const isTemplatesPageEdit = isTemplatesPageEditContext(searchParams);
     const canEditTemplate = canEditGeneralFormTemplate(role, { siteId });
@@ -630,9 +633,6 @@ export default function GenericReportPage({ pageTitle }) {
     const [templateSaveOpen, setTemplateSaveOpen] = useState(false);
     const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
     const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
-    const [formPanelOpen, setFormPanelOpen] = useState(false);
-    const [formPanelUrl, setFormPanelUrl] = useState("");
-    const [formPanelTitle, setFormPanelTitle] = useState("");
     const [templateMetadata, setTemplateMetadata] = useState({
         name: "",
         tags: "",
@@ -838,31 +838,11 @@ export default function GenericReportPage({ pageTitle }) {
         setDialogOpen(false);
     };
 
-    const closeFormPanel = useCallback(() => {
-        setFormPanelOpen(false);
-        setFormPanelUrl("");
-        setFormPanelTitle("");
-        setViewMode("initial");
-        fetchSubmissions();
-    }, [fetchSubmissions]);
-
-    const openFillPanel = useCallback((url, title) => {
+    const openFillPage = useCallback((url) => {
         if (!url) return;
-        setFormPanelTitle(title || "Fill form");
-        setFormPanelUrl(withEmbeddedFill(url));
-        setFormPanelOpen(true);
         setDialogOpen(false);
-    }, []);
-
-    useEffect(() => {
-        const onMessage = (event) => {
-            if (event.origin !== window.location.origin) return;
-            if (event.data?.type !== CONTEXTUAL_FORM_DONE) return;
-            closeFormPanel();
-        };
-        window.addEventListener("message", onMessage);
-        return () => window.removeEventListener("message", onMessage);
-    }, [closeFormPanel]);
+        navigate(url);
+    }, [navigate]);
 
     const handleSelectSavedTemplate = async (submission, { preview = false } = {}) => {
         const responseId = submission?.id || submission?._id;
@@ -906,7 +886,7 @@ export default function GenericReportPage({ pageTitle }) {
                 }
 
                 if (url) {
-                    openFillPanel(url, template.title || getSubmissionTitle(sub));
+                    openFillPage(url);
                     return;
                 }
             }
@@ -917,21 +897,21 @@ export default function GenericReportPage({ pageTitle }) {
                 return;
             }
 
-            const formRes = await api.get(`/forms/${formId}`);
-            if (!formRes.data?.success || !formRes.data.data) {
-                alert("Could not load the selected form.");
+            if (preview) {
+                const params = new URLSearchParams({
+                    preview: "true",
+                    fromTemplate: String(responseId),
+                    ...getTemplateContextExtra(),
+                });
+                openTemplatePreviewUrl(`/forms/${formId}/use?${params.toString()}`);
                 return;
             }
 
-            const seedAnswers = { ...(sub.answers || {}) };
-            delete seedAnswers.savedFromTemplatesPage;
-
-            setActiveFormKind("builder");
-            setSelectedForm(formRes.data.data);
-            setFormValues(seedAnswers);
-            setEditingId(null);
-            setViewMode(preview ? "viewed" : "filling");
-            setDialogOpen(false);
+            const params = new URLSearchParams({
+                fromTemplate: String(responseId),
+                ...getTemplateContextExtra(),
+            });
+            openFillPage(`/forms/${formId}/use?${params.toString()}`);
         } catch (err) {
             console.error("Failed to load selected template", err);
             alert("Could not load the selected template.");
@@ -952,29 +932,20 @@ export default function GenericReportPage({ pageTitle }) {
         }
         const url = buildTemplateUseUrl(template, extra);
         if (!url) return;
-        openFillPanel(url, template.title);
+        openFillPage(url);
     };
 
     const handleSelectBuilderForm = async (form, { preview = false } = {}) => {
         const formId = form?.id || form?._id;
         if (!formId) return;
         try {
-            const res = await api.get(`/forms/${formId}`);
-            if (!res.data?.success || !res.data.data) {
-                alert("Could not load the selected form.");
-                return;
-            }
             if (preview) {
                 const params = new URLSearchParams({ preview: "true", ...getTemplateContextExtra() });
                 openTemplatePreviewUrl(`/forms/${formId}/use?${params.toString()}`);
                 return;
             }
-            setActiveFormKind("builder");
-            setSelectedForm(res.data.data);
-            setFormValues({});
-            setEditingId(null);
-            setViewMode("filling");
-            setDialogOpen(false);
+            const params = new URLSearchParams(getTemplateContextExtra());
+            openFillPage(`/forms/${formId}/use?${params.toString()}`);
         } catch (err) {
             console.error("Failed to load selected form", err);
             alert("Could not load the selected form.");
@@ -1574,6 +1545,12 @@ export default function GenericReportPage({ pageTitle }) {
                     sub,
                     isTemplatesPageEdit && canEditTemplate ? "editing" : "viewed"
                 );
+                if (
+                    urlDownloadAction === "download" ||
+                    urlDownloadAction === "download_word"
+                ) {
+                    setPendingDownload(urlDownloadAction === "download_word" ? "word" : "pdf");
+                }
                 if (isTemplatesPageEdit && sub.answers) {
                     setTemplateMetadata({
                         name: sub.answers.name || sub.name || "",
@@ -1590,7 +1567,7 @@ export default function GenericReportPage({ pageTitle }) {
         return () => {
             cancelled = true;
         };
-    }, [urlResponseId, pageTitle, isSitepackContext, siteId, subfolderId]);
+    }, [urlResponseId, pageTitle, isSitepackContext, siteId, subfolderId, urlDownloadAction]);
 
     const autoCreateDoneRef = useRef(false);
     useEffect(() => {
@@ -1703,19 +1680,23 @@ export default function GenericReportPage({ pageTitle }) {
             const contentHtml = printRef.current.innerHTML;
             const docTitle = selectedForm?.title || pageTitle || "Report";
 
-            // Same branded logos as the PDF header, embedded as data URLs.
+            // Same branded logos as the PDF header, embedded as data URLs
+            // (omitted for Performance Monitoring downloads).
             let logoHeaderHtml = "";
-            try {
-                const logos = await loadBrandLogos();
-                if (logos?.left?.dataUrl || logos?.right?.dataUrl) {
-                    const logoCell = (logo, align) =>
-                        logo?.dataUrl
-                            ? `<td style="width:50%;text-align:${align};vertical-align:middle;border:none;padding:0;"><img src="${logo.dataUrl}" style="height:40px;width:auto;" /></td>`
-                            : `<td style="width:50%;border:none;padding:0;"></td>`;
-                    logoHeaderHtml = `<table style="width:100%;border:none;border-collapse:collapse;margin-bottom:16px;"><tr>${logoCell(logos.left, "left")}${logoCell(logos.right, "right")}</tr></table>`;
+            if (!isMonitoringContext) {
+                try {
+                    const logos = await loadBrandLogos();
+                    if (logos?.left?.dataUrl || logos?.right?.dataUrl) {
+                        const logoCell = (logo, align, heightPx) =>
+                            logo?.dataUrl
+                                ? `<td style="width:50%;text-align:${align};vertical-align:middle;border:none;padding:0;"><img src="${logo.dataUrl}" style="height:${heightPx}px;width:auto;" /></td>`
+                                : `<td style="width:50%;border:none;padding:0;"></td>`;
+                        // Right (Construct Lifts) rendered larger so the wordmark stays readable.
+                        logoHeaderHtml = `<table style="width:100%;border:none;border-collapse:collapse;margin-bottom:16px;"><tr>${logoCell(logos.left, "left", 40)}${logoCell(logos.right, "right", activeFormKind === "concern" ? 58 : 48)}</tr></table>`;
+                    }
+                } catch (logoErr) {
+                    console.warn("Could not embed header logos in Word export", logoErr);
                 }
-            } catch (logoErr) {
-                console.warn("Could not embed header logos in Word export", logoErr);
             }
 
             const wordDocument = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
@@ -1768,6 +1749,13 @@ export default function GenericReportPage({ pageTitle }) {
             } finally {
                 menuDownloadRunningRef.current = false;
                 setPendingDownload(null);
+                if (
+                    urlDownloadAction === "download" ||
+                    urlDownloadAction === "download_word"
+                ) {
+                    window.close();
+                    return;
+                }
                 setSelectedForm(null);
                 setActiveFormKind(null);
                 setFormValues({});
@@ -1776,7 +1764,7 @@ export default function GenericReportPage({ pageTitle }) {
                 setViewMode("initial");
             }
         })();
-    }, [pendingDownload, viewMode, selectedForm]);
+    }, [pendingDownload, viewMode, selectedForm, urlDownloadAction]);
 
     const handleEmailSend = async () => {
         if (!recipientEmail || !emailingItem) return;
@@ -2340,6 +2328,7 @@ export default function GenericReportPage({ pageTitle }) {
                                                 (lastResponse ? isConcernClosed(lastResponse) : false) ||
                                                 (pdfExportValues ?? formValues)?.noncon_status === "closed"
                                             }
+                                            ncClosedAt={lastResponse?.nonconformance?.closedAt || null}
                                         />
                                     ) : (
                                         <>
@@ -2377,66 +2366,6 @@ export default function GenericReportPage({ pageTitle }) {
                     setTemplatePreviewUrl("");
                 }}
             />
-
-            <Dialog
-                open={formPanelOpen}
-                onClose={closeFormPanel}
-                fullWidth
-                maxWidth="lg"
-                PaperProps={{
-                    sx: {
-                        height: "min(90vh, 900px)",
-                        borderRadius: 3,
-                        display: "flex",
-                        flexDirection: "column",
-                        bgcolor: isDarkMode ? "#1B212C" : "#FFFFFF",
-                    },
-                }}
-            >
-                <DialogTitle
-                    sx={{
-                        fontWeight: 700,
-                        color: isDarkMode ? "#F9FAFB" : "#111827",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 2,
-                        pr: 1,
-                    }}
-                >
-                    <Box sx={{ minWidth: 0 }}>
-                        <Typography component="span" sx={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                            {formPanelTitle}
-                        </Typography>
-                        <Typography
-                            variant="body2"
-                            sx={{ color: isDarkMode ? "#9CA3AF" : "#6B7280", mt: 0.25 }}
-                        >
-                            Fill and save here — the form stays on this page
-                        </Typography>
-                    </Box>
-                </DialogTitle>
-                <DialogContent sx={{ p: 0, flex: 1, overflow: "hidden" }}>
-                    {formPanelUrl ? (
-                        <iframe
-                            src={formPanelUrl}
-                            title={formPanelTitle || "Form"}
-                            style={{ border: "none", width: "100%", height: "100%" }}
-                        />
-                    ) : null}
-                </DialogContent>
-                <DialogActions
-                    sx={{
-                        px: 3,
-                        py: 2,
-                        borderTop: isDarkMode ? "1px solid #374151" : "1px solid #E5E7EB",
-                    }}
-                >
-                    <Button onClick={closeFormPanel} sx={{ textTransform: "none" }}>
-                        Close
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {/* Success Dialog */}
             <Dialog open={successOpen} maxWidth="xs" fullWidth>

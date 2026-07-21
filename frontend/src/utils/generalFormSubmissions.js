@@ -86,8 +86,8 @@ export function includeFridayPackListRow(sub) {
 }
 
 /**
- * Submissions that belong on the General Forms "Manage Submissions" list
- * (template edits saved from /general-forms, not Friday Pack site submissions).
+ * Submissions that belong on the Templates → Saved templates list
+ * (edits saved from /general-forms, not Friday Pack / monitoring fills).
  */
 export function isGeneralFormsPageSubmission(sub) {
   if (submissionHasSiteContext(sub)) return false;
@@ -96,11 +96,14 @@ export function isGeneralFormsPageSubmission(sub) {
 
   const category = (sub.category || "").trim();
   if (category === FRIDAY_PACK_FORMS_CATEGORY) return false;
-  if (category && category !== GENERAL_FORMS_CATEGORY) return false;
 
+  // Explicit Templates-page saves always belong here (even if category drifted).
   if (sub?.answers?.savedFromTemplatesPage === true) {
-    return category === GENERAL_FORMS_CATEGORY || category === "";
+    return true;
   }
+
+  // Legacy general-form saves without the flag still list when category matches.
+  if (category && category !== GENERAL_FORMS_CATEGORY) return false;
 
   const title = sub?.form?.title;
   if (!title || !TEMPLATE_TITLE_SET.has(title)) return false;

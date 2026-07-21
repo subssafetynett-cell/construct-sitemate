@@ -18,7 +18,7 @@ import {
     resolveFormCategoryFromSearchParams,
 } from "../utils/sitepackContext";
 import { saveGeneralFormResponse } from "../services/formUtils";
-import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { useAutoFormDownload } from "../hooks/useAutoFormDownload";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import {
@@ -232,18 +232,15 @@ export default function DailySafeStartBriefingForm() {
         }
     }, [seedSubmissionId]);
 
-    useEffect(() => {
-        const docKey = persistedResponseId || seedSubmissionId;
-        if (!loading && action === "download" && docKey) {
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(containerRef, `DailySafeStart_${docKey}`, () => {
-                    setDownloading(false);
-                    window.close();
-                });
-            }, 300);
-        }
-    }, [loading, action, persistedResponseId, seedSubmissionId]);
+    const downloadDocKey = persistedResponseId || seedSubmissionId;
+    useAutoFormDownload({
+        loading,
+        action,
+        docKey: downloadDocKey,
+        containerRef,
+        fileNamePrefix: "DailySafeStart",
+        setDownloading,
+    });
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);

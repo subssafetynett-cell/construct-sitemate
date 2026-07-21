@@ -10,6 +10,7 @@ import {
   createLocalFormId,
 } from '../utils/offlineStore.js';
 import { queueOfflineTemplateFormCreate } from '../utils/offlineFormWrite.js';
+import { queryClient } from '../lib/queryClient.js';
 
 function resolveSaveCategory(category, hasSiteContext) {
     const explicit = category != null ? String(category).trim() : '';
@@ -54,6 +55,15 @@ function buildFormResponseBody(payload, category) {
     return body;
 }
 
+/** Keep Templates → Saved templates in sync after library edits. */
+async function invalidateFormResponsesListCache() {
+    try {
+        await queryClient.invalidateQueries({ queryKey: ["form-responses"] });
+    } catch (err) {
+        console.warn("Could not invalidate form-responses cache", err);
+    }
+}
+
 /**
  * Create or update a general-form template response. Returns the saved response id.
  */
@@ -66,6 +76,7 @@ export async function saveGeneralFormResponse({
 }) {
     const requestConfig = formResponseSaveConfig();
     const body = buildFormResponseBody(payload, category);
+    const isTemplatesPageSave = body?.answers?.savedFromTemplatesPage === true;
 
     if (persistedResponseId && !asNew) {
         const res = await api.put(
@@ -73,6 +84,9 @@ export async function saveGeneralFormResponse({
             body,
             requestConfig
         );
+        if (isTemplatesPageSave) {
+            await invalidateFormResponsesListCache();
+        }
         if (res.data?.offlineQueued) {
             const localId = res.data?.data?.id || res.data?.data?._id;
             return localId || persistedResponseId;
@@ -85,6 +99,9 @@ export async function saveGeneralFormResponse({
         body,
         requestConfig
     );
+    if (isTemplatesPageSave) {
+        await invalidateFormResponsesListCache();
+    }
     if (res.data?.offlineQueued) {
         const localId = res.data?.data?.id || res.data?.data?._id;
         return localId || null;

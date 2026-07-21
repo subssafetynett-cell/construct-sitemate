@@ -244,6 +244,13 @@ const FieldWrapper = ({
 
 // --- MAIN COMPONENT ---
 
+function formatClosedDate(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 const HealthSafetyConcernForm = ({
   values: externalValues,
   onChange,
@@ -252,6 +259,7 @@ const HealthSafetyConcernForm = ({
   pdfLayout = false,
   assignedResponseMode = false,
   ncClosed = false,
+  ncClosedAt = null,
 }) => {
   const [internalValues, setInternalValues] = useState({});
   const values = externalValues ?? internalValues;
@@ -861,18 +869,27 @@ const HealthSafetyConcernForm = ({
         )}
       </div>
 
-      {pdfLayout && (
-        <div data-pdf-block style={{ ...styles.field, marginBottom: 18 }}>
+      {/* Only show status when closed — open concerns omit the Opened label. */}
+      {ncClosed && (readOnly || pdfLayout) && (
+        <div data-pdf-block style={{ ...styles.field, marginBottom: pdfLayout ? 18 : 20 }}>
           <label style={styles.label}>Status</label>
           <div
             style={{
               fontWeight: 800,
               fontSize: 15,
-              color: ncClosed ? "#15803d" : "#dc2626",
+              color: "#15803d",
             }}
           >
-            {ncClosed ? "Closed" : "Opened"}
+            Closed
           </div>
+          {formatClosedDate(ncClosedAt) ? (
+            <div style={{ marginTop: 6 }}>
+              <label style={styles.label}>Closed date</label>
+              <div style={{ fontWeight: 600, fontSize: 14, color: "#0f172a" }}>
+                {formatClosedDate(ncClosedAt)}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 

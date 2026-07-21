@@ -24,6 +24,7 @@ import { appendSitepackToAnswers } from "../utils/sitepackContext";
 import { getMonitoringSection } from "../constants/monitoringSections";
 import { getOrCreateTemplateForm, saveGeneralFormResponse } from "../services/formUtils";
 import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { downloadWordFromRef } from "../utils/downloadWordFromRef";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
@@ -41,6 +42,10 @@ import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import { useGeneralFormAutoSave } from "../hooks/useGeneralFormAutoSave";
 import { useCompanyLogo } from "../hooks/useCompanyLogo";
 import { resolveDocLogoSrc } from "../utils/formLogoUrl";
+import {
+  FORM_BRAND_LOGO_LEFT,
+  FORM_BRAND_LOGO_RIGHT,
+} from "../utils/formBrandLogos";
 import {
     compressImageFile,
     compressLogoFile,
@@ -1340,7 +1345,8 @@ export default function SheqInstallationForm({
     const rawCategory = propsCategory || searchParams.get("category") || SHEQ_INSTALLATION_CATEGORY;
     const category = decodeURIComponent(String(rawCategory));
     const action = searchParams.get("action");
-    const isDownloadSession = action === "download" || autoDownload;
+    const isDownloadSession =
+        action === "download" || action === "download_word" || autoDownload;
     const isViewMode = searchParams.get("view") === "true";
     const fromTemplateId = propsFromTemplateId || searchParams.get("fromTemplate");
     const monitoringSectionKey = searchParams.get("monitoringSection");
@@ -1731,7 +1737,10 @@ export default function SheqInstallationForm({
                     }
                     if (closeAfter) {
                         if (autoDownload && onClose) onClose(true);
-                        else if (action === "download") navigate(listPath);
+                        else if (action === "download" || action === "download_word") {
+                            navigate(listPath);
+                            window.close();
+                        }
                     }
                 });
             } catch (err) {
@@ -1745,13 +1754,62 @@ export default function SheqInstallationForm({
         [category, formData.client, listPath, navigate, action, autoDownload, onClose, preparePdfAssets]
     );
 
+    const triggerWordDownload = useCallback(
+        async (responseId, { closeAfter = false } = {}) => {
+            if (!responseId || hasDownloaded.current) return;
+            setPreparingPdf(true);
+            try {
+                const assets = await preparePdfAssets();
+                flushSync(() => {
+                    setPdfAssets(assets);
+                    setDownloading(true);
+                });
+                hasDownloaded.current = true;
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const fileName = getPdfFileName(category, responseId, formData.client);
+                await downloadWordFromRef(containerRef, fileName, (err) => {
+                    setDownloading(false);
+                    setPreparingPdf(false);
+                    setPdfAssets(null);
+                    if (err) {
+                        hasDownloaded.current = false;
+                        alert("Word download failed. Please try again.");
+                        return;
+                    }
+                    if (closeAfter) {
+                        navigate(listPath);
+                        window.close();
+                    }
+                });
+            } catch (err) {
+                console.error("Word preparation failed:", err);
+                setPreparingPdf(false);
+                setPdfAssets(null);
+                hasDownloaded.current = false;
+                alert("Word download failed. Please try again.");
+            }
+        },
+        [category, formData.client, listPath, navigate, preparePdfAssets]
+    );
+
     useEffect(() => {
         if (loading || !isDownloadSession || !persistedResponseId || hasDownloaded.current) return;
         const timerId = window.setTimeout(() => {
-            triggerPdfDownload(persistedResponseId, { closeAfter: true });
+            if (action === "download_word") {
+                triggerWordDownload(persistedResponseId, { closeAfter: true });
+            } else {
+                triggerPdfDownload(persistedResponseId, { closeAfter: true });
+            }
         }, 120);
         return () => window.clearTimeout(timerId);
-    }, [loading, isDownloadSession, persistedResponseId, triggerPdfDownload]);
+    }, [
+        loading,
+        isDownloadSession,
+        persistedResponseId,
+        action,
+        triggerPdfDownload,
+        triggerWordDownload,
+    ]);
 
     const hydrateSubmissionAnswers = (submission, { asTemplate = false } = {}) => {
         if (!submission?.answers) return;
@@ -1959,8 +2017,8 @@ export default function SheqInstallationForm({
             onClose(true);
             return;
         }
-        // Embedded iframe fills (monitoring) — notify parent and leave fill flow.
-        if (embedded || leaveAfterSaveRef.current) {
+        // Templates library edits and leave-after-save always return to the list.
+        if (isTemplatesPageEdit || embedded || leaveAfterSaveRef.current) {
             leaveAfterSaveRef.current = false;
             finishSaveAndNavigate();
         }
@@ -2366,12 +2424,19 @@ export default function SheqInstallationForm({
     const activeDocInfo = pdfAssets
         ? {
               ...docInfo,
-              logo: resolveDocLogoSrc(pdfAssets.logo ?? docInfo.logo, companyLogoUrl),
-              logoRight: pdfAssets.logoRight ?? docInfo.logoRight,
+              logo: resolveDocLogoSrc(
+                  pdfAssets.logo ?? docInfo.logo,
+                  companyLogoUrl || FORM_BRAND_LOGO_LEFT
+              ),
+              logoRight: resolveDocLogoSrc(
+                  pdfAssets.logoRight ?? docInfo.logoRight,
+                  FORM_BRAND_LOGO_RIGHT
+              ),
           }
         : {
               ...docInfo,
-              logo: resolveDocLogoSrc(docInfo.logo, companyLogoUrl),
+              logo: resolveDocLogoSrc(docInfo.logo, companyLogoUrl || FORM_BRAND_LOGO_LEFT),
+              logoRight: resolveDocLogoSrc(docInfo.logoRight, FORM_BRAND_LOGO_RIGHT),
           };
     const displayImages = normalizeFormImages(pdfAssets?.images ?? formData.images);
     const exportBg = downloading ? "#FFFFFF" : (isDarkMode ? "#1B212C" : "#FFFFFF");

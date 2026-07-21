@@ -178,7 +178,11 @@ exports.getAllForms = async (req, res, next) => {
       return res.status(401).json({ success: false, message: "Not authenticated" });
     }
     const forms = await prisma.form.findMany({
-      where: { createdById: userId },
+      where: {
+        createdById: userId,
+        // System concern template is not a user-managed builder form.
+        NOT: { id: STATIC_CONCERN_FORM_ID },
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -263,6 +267,15 @@ exports.deleteForm = async (req, res, next) => {
       return res.status(access.status).json({ success: false, message: access.message });
     }
 
+    const responseCount = await prisma.formResponse.count({ where: { formId: id } });
+    if (responseCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This form cannot be deleted because it has saved submissions. Delete those submissions first.",
+      });
+    }
+
     await prisma.form.delete({ where: { id } });
 
     res.json({
@@ -270,6 +283,13 @@ exports.deleteForm = async (req, res, next) => {
       message: "Form deleted successfully",
     });
   } catch (error) {
+    if (error?.code === "P2003") {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This form cannot be deleted because it is still linked to other records.",
+      });
+    }
     console.error("Delete form error:", error);
     next(error);
   }
@@ -330,7 +350,8 @@ exports.saveResponse = async (req, res) => {
           id: STATIC_CONCERN_FORM_ID,
           title: STATIC_CONCERN_FORM_TITLE,
           fields: [],
-          createdById: submitterId,
+          // System template — not owned by the first submitter (keeps it out of View Forms).
+          createdById: null,
         },
       });
     }

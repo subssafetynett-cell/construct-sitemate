@@ -44,7 +44,9 @@ export function useGeneralFormTemplateAccess(
     isTemplatesEdit ||
     isContextualFill ||
     canEditGeneralFormTemplate(role, { siteId });
-  const isDownloadAction = String(action || "").toLowerCase() === "download";
+  const isDownloadAction =
+    String(action || "").toLowerCase() === "download" ||
+    String(action || "").toLowerCase() === "download_word";
   const pdfLayout = Boolean(downloading || isDownloadAction);
   const contentReadOnly = pdfLayout || !canEdit;
   return {

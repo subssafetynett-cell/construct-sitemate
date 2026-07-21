@@ -155,7 +155,23 @@ export function buildSavedTemplateEditUrl(submission) {
     TEMPLATE_LIBRARY.find((t) => t.title === submission.form?.title);
 
   if (!template) {
-    return `/forms/${submission.formId}/use?action=edit&responseId=${responseId}`;
+    const rawFormId =
+      submission.formId ||
+      submission.form?.id ||
+      submission.form?._id;
+    const formId =
+      (typeof rawFormId === "string" && rawFormId.trim()) ||
+      (rawFormId && typeof rawFormId === "object"
+        ? rawFormId.id || rawFormId._id
+        : null);
+    if (!formId) return "/general-forms";
+    const params = new URLSearchParams({
+      source: TEMPLATES_PAGE_SOURCE,
+      category: "General forms",
+      action: "edit",
+      responseId: String(responseId),
+    });
+    return `/forms/${formId}/use?${params.toString()}`;
   }
 
   if (template.type === "general") {

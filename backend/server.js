@@ -206,6 +206,13 @@ app.use((err, req, res, next) => {
     });
   }
 
+  if (err.code === 'P2003') {
+    return res.status(409).json({
+      success: false,
+      message: "This record cannot be deleted because it is still linked to other data.",
+    });
+  }
+
   if (err.code === 'P2021') {
     return res.status(500).json({
       success: false,

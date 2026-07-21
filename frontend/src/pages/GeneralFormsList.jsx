@@ -68,8 +68,10 @@ export default function GeneralFormsList() {
         isLoading: loading,
         refetch: refetchSubmissions,
     } = useFormResponsesListQuery(
+        // Include null/empty categories so legacy Templates saves still appear.
+        // Client filter (isGeneralFormsPageSubmission) keeps monitoring/site-pack out.
         { category: "General forms,__empty__" },
-        { fetchAll: true }
+        { fetchAll: true, refetchOnMount: "always", staleTime: 0 }
     );
 
     const submissions = useMemo(
@@ -87,6 +89,12 @@ export default function GeneralFormsList() {
             setActiveTab(TAB_SAVED);
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        if (activeTab === TAB_SAVED) {
+            refetchSubmissions();
+        }
+    }, [activeTab, refetchSubmissions]);
 
     const handleDeleteConfirm = (id) => {
         setTrashId(id);

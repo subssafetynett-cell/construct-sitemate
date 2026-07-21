@@ -18,7 +18,7 @@ import {
     resolveFormCategoryFromSearchParams,
 } from "../utils/sitepackContext";
 import { saveGeneralFormResponse } from "../services/formUtils";
-import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { useAutoFormDownload } from "../hooks/useAutoFormDownload";
 import { useRef } from "react";
 import { useCompanyLogo } from "../hooks/useCompanyLogo";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
@@ -218,24 +218,16 @@ export default function ToolBoxTalkForm() {
         }
     }, [seedSubmissionId]);
 
-    useEffect(() => {
-        const docKey = persistedResponseId || seedSubmissionId;
-        if (!loading && action === "download" && docKey) {
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(
-                    containerRef,
-                    `ToolBoxTalk_${docKey}`,
-                    () => {
-                        setDownloading(false);
-                        // Close the newly opened tab
-                        window.close();
-                    },
-                    TOOLBOX_TALK_PDF_OPTIONS
-                );
-            }, 300); // Short delay for render
-        }
-    }, [loading, action, persistedResponseId, seedSubmissionId]);
+    const downloadDocKey = persistedResponseId || seedSubmissionId;
+    useAutoFormDownload({
+        loading,
+        action,
+        docKey: downloadDocKey,
+        containerRef,
+        fileNamePrefix: "ToolBoxTalk",
+        setDownloading,
+        pdfOptions: TOOLBOX_TALK_PDF_OPTIONS,
+    });
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);

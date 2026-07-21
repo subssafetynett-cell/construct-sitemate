@@ -381,10 +381,17 @@ export function buildMonitoringSubmissionUrl(
     );
   }
 
-  const formId = submission?.formId;
+  const rawFormId = submission?.formId;
+  const formId =
+    (typeof rawFormId === "string" && rawFormId.trim()) ||
+    (rawFormId && typeof rawFormId === "object"
+      ? rawFormId.id || rawFormId._id
+      : null) ||
+    submission?.form?.id ||
+    submission?.form?._id;
   if (formId) {
     return pathWithSearchParams(
-      `/forms/${formId}/use`,
+      `/forms/${String(formId)}/use`,
       applyMonitoringSubmissionMode(
         { ...baseParams, responseId: String(responseId) },
         mode

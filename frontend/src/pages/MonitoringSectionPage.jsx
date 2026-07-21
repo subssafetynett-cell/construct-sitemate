@@ -71,7 +71,6 @@ import {
   filterMonitoringTemplates,
   formatMonitoringDate,
   getMonitoringSubmissionTitle,
-  isMonitoringCustomBuilderSubmission,
   monitoringFolderPath,
   monitoringSitePath,
 } from "../utils/monitoringContext";
@@ -411,7 +410,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
 
   const activeTemplateFolderId = routeFolderId || templateFolderId;
 
-  const openFillPanel = (url, title) => {
+  const openFillPage = (url) => {
     if (!url) {
       setSnack({
         open: true,
@@ -420,13 +419,8 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
       });
       return;
     }
-    formPanelWasEditRef.current = true;
-    setFormPanelRow(null);
-    setFormPanelTitle(title || "Fill form");
-    setFormPanelMode("edit");
-    setFormPanelUrl(withEmbeddedFill(url));
-    setFormPanelOpen(true);
     closeTemplateDialog();
+    navigate(url);
   };
 
   const fillContext = {
@@ -437,7 +431,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
 
   const handleUseTemplate = (template) => {
     const url = buildMonitoringFormUrl(template, { ...fillContext, preview: false });
-    openFillPanel(url, template.title);
+    openFillPage(url);
   };
 
   const handlePreviewTemplate = (template) => {
@@ -448,7 +442,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
 
   const handleUseSavedTemplate = (submission) => {
     const url = buildMonitoringSavedTemplateUrl(submission, { ...fillContext, preview: false });
-    openFillPanel(url, getMonitoringSubmissionTitle(submission));
+    openFillPage(url);
   };
 
   const handlePreviewSavedTemplate = (submission) => {
@@ -462,7 +456,7 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
     const formId = form._id || form.id;
     if (!formId) return;
     const url = buildMonitoringBuilderFormUrl(formId, { ...fillContext, preview: false });
-    openFillPanel(url, form.title || "Form");
+    openFillPage(url);
   };
 
   const handlePreviewBuilderForm = (form) => {
@@ -872,17 +866,15 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
         >
           Download as PDF
         </MenuItem>
-        {isMonitoringCustomBuilderSubmission(menuRow) ? (
-          <MenuItem
-            onClick={() => {
-              downloadSubmission(menuRow, "word");
-              setMenuAnchor(null);
-              setMenuRow(null);
-            }}
-          >
-            Download as Word
-          </MenuItem>
-        ) : null}
+        <MenuItem
+          onClick={() => {
+            downloadSubmission(menuRow, "word");
+            setMenuAnchor(null);
+            setMenuRow(null);
+          }}
+        >
+          Download as Word
+        </MenuItem>
         <MenuItem
           onClick={() => {
             setDeleteTarget(menuRow);
@@ -1451,15 +1443,26 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
             </Typography>
           </Box>
           {formPanelMode === "view" && formPanelRow ? (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<Download size={16} />}
-              onClick={() => downloadSubmission(formPanelRow, "pdf")}
-              sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
-            >
-              Download PDF
-            </Button>
+            <Box sx={{ display: "flex", gap: 1, flexShrink: 0 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<Download size={16} />}
+                onClick={() => downloadSubmission(formPanelRow, "pdf")}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                PDF
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<FileText size={16} />}
+                onClick={() => downloadSubmission(formPanelRow, "word")}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                Word
+              </Button>
+            </Box>
           ) : null}
         </DialogTitle>
         <DialogContent sx={{ p: 0, flex: 1, overflow: "hidden" }}>
@@ -1476,19 +1479,29 @@ export default function MonitoringSectionPage({ section: sectionKey }) {
             Close
           </Button>
           {formPanelMode === "view" && formPanelRow ? (
-            <Button
-              variant="contained"
-              startIcon={<Download size={16} />}
-              onClick={() => downloadSubmission(formPanelRow, "pdf")}
-              sx={{
-                bgcolor: "#E89F17",
-                textTransform: "none",
-                fontWeight: 600,
-                "&:hover": { bgcolor: "#cc8b14" },
-              }}
-            >
-              Download PDF
-            </Button>
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<FileText size={16} />}
+                onClick={() => downloadSubmission(formPanelRow, "word")}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                Download Word
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<Download size={16} />}
+                onClick={() => downloadSubmission(formPanelRow, "pdf")}
+                sx={{
+                  bgcolor: "#E89F17",
+                  textTransform: "none",
+                  fontWeight: 600,
+                  "&:hover": { bgcolor: "#cc8b14" },
+                }}
+              >
+                Download PDF
+              </Button>
+            </>
           ) : null}
         </DialogActions>
       </Dialog>

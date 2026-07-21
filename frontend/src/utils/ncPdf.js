@@ -191,8 +191,6 @@ export async function downloadNonconformancePdf(nc) {
   };
 
   const { answers, schema, isClosed, isConcernSource, response } = reportData(nc);
-  const statusLabel = isClosed ? "Closed" : "Opened";
-  const statusColor = isClosed ? [21, 128, 61] : [220, 38, 38];
 
   writeWrapped(answers.report_heading || nc.title || "Concern form", {
     size: 15,
@@ -205,13 +203,23 @@ export async function downloadNonconformancePdf(nc) {
     color: [100, 116, 139],
     gap: 1,
   });
-  writeWrapped("Status", {
-    size: 8.5,
-    style: "bold",
-    color: [100, 116, 139],
-    gap: 0.5,
-  });
-  writeWrapped(statusLabel, { size: 10, style: "bold", color: statusColor, gap: 2.5 });
+  // Open concerns omit status; closed concerns show Closed + closed date.
+  if (isClosed) {
+    writeWrapped("Status", {
+      size: 8.5,
+      style: "bold",
+      color: [100, 116, 139],
+      gap: 0.5,
+    });
+    writeWrapped("Closed", { size: 10, style: "bold", color: [21, 128, 61], gap: 1 });
+    writeWrapped("Closed date", {
+      size: 8.5,
+      style: "bold",
+      color: [100, 116, 139],
+      gap: 0.5,
+    });
+    writeWrapped(formatDate(nc.closedAt), { size: 10, gap: 2.5 });
+  }
 
   if (isConcernSource) {
     schema.forEach((section) => {
@@ -281,8 +289,6 @@ export async function downloadNonconformancePdf(nc) {
  */
 export async function downloadNonconformanceWord(nc) {
   const { answers, schema, isClosed, isConcernSource, response } = reportData(nc);
-  const statusLabel = isClosed ? "Closed" : "Opened";
-  const statusColor = isClosed ? "#15803d" : "#dc2626";
   const logos = await loadBrandLogos().catch(() => null);
   const logoCell = (logo, align) =>
     logo?.dataUrl
@@ -354,7 +360,8 @@ export async function downloadNonconformanceWord(nc) {
       h1 { font-size: 20pt; margin: 0 0 5px; color: #0f172a; }
       .nc-number { color: #64748b; font-weight: bold; margin-bottom: 10px; }
       .status-label, .label { color: #64748b; font-size: 8.5pt; font-weight: bold; text-transform: uppercase; }
-      .status { color: ${statusColor}; font-size: 11pt; font-weight: bold; margin: 2px 0 12px; }
+      .status { color: #15803d; font-size: 11pt; font-weight: bold; margin: 2px 0 4px; }
+      .closed-date { margin: 2px 0 12px; }
       section { margin-top: 16px; page-break-inside: avoid; }
       h2 { color: #003049; font-size: 12pt; border-top: 1px solid #e2e8f0; padding-top: 9px; }
       .field { margin: 0 0 10px; }
@@ -366,8 +373,14 @@ export async function downloadNonconformanceWord(nc) {
     <table class="header"><tr>${logoCell(logos?.left, "left")}${logoCell(logos?.right, "right")}</tr></table>
     <h1>${escapeHtml(answers.report_heading || nc.title || "Concern form")}</h1>
     <div class="nc-number">${escapeHtml(nc.ncNumber || "")}</div>
-    <div class="status-label">Status</div>
-    <div class="status">${statusLabel}</div>
+    ${
+      isClosed
+        ? `<div class="status-label">Status</div>
+    <div class="status">Closed</div>
+    <div class="status-label">Closed date</div>
+    <div class="closed-date">${escapeHtml(formatDate(nc.closedAt))}</div>`
+        : ""
+    }
     ${body}
     <section><h2>ASSIGNEE NONCONFORMANCE RESPONSE</h2>${responseHtml}</section>
   </body>

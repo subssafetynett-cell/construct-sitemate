@@ -3,6 +3,7 @@ import api from '../services/api';
 import { getBackendOrigin } from '../utils/backendOrigin.js';
 
 import { getActingClient } from "../utils/actingClient";
+import { FORM_BRAND_LOGO_LEFT } from "../utils/formBrandLogos";
 
 export function computeLogoUrl(logo) {
     if (!logo) return null;
@@ -11,7 +12,7 @@ export function computeLogoUrl(logo) {
     return `${host.replace(/\/$/, "")}${logo.startsWith("/") ? "" : "/"}${logo}`;
 };
 
-export const useCompanyLogo = (fallback = "/sitemate-logo.svg") => {
+export const useCompanyLogo = (fallback = FORM_BRAND_LOGO_LEFT) => {
     const [logoUrl, setLogoUrl] = useState(fallback);
 
     useEffect(() => {
@@ -57,7 +58,8 @@ export const useCompanyLogo = (fallback = "/sitemate-logo.svg") => {
                 if (rawLogo) {
                     const isSafetynett = (user.companyname || user.company || "").toString().trim().toLowerCase().replace(/\s+/g, "") === "safetynett";
                     if (isSafetynett) {
-                        setLogoUrl("/sitemate-logo.svg");
+                        // Form headers use Safety nett Consultancy brand (not product mark).
+                        setLogoUrl(FORM_BRAND_LOGO_LEFT);
                     } else {
                         setLogoUrl(computeLogoUrl(rawLogo));
                     }

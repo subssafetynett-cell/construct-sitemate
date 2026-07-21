@@ -17,7 +17,7 @@ import {
     resolveFormCategoryFromSearchParams,
 } from "../utils/sitepackContext";
 import { saveGeneralFormResponse } from "../services/formUtils";
-import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { useAutoFormDownload } from "../hooks/useAutoFormDownload";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import {
@@ -267,18 +267,16 @@ export default function SiteInductionRecordForm() {
         }
     }, [seedSubmissionId]);
 
-    useEffect(() => {
-        const docKey = persistedResponseId || seedSubmissionId;
-        if (!loading && action === "download" && docKey) {
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(containerRef, `SiteInductionForm_${docKey}`, () => {
-                    setDownloading(false);
-                    window.close();
-                }, SITE_INDUCTION_PDF_OPTIONS);
-            }, 350);
-        }
-    }, [loading, action, persistedResponseId, seedSubmissionId]);
+    const downloadDocKey = persistedResponseId || seedSubmissionId;
+    useAutoFormDownload({
+        loading,
+        action,
+        docKey: downloadDocKey,
+        containerRef,
+        fileNamePrefix: "SiteInductionForm",
+        setDownloading,
+        pdfOptions: SITE_INDUCTION_PDF_OPTIONS,
+    });
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);

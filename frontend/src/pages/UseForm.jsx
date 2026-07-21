@@ -31,6 +31,12 @@ import { getBackendOrigin } from "../utils/backendOrigin.js";
 import { resolveFormCategoryFromSearchParams, sitepackNavState } from "../utils/sitepackContext";
 import { FRIDAY_PACK_FORMS_CATEGORY, GENERAL_FORMS_CATEGORY } from "../utils/generalFormSubmissions";
 import { monitoringFolderPath, monitoringSitePath } from "../utils/monitoringContext";
+import {
+  isTemplatesPageEditContext,
+  prepareTemplatesPageSave,
+  templatesPageListUrl,
+} from "../utils/templatePageContext";
+import { queryClient } from "../lib/queryClient";
 
 // helper to build absolute URL for logos
 const computeLogoUrl = (logo) => {
@@ -50,6 +56,9 @@ export default function UseForm() {
   const category = resolveFormCategoryFromSearchParams(searchParams);
   const action = searchParams.get("action");
   const responseId = searchParams.get("responseId") || searchParams.get("submissionId");
+  const fromTemplateId = searchParams.get("fromTemplate");
+  // Primitive — avoid putting the URLSearchParams object in effect deps.
+  const isTemplatesPageEdit = isTemplatesPageEditContext(searchParams);
   const containerRef = useRef(null);
   
   const [downloading, setDownloading] = useState(false);
@@ -85,6 +94,10 @@ export default function UseForm() {
       } catch {
         /* ignore */
       }
+      return;
+    }
+    if (isTemplatesPageEdit) {
+      navigate(templatesPageListUrl());
       return;
     }
     if (monitoringSection && siteId) {
@@ -135,25 +148,44 @@ export default function UseForm() {
       if (siteId) processedAnswers.siteId = siteId;
       if (subfolderId) processedAnswers.subfolderId = subfolderId;
       if (monitoringSection) processedAnswers.monitoringSection = monitoringSection;
-      // Never keep Templates-library markers on fills started from other modules.
-      delete processedAnswers.savedFromTemplatesPage;
 
-      const explicitCategory = category != null ? String(category).trim() : "";
-      const resolvedCategory =
-        explicitCategory && explicitCategory !== GENERAL_FORMS_CATEGORY
-          ? explicitCategory
-          : siteId
-            ? FRIDAY_PACK_FORMS_CATEGORY
-            : explicitCategory || GENERAL_FORMS_CATEGORY;
-      const body = { answers: processedAnswers, category: resolvedCategory };
-      if (siteId) body.siteId = String(siteId).trim();
-      if (subfolderId) body.subfolderId = String(subfolderId).trim();
+      const prepared = prepareTemplatesPageSave(
+        processedAnswers,
+        searchParams,
+        form?.title || ""
+      );
+      const answers = prepared.payload;
+      const resolvedCategory = prepared.isTemplatesPage
+        ? prepared.category
+        : (() => {
+            const explicitCategory = category != null ? String(category).trim() : "";
+            return explicitCategory && explicitCategory !== GENERAL_FORMS_CATEGORY
+              ? explicitCategory
+              : siteId
+                ? FRIDAY_PACK_FORMS_CATEGORY
+                : explicitCategory || GENERAL_FORMS_CATEGORY;
+          })();
+
+      const body = { answers, category: resolvedCategory };
+      if (!prepared.isTemplatesPage) {
+        if (siteId) body.siteId = String(siteId).trim();
+        if (subfolderId) body.subfolderId = String(subfolderId).trim();
+      }
 
       if (responseId) {
         await api.put(`/forms/responses/${responseId}`, body);
       } else {
         await api.post(`/forms/${id}/responses`, body);
       }
+
+      if (prepared.isTemplatesPage) {
+        try {
+          await queryClient.invalidateQueries({ queryKey: ["form-responses"] });
+        } catch (cacheErr) {
+          console.warn("Could not invalidate form-responses cache", cacheErr);
+        }
+      }
+
       resetDirty();
       return true;
     } catch (err) {
@@ -204,16 +236,23 @@ export default function UseForm() {
       } catch (err) {
         console.error("Failed to load form", err);
       } finally {
-        if (!responseId) setLoading(false);
+        if (!responseId && !fromTemplateId) setLoading(false);
       }
     };
 
     const fetchResponse = async () => {
-      if (!responseId) return;
+      const seedId = responseId || fromTemplateId;
+      if (!seedId) return;
       try {
-        const res = await api.get(`/forms/responses/${responseId}`);
+        const res = await api.get(`/forms/responses/${seedId}`);
         if (res.data?.success && res.data.data?.answers) {
-          setValues(res.data.data.answers);
+          const seedAnswers = { ...(res.data.data.answers || {}) };
+          // Keep Templates-library marker when editing from /general-forms;
+          // strip it for site pack / monitoring / reporting concern fills.
+          if (!isTemplatesPageEdit) {
+            delete seedAnswers.savedFromTemplatesPage;
+          }
+          setValues(seedAnswers);
           resetDirty();
         }
       } catch (err) {
@@ -224,75 +263,95 @@ export default function UseForm() {
     };
 
     fetchForm();
-    if (responseId) {
+    if (responseId || fromTemplateId) {
       fetchResponse();
     }
-  }, [id, responseId]);
+  }, [id, responseId, fromTemplateId, isTemplatesPageEdit, resetDirty]);
+
+  const downloadStartedRef = useRef(false);
 
   useEffect(() => {
-    if (!loading && action === "download" && form) {
-      let cancelled = false;
-      (async () => {
-        setPreparingPdf(true);
-        try {
-          const exportValues = await prepareCustomFormPdfAssets(form, values, logoUrl);
-          if (cancelled) return;
-          flushSync(() => {
-            setPdfExportValues(exportValues);
-            setDownloading(true);
-          });
-          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          await new Promise((resolve) => {
-            downloadPdfFromRef(containerRef, `CustomForm_${form.title.replace(/\s+/g, "_")}`, (err) => {
-              setDownloading(false);
-              setPreparingPdf(false);
-              setPdfExportValues(null);
-              if (!err) window.close();
-              resolve();
-            });
-          });
-        } catch (err) {
-          console.error("PDF preparation failed:", err);
-          if (!cancelled) {
+    downloadStartedRef.current = false;
+  }, [id, responseId, action]);
+
+  useEffect(() => {
+    if (loading || !form) return;
+    if (action !== "download" && action !== "download_word") return;
+    if (downloadStartedRef.current) return;
+
+    downloadStartedRef.current = true;
+    let cancelled = false;
+
+    (async () => {
+      setPreparingPdf(true);
+      const fileName = `CustomForm_${String(form.title || "form").replace(/\s+/g, "_")}`;
+      try {
+        const exportValues = await prepareCustomFormPdfAssets(form, values, logoUrl);
+        if (cancelled) return;
+
+        if (action === "download_word") {
+          await downloadWordFromForm(form, exportValues, fileName, (err) => {
+            if (cancelled) return;
             setPreparingPdf(false);
+            // Always clear so a stuck tab (close blocked) can retry.
+            downloadStartedRef.current = false;
+            if (err) {
+              alert("Could not prepare Word document. Please try again.");
+              return;
+            }
+            window.close();
+          });
+          return;
+        }
+
+        // Keep the form DOM mounted so downloadPdfFromRef can capture containerRef.
+        flushSync(() => {
+          setPdfExportValues(exportValues);
+          setDownloading(true);
+          setPreparingPdf(false);
+        });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (cancelled) return;
+
+        await new Promise((resolve) => {
+          downloadPdfFromRef(containerRef, fileName, (err) => {
             setDownloading(false);
             setPdfExportValues(null);
-            alert("Could not prepare PDF. Please try again.");
-          }
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    } else if (!loading && action === "download_word" && form) {
-      let cancelled = false;
-      (async () => {
-        setPreparingPdf(true);
-        try {
-          const exportValues = await prepareCustomFormPdfAssets(form, values, logoUrl);
-          if (cancelled) return;
-          await downloadWordFromForm(
-            form,
-            exportValues,
-            `CustomForm_${form.title.replace(/\s+/g, "_")}`,
-            () => {
-              setPreparingPdf(false);
+            // Always clear so a stuck tab (close blocked) can retry.
+            downloadStartedRef.current = false;
+            if (err) {
+              alert("Could not prepare PDF. Please try again.");
+            } else {
               window.close();
             }
+            resolve();
+          });
+        });
+      } catch (err) {
+        console.error("Download preparation failed:", err);
+        if (!cancelled) {
+          setPreparingPdf(false);
+          setDownloading(false);
+          setPdfExportValues(null);
+          downloadStartedRef.current = false;
+          alert(
+            action === "download_word"
+              ? "Could not prepare Word document. Please try again."
+              : "Could not prepare PDF. Please try again."
           );
-        } catch (err) {
-          console.error("Word preparation failed:", err);
-          if (!cancelled) {
-            setPreparingPdf(false);
-            alert("Could not prepare Word document. Please try again.");
-          }
         }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }
-  }, [loading, action, form, values, logoUrl]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      // Allow a fresh attempt after Strict Mode remount or navigation.
+      downloadStartedRef.current = false;
+    };
+    // Intentionally omit values/logoUrl: loading already waits for the response payload,
+    // and re-running on those would cancel an in-flight download.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, action, form]);
 
   const handleChange = (fieldId, value) => {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
@@ -322,7 +381,17 @@ export default function UseForm() {
   const handleSubmit = async () => {
     const ok = await performSave();
     if (ok) {
-      if (siteId) {
+      // Contextual fills and Templates-page edits return to their list immediately.
+      const hasReturnContext = Boolean(
+        isTemplatesPageEditContext(searchParams) ||
+          siteId ||
+          monitoringSection ||
+          searchParams.get("listPath") ||
+          (category &&
+            category !== GENERAL_FORMS_CATEGORY &&
+            category !== FRIDAY_PACK_FORMS_CATEGORY)
+      );
+      if (hasReturnContext) {
         navigateBack();
       } else {
         resetDirty();
@@ -332,15 +401,10 @@ export default function UseForm() {
   };
 
 
-  if (loading || preparingPdf) {
+  if (loading) {
     return (
       <Box sx={{ display: "grid", placeItems: "center", py: 8 }}>
         <CircularProgress />
-        {preparingPdf && (
-          <Typography variant="body2" sx={{ mt: 2, color: "text.secondary" }}>
-            Preparing download…
-          </Typography>
-        )}
       </Box>
     );
   }
@@ -355,7 +419,26 @@ export default function UseForm() {
 
   return (
     <Layout>
-      <Box sx={{ flex: 1, px: { xs: 2, md: 5 }, py: 4, overflowY: "auto" }}>
+      <Box sx={{ flex: 1, px: { xs: 2, md: 5 }, py: 4, overflowY: "auto", position: "relative" }}>
+        {(preparingPdf || downloading) && (
+          <Box
+            sx={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 1400,
+              display: "grid",
+              placeItems: "center",
+              bgcolor: "rgba(255,255,255,0.72)",
+            }}
+          >
+            <Box sx={{ textAlign: "center" }}>
+              <CircularProgress />
+              <Typography variant="body2" sx={{ mt: 2, color: "text.secondary" }}>
+                {preparingPdf ? "Preparing download…" : "Downloading…"}
+              </Typography>
+            </Box>
+          </Box>
+        )}
         {!readOnly && (
           <Box sx={{ maxWidth: 900, mx: "auto", mb: 2 }}>
             <Button variant="outlined" onClick={requestLeave} sx={{ textTransform: "none" }}>
@@ -367,10 +450,10 @@ export default function UseForm() {
 
         <Paper
           ref={containerRef}
-          className={downloading ? "pdf-export-root" : undefined}
+          className={exportMode ? "pdf-export-root" : undefined}
           sx={{ p: 3, maxWidth: 900, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 'auto', boxSizing: 'border-box' }}
         >
-          {action === "download" && (
+          {exportMode && (
             <Typography sx={{ position: 'absolute', top: 24, right: 24, fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>
                 Date: {new Date().toLocaleDateString('en-GB')}
             </Typography>

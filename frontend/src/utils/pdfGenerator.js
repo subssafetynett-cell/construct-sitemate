@@ -6,14 +6,38 @@ import brandLogoRightUrl from "../assets/pdf-logo-right.png";
 
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 // Header/footer bands on every exported page (branded logos + download date)
-// Header band: 6mm top margin + 10mm logo row + 6mm gap before the content starts.
+// Header band: 6mm top margin + logo row + 6mm gap before the content starts.
 const HEADER_LOGO_TOP_MM = 6;
 const HEADER_LOGO_HEIGHT_MM = 10;
+/** Construct Lifts (right) is wider wordmark — taller so text stays readable. */
+const HEADER_LOGO_RIGHT_HEIGHT_MM = 15;
+const HEADER_LOGO_LEFT_WIDTH_MM = 48;
+const HEADER_LOGO_RIGHT_WIDTH_MM = 58;
 const HEADER_GAP_BELOW_LOGO_MM = 6;
-const MIN_HEADER_INSET_MM = HEADER_LOGO_TOP_MM + HEADER_LOGO_HEIGHT_MM + HEADER_GAP_BELOW_LOGO_MM;
+const MIN_HEADER_INSET_MM =
+    HEADER_LOGO_TOP_MM +
+    Math.max(HEADER_LOGO_HEIGHT_MM, HEADER_LOGO_RIGHT_HEIGHT_MM) +
+    HEADER_GAP_BELOW_LOGO_MM;
+/** Slimmer header when branded logos are omitted (Performance Monitoring downloads). */
+const MIN_HEADER_INSET_NO_LOGOS_MM = 8;
 const MIN_FOOTER_INSET_MM = 12;
 
 let cachedBrandLogos = null;
+
+/** True when PDF/Word should omit left/right brand header logos. */
+export function shouldSkipBrandLogos(options = {}) {
+    if (options.skipBrandLogos === true) return true;
+    if (options.skipBrandLogos === false) return false;
+    try {
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("monitoringSection")) return true;
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
+}
 
 /** Load both brand logos once and convert to PNG data URLs jsPDF can embed. */
 export async function loadBrandLogos() {
@@ -489,10 +513,25 @@ function resolveLayout(options) {
         options.headerInsetMm !== undefined ? options.headerInsetMm : legacyY !== undefined ? legacyY : 11;
     const requestedFooter =
         options.footerInsetMm !== undefined ? options.footerInsetMm : legacyY !== undefined ? legacyY : 13;
-    // Reserve room for the branded logo header and dated footer on every page.
-    const headerInsetMm = Math.max(requestedHeader, MIN_HEADER_INSET_MM);
+    const skipBrandLogos = shouldSkipBrandLogos(options);
+    const leftLogoH = options.leftLogoMaxHeightMm ?? HEADER_LOGO_HEIGHT_MM;
+    const rightLogoH = options.rightLogoMaxHeightMm ?? HEADER_LOGO_RIGHT_HEIGHT_MM;
+    // Reserve room for the branded logo header (unless omitted) and dated footer.
+    const minHeader = skipBrandLogos
+        ? MIN_HEADER_INSET_NO_LOGOS_MM
+        : HEADER_LOGO_TOP_MM + Math.max(leftLogoH, rightLogoH) + HEADER_GAP_BELOW_LOGO_MM;
+    const headerInsetMm = Math.max(requestedHeader, minHeader);
     const footerInsetMm = Math.max(requestedFooter, MIN_FOOTER_INSET_MM);
-    return { marginX, headerInsetMm, footerInsetMm };
+    return {
+        marginX,
+        headerInsetMm,
+        footerInsetMm,
+        skipBrandLogos,
+        leftLogoH,
+        rightLogoH,
+        leftLogoW: options.leftLogoMaxWidthMm ?? HEADER_LOGO_LEFT_WIDTH_MM,
+        rightLogoW: options.rightLogoMaxWidthMm ?? HEADER_LOGO_RIGHT_WIDTH_MM,
+    };
 }
 
 async function captureElement(element, captureOpts) {
@@ -555,7 +594,16 @@ function drawBrandLogo(pdf, logo, x, y, maxWidthMm, maxHeightMm, align = "left")
 }
 
 function drawPdfHeaderFooter(pdf, options, pageNum, totalPages, layout, runningHeaderText = "", logos = null) {
-    const { marginX, headerInsetMm, footerInsetMm } = layout;
+    const {
+        marginX,
+        headerInsetMm,
+        footerInsetMm,
+        skipBrandLogos,
+        leftLogoH = HEADER_LOGO_HEIGHT_MM,
+        rightLogoH = HEADER_LOGO_RIGHT_HEIGHT_MM,
+        leftLogoW = HEADER_LOGO_LEFT_WIDTH_MM,
+        rightLogoW = HEADER_LOGO_RIGHT_WIDTH_MM,
+    } = layout;
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const contentLeft = marginX;
@@ -574,13 +622,14 @@ function drawPdfHeaderFooter(pdf, options, pageNum, totalPages, layout, runningH
     pdf.rect(0, 0, pageWidth, contentTop, "F");
     pdf.rect(0, pageHeight - contentBottom, pageWidth, contentBottom, "F");
 
-    // Branded logos on every page: left + right of the header band,
-    // with standard spacing above the logos and below them before the content.
     const logoBandTop = HEADER_LOGO_TOP_MM;
-    const logoMaxHeight = HEADER_LOGO_HEIGHT_MM;
-    const logoMaxWidth = 48;
-    drawBrandLogo(pdf, logos?.left, contentLeft, logoBandTop, logoMaxWidth, logoMaxHeight, "left");
-    drawBrandLogo(pdf, logos?.right, pageWidth - contentRight, logoBandTop, logoMaxWidth, logoMaxHeight, "right");
+    const logoBandHeight = Math.max(leftLogoH, rightLogoH);
+
+    // Branded logos on every page unless Performance Monitoring (or skipBrandLogos).
+    if (!skipBrandLogos) {
+        drawBrandLogo(pdf, logos?.left, contentLeft, logoBandTop, leftLogoW, leftLogoH, "left");
+        drawBrandLogo(pdf, logos?.right, pageWidth - contentRight, logoBandTop, rightLogoW, rightLogoH, "right");
+    }
 
     pdf.setDrawColor(230, 230, 230);
     pdf.setLineWidth(0.2);
@@ -591,9 +640,13 @@ function drawPdfHeaderFooter(pdf, options, pageNum, totalPages, layout, runningH
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(7.5);
         pdf.setTextColor(0, 48, 73);
-        const maxHeaderWidth = pageWidth - contentLeft - contentRight - 2 * (logoMaxWidth + 6);
+        const sideReserve = skipBrandLogos ? 4 : leftLogoW + rightLogoW + 12;
+        const maxHeaderWidth = pageWidth - contentLeft - contentRight - sideReserve;
         const headerLines = pdf.splitTextToSize(runningHeaderText, Math.max(maxHeaderWidth, 40));
-        pdf.text(headerLines, pageWidth / 2, logoBandTop + logoMaxHeight / 2 + 1, { align: "center" });
+        const headerY = skipBrandLogos
+            ? contentTop / 2 + 1
+            : logoBandTop + logoBandHeight / 2 + 1;
+        pdf.text(headerLines, pageWidth / 2, headerY, { align: "center" });
     }
 
     pdf.setFont("helvetica", "normal");
@@ -725,7 +778,7 @@ async function downloadPdfPaginatedByBlocks(root, fileName, onComplete, options)
         cursorY += blockGapMm;
     });
 
-    const logos = await loadBrandLogos();
+    const logos = layout.skipBrandLogos ? null : await loadBrandLogos();
     const totalPages = pdf.getNumberOfPages();
     for (let p = 1; p <= totalPages; p += 1) {
         pdf.setPage(p);
@@ -794,7 +847,7 @@ async function downloadPdfSingleCanvas(root, fileName, onComplete, options) {
     const xPos = contentLeft + (availableWidth - imgWidth) / 2;
     const yStart = contentTop;
 
-    const logos = await loadBrandLogos();
+    const logos = layout.skipBrandLogos ? null : await loadBrandLogos();
 
     pdf.addImage(imgData, "JPEG", xPos, yStart, imgWidth, imgHeight, undefined, "FAST");
     drawPdfHeaderFooter(pdf, options, 1, totalPages, layout, "", logos);
@@ -825,11 +878,13 @@ async function downloadPdfSingleCanvas(root, fileName, onComplete, options) {
  * @param {number} [options.jpegQuality] - JPEG quality 0–1 (default 0.85 in block mode)
  * @param {number} [options.targetMaxBytes] - Soft size target per slice (~2 MB default)
  * @param {number} [options.maxOutputBytes] - Warn if final PDF exceeds this (default 5 MB)
- * @param {boolean} [options.skipBuiltInFooter] - Omit "Page x of y" (branded logos + download date always drawn)
+ * @param {boolean} [options.skipBuiltInFooter] - Omit "Page x of y" (download date still drawn)
+ * @param {boolean} [options.skipBrandLogos] - Omit left/right brand header logos (auto for Performance Monitoring)
  */
 export const downloadPdfFromRef = async (printRef, fileName = "document", onComplete = null, options = {}) => {
     if (!printRef?.current) {
         console.error("No print reference provided for PDF generation.");
+        if (onComplete) onComplete(new Error("No print reference provided for PDF generation."));
         return;
     }
 

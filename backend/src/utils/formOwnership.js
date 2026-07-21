@@ -4,11 +4,12 @@ const STATIC_CONCERN_FORM_ID = "health-safety-concern-static-id";
 
 /**
  * Whether the authenticated user may update/delete this form definition.
- * Orphan forms (no creator) are denied except the shared static concern form.
+ * Orphan forms (no creator) and the shared static concern form are never editable.
  */
 function canModifyFormRecord(form, userId) {
   if (!form || !userId) return false;
-  if (form.id === STATIC_CONCERN_FORM_ID) return true;
+  // System concern template — used for submissions; never edit/delete the definition.
+  if (form.id === STATIC_CONCERN_FORM_ID) return false;
   if (!form.createdById) return false;
   return form.createdById === userId;
 }
@@ -29,6 +30,13 @@ function assertAuthenticatedForm(req, form) {
 function assertCanModifyForm(req, form) {
   const auth = assertAuthenticatedForm(req, form);
   if (!auth.ok) return auth;
+  if (form?.id === STATIC_CONCERN_FORM_ID) {
+    return {
+      ok: false,
+      status: 403,
+      message: "The system Concern form cannot be edited or deleted",
+    };
+  }
   if (!canModifyFormRecord(form, auth.userId)) {
     return {
       ok: false,

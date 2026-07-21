@@ -72,7 +72,10 @@ export default function ViewForms() {
       setDeleteSuccessOpen(true);
     } catch (err) {
       console.error("Delete failed", err);
-      alert("Failed to delete form");
+      const message =
+        err?.response?.data?.message ||
+        "Failed to delete form";
+      alert(message);
     }
   };
 
@@ -89,9 +92,11 @@ export default function ViewForms() {
     try {
       const res = await api.get("/forms");
       if (res?.data?.success && Array.isArray(res.data.data)) {
-        // Filter out dummy template forms created by getOrCreateTemplateForm
-        const userCreatedForms = res.data.data.filter(f => 
-             !(f.fields?.length === 1 && f.fields[0].id === "custom_hardcoded_form_data")
+        // Filter out system/template forms (not user-managed builder forms)
+        const userCreatedForms = res.data.data.filter(
+          (f) =>
+            f.id !== "health-safety-concern-static-id" &&
+            !(f.fields?.length === 1 && f.fields[0].id === "custom_hardcoded_form_data")
         );
         setForms(userCreatedForms);
       } else {

@@ -22,7 +22,7 @@ import {
     resolveFormCategoryFromSearchParams,
 } from "../utils/sitepackContext";
 import { saveGeneralFormResponse } from "../services/formUtils";
-import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { useAutoFormDownload } from "../hooks/useAutoFormDownload";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
 import { useGeneralFormLeave } from "../hooks/useGeneralFormLeave";
 import {
@@ -36,6 +36,7 @@ import GeneralFormSubmissionDeleteButton from "../components/GeneralFormSubmissi
 import GeneralFormTemplateInfoBanner from "../components/GeneralFormTemplateInfoBanner";
 import { useGeneralFormSaveNavigate } from "../hooks/useGeneralFormSaveNavigate";
 import { appendTemplatesPageMetadata, templateSaveButtonLabel } from "../utils/templatePageContext";
+import { FORM_BRAND_LOGO_RIGHT } from "../utils/formBrandLogos";
 
 const FORM_BASE_PATH = "/general-forms/alimak-weekly-check";
 import SignatureCapture from "../components/SignatureCapture";
@@ -243,22 +244,15 @@ export default function AlimakWeeklyCheckForm() {
         if (seedSubmissionId) loadSubmission(seedSubmissionId);
     }, [seedSubmissionId]);
 
-    useEffect(() => {
-        const docKey = persistedResponseId || seedSubmissionId;
-        if (!loading && action === "download" && docKey) {
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(
-                    containerRef,
-                    `AlimakWeeklyCheck_${docKey}`,
-                    () => {
-                        setDownloading(false);
-                        window.close();
-                    }
-                );
-            }, 300);
-        }
-    }, [loading, action, persistedResponseId, seedSubmissionId]);
+    const downloadDocKey = persistedResponseId || seedSubmissionId;
+    useAutoFormDownload({
+        loading,
+        action,
+        docKey: downloadDocKey,
+        containerRef,
+        fileNamePrefix: "AlimakWeeklyCheck",
+        setDownloading,
+    });
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);
@@ -668,7 +662,7 @@ export default function AlimakWeeklyCheckForm() {
                         <FormLogoHeaderColumn
                             side="right"
                             imageSrc={docInfo.logoRight}
-                            companyLogoUrl={logoUrl}
+                            companyLogoUrl={FORM_BRAND_LOGO_RIGHT}
                             onImageChange={(url) =>
                                 setDocInfo((prev) => ({ ...prev, logoRight: url }))
                             }

@@ -16,7 +16,7 @@ import {
     resolveFormCategoryFromSearchParams,
 } from "../utils/sitepackContext";
 import { saveGeneralFormResponse } from "../services/formUtils";
-import { downloadPdfFromRef } from "../utils/pdfGenerator";
+import { useAutoFormDownload } from "../hooks/useAutoFormDownload";
 import { useRef } from "react";
 import SignatureCapture from "../components/SignatureCapture";
 import { useGeneralFormTemplateAccess } from "../hooks/useGeneralFormTemplateAccess";
@@ -33,6 +33,7 @@ import { appendTemplatesPageMetadata, templateSaveButtonLabel, isTemplatesPageEd
 const FORM_TITLE = "Site Induction Register";
 const FORM_BASE_PATH = "/general-forms/site-induction";
 import FormLogoUploadSlot from "../components/FormLogoUploadSlot";
+import { FORM_BRAND_LOGO_RIGHT } from "../utils/formBrandLogos";
 
 export default function SiteInductionForm() {
   const logoUrl = useCompanyLogo();
@@ -194,18 +195,14 @@ export default function SiteInductionForm() {
         }
     }, [seedSubmissionId]);
 
-    useEffect(() => {
-        if (!loading && action === "download" && seedSubmissionId) {
-            setDownloading(true);
-            setTimeout(() => {
-                downloadPdfFromRef(containerRef, `SiteInduction_${seedSubmissionId}`, () => {
-                    setDownloading(false);
-                    // Close the newly opened tab
-                    window.close();
-                });
-            }, 300);
-        }
-    }, [loading, action, seedSubmissionId]);
+    useAutoFormDownload({
+        loading,
+        action,
+        docKey: seedSubmissionId,
+        containerRef,
+        fileNamePrefix: "SiteInduction",
+        setDownloading,
+    });
 
     const loadSubmission = async (submissionId) => {
         setLoading(true);
@@ -434,62 +431,13 @@ export default function SiteInductionForm() {
                                 justifyContent: 'center',
                             }}
                         >
-                            {docInfo.logoRight ? (
-                                <>
-                                    <Box
-                                        component="img"
-                                        src={docInfo.logoRight}
-                                        alt="Uploaded Right Logo"
-                                        sx={{
-                                            width: { xs: '100%', md: '80%' },
-                                            maxHeight: '100px',
-                                            objectFit: 'contain',
-                                            mb: (action !== 'download') ? 1 : 0,
-                                        }}
-                                    />
-                                    {(action !== 'download') && (
-                                        <Button variant="text" size="small" component="label" sx={{ fontSize: '0.7rem' }}>
-                                            Change Logo
-                                            <input
-                                                type="file"
-                                                hidden
-                                                accept="image/*"
-                                                onChange={(e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = (ev) =>
-                                                            setDocInfo({ ...docInfo, logoRight: ev.target.result });
-                                                        reader.readAsDataURL(file);
-                                                    }
-                                                }}
-                                            />
-                                        </Button>
-                                    )}
-                                </>
-                            ) : (
-                                (action !== 'download') ? (
-                                    <Button variant="outlined" component="label" size="small">
-                                        Upload Logo
-                                        <input
-                                            type="file"
-                                            hidden
-                                            accept="image/*"
-                                            onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) =>
-                                                        setDocInfo({ ...docInfo, logoRight: ev.target.result });
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            }}
-                                        />
-                                    </Button>
-                                ) : (
-                                    <Typography variant="caption" color="text.secondary">No Logo</Typography>
-                                )
-                            )}
+                            <FormLogoUploadSlot
+                                imageSrc={docInfo.logoRight}
+                                companyLogoUrl={FORM_BRAND_LOGO_RIGHT}
+                                onImageChange={(url) => setDocInfo((prev) => ({ ...prev, logoRight: url }))}
+                                readOnly={action === 'download'}
+                                exportMode={downloading || action === 'download'}
+                            />
                         </Box>
 
                     </Box>
